@@ -80,14 +80,15 @@ void Card::read_audio()
     auto buf_len = std::min(_size - _offset, bytesread);
     std::memcpy(&_bytes[_offset], _buffer, buf_len);
 
+    _offset += buf_len;
+    _size_read_audio = _offset * .125f; // 1 / (2 channels * 4 bytes)
+
     if (bytesread < kChunk || buf_len < bytesread) {
         _notify_finish_processing = true;
         _state = State::idle;
         _close_file();
         return;
     }
-    _offset += bytesread;
-    _size_read_audio = _offset / (2 * sizeof(float));
 }
 
 void Card::init_write_audio(const AudioData data)
