@@ -1,6 +1,7 @@
 #pragma once
 
-#include <math.h>
+#include <cmath>    // std::round
+#include <stddef.h> // size_t
 #include <stdint.h>
 
 namespace spotykach {

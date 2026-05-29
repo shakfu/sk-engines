@@ -5,6 +5,10 @@
 *.log
 *.mmon
 
+# testing
+*.dSYM
+runner
+
 # agents
 .claude
 CLAUDE.md

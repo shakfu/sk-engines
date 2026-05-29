@@ -22,7 +22,21 @@ by the Git tag / release they ship in. The latest released baseline is 1.0.2.
   This is the only change in this release that alters runtime audio behaviour; validate by
   ear at maximum pitch on the smallest slice. (`src/core/vox.cpp`)
 
+- **Stack buffer overflows in SD-card path building.** Five `char` buffers used to build
+  tape/file paths were each one byte too small for their string plus the null terminator
+  (`tape_dir_path[4]` for `"SK/G"`, three `audio_path[11]` for `"/SK/G/1.WAV"`, two
+  `name[5]` for `"1.WAV"`). The `sprintf` calls wrote the terminating null one byte past the
+  end - benign-by-luck via stack padding, but undefined behaviour. Buffers resized to fit;
+  surfaced while replacing `sprintf` (see Changed). (`src/hw/card.cpp`, `src/memory/storage.cpp`)
+
 ### Changed
+
+- **SD path building uses manual string joins instead of `sprintf`.** All five `sprintf`
+  calls (plain `%s` concatenations) were replaced with `strcpy`/`strcat`. This lets the
+  linker drop the `sprintf`/`fprintf` objects, recovering ~648 B of the nearly-full
+  `SRAM_EXEC` region (99.05% -> 98.71% used). Note: the core `vfprintf`/`dtoa` machinery
+  (~2.3 KB) remains, pulled in by libDaisy's `logger.o` via `vsnprintf` - reclaiming it
+  would require a libDaisy-side change. (`src/hw/card.cpp`, `src/memory/storage.cpp`)
 
 These are correctness/intent fixes that do not change current runtime behaviour; they
 harden the code against future changes.
@@ -32,6 +46,7 @@ harden the code against future changes.
   static singleton (`Config::dynamic()`), so the flag was already reliably `false`; this
   guards against any future non-static instantiation reading an indeterminate value.
   (`src/config.h`)
+
 - **Tape navigation uses `kStorageTapeCount` (V2).** `DeckStorage::next_tape`/
   `previous_tape` and the `kTapeName[]` array were sized/wrapped on `kStorageSlotCount`.
   Both constants are 6 today, so the generated code is unchanged; the fix uses the
@@ -43,6 +58,21 @@ harden the code against future changes.
 - **In-repo developer documentation** under `docs/`: `architecture.md`, `source-guide.md`,
   a firmware-tracked `manual.md`, and `review-260529.md` (a code/architecture review with
   verified and re-validated findings).
+
+- **Host-only test harness** under `test/` (`make -C test test`). Compiles the pure-logic
+  timing classes natively (no ARM toolchain, no hardware) and asserts their invariants. It
+  does not build or affect the firmware. Initial coverage locks the two findings that
+  required manual tracing: `Divider` triplet timing does not drift over long runs (S1), and
+  `SynClock` emits exactly `_ticks_per_clock` internal ticks per external clock pulse for
+  24->48 and 12->48 PPQN, including when the internal timer is over-driven (S3). Also covers
+  the `Config` text parser (S5): valid parse, the `is_loaded()` default (V1), and the
+  documented brittleness (mid-token whitespace stripping, unknown/overlong names ignored).
+
+### Fixed (portability)
+
+- **`divider.h` now includes `<cmath>` for `std::round`** (was relying on `<math.h>`, which
+  only places `round` in `std::` on the ARM toolchain, not in standard libc++). Surfaced by
+  the new host harness; no effect on the firmware build. (`src/core/divider.h`)
 
 ## [1.0.2]
 

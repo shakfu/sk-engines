@@ -1,5 +1,6 @@
 #include "card.h"
 #include "../memory/wav.h"
+#include <string.h>
 
 using namespace spotykach;
 using namespace daisy;
@@ -24,8 +25,13 @@ void Card::init_read_audio(const AudioData data)
 
     _size_read_audio = 0;
 
-    char audio_path[11];
-    sprintf(audio_path, "/%s/%s/%s", data.root_dir, data.tape_dir, data.file_name); // /SK/G/1.WAV
+    char audio_path[12]; // "/SK/G/1.WAV"
+    audio_path[0] = '/';
+    strcpy(audio_path + 1, data.root_dir);
+    strcat(audio_path, "/");
+    strcat(audio_path, data.tape_dir);
+    strcat(audio_path, "/");
+    strcat(audio_path, data.file_name);
 
     WavHeader hdr;
     size_t hdr_size = 0;
@@ -101,16 +107,20 @@ void Card::init_write_audio(const AudioData data)
         return;
     }
 
-    char tape_dir_path[4];
-    sprintf(tape_dir_path, "%s/%s", data.root_dir, data.tape_dir);
+    char tape_dir_path[5]; // "SK/G"
+    strcpy(tape_dir_path, data.root_dir);
+    strcat(tape_dir_path, "/");
+    strcat(tape_dir_path, data.tape_dir);
     res = f_mkdir(tape_dir_path);
     if (res != FR_OK && res != FR_EXIST) {
         _state = State::failed;
         return;
     }
 
-    char audio_path[11]; // /SK/G/1.wav
-    sprintf(audio_path, "%s/%s", tape_dir_path, data.file_name);
+    char audio_path[11]; // "SK/G/1.WAV"
+    strcpy(audio_path, tape_dir_path);
+    strcat(audio_path, "/");
+    strcat(audio_path, data.file_name);
     if (f_open(&_sdfile, audio_path, (FA_CREATE_ALWAYS) | (FA_WRITE)) != FR_OK) {
         _state = State::failed;
         return;

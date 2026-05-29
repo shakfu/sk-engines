@@ -19,22 +19,24 @@ static const std::string kTapeName[kStorageTapeCount] = {
 };
 static const std::string kSlotName[kStorageSlotCount] = { "1", "2", "3", "4", "5", "6" };
 
+// "<slot>.WAV", e.g. "1.WAV" (needs 6 bytes incl. null). Manual join avoids
+// pulling the newlib printf/dtoa machinery in for a plain string concatenation.
 inline void audio_file_name(const uint8_t slot_idx, char* out_name)
 {
-    #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-    #pragma GCC diagnostic ignored "-Wuninitialized"
-    sprintf(out_name, "%s.WAV", (char*)kSlotName[slot_idx].c_str());
+    strcpy(out_name, kSlotName[slot_idx].c_str());
+    strcat(out_name, ".WAV");
 }
 
+// "/<root>/<tape>/<slot>.WAV", e.g. "/SK/G/1.WAV" (needs 12 bytes incl. null).
 inline void audio_file_path(const Deck::Ref deck, const uint8_t tape_idx, const uint8_t slot_idx, char* out_path)
 {
-    sprintf(
-        out_path, 
-        "/%s/%s/%s.WAV", 
-        (char*)kRootDir.c_str(),
-        (char*)kTapeName[tape_idx].c_str(),
-        (char*)kSlotName[slot_idx].c_str()
-    );
+    out_path[0] = '/';
+    strcpy(out_path + 1, kRootDir.c_str());
+    strcat(out_path, "/");
+    strcat(out_path, kTapeName[tape_idx].c_str());
+    strcat(out_path, "/");
+    strcat(out_path, kSlotName[slot_idx].c_str());
+    strcat(out_path, ".WAV");
 }
 
 DeckStorage::DeckStorage():
@@ -87,7 +89,7 @@ void DeckStorage::previous_tape()
 void DeckStorage::_read_slots()
 {
     if (_state != State::selecting) return;
-    char audio_path[11]; // /A/G/1.WAV
+    char audio_path[12]; // /A/G/1.WAV
     for (size_t i = 0; i < _slots.size(); i++) {
         audio_file_path(_deck->ref, _tape_idx, i, audio_path);
         _slots[i].is_empty = !_card->file_exists(audio_path);
@@ -116,7 +118,7 @@ void DeckStorage::save()
     ad.deck_dir = (char *)_deck_dir.c_str();
     ad.tape_dir = (char*)kTapeName[_tape_idx].c_str();
 
-    char name[5];
+    char name[6];
     audio_file_name(_slot_idx, name);
     ad.file_name = name;
     
@@ -147,7 +149,7 @@ void DeckStorage::load()
     ad.deck_dir = (char *)_deck_dir.c_str();
     ad.tape_dir = (char*)kTapeName[_tape_idx].c_str();
     
-    char name[5];
+    char name[6];
     audio_file_name(_slot_idx, name);
     ad.file_name = name;
     
@@ -169,7 +171,7 @@ void DeckStorage::preload()
 {
     uint8_t tape, slot;
     if (!_read_preload_source(tape, slot)) return;
-    char audio_path[11]; // /SK/G/1.WAV
+    char audio_path[12]; // /SK/G/1.WAV
     audio_file_path(_deck->ref, tape, slot, audio_path);
     if (_card->file_exists(audio_path)) {
         _tape_idx = tape;
