@@ -4,3 +4,8 @@
 **/build
 *.log
 *.mmon
+
+# agents
+.claude
+CLAUDE.md
+
