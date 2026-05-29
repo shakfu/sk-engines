@@ -9,7 +9,7 @@ using namespace spotykach;
 static const std::string kRootDir = "SK";
 static const std::string A = "A";
 static const std::string B = "B";
-static const std::string kTapeName[kStorageSlotCount] = { 
+static const std::string kTapeName[kStorageTapeCount] = {
     "B", // B lue
     "G", // G reen
     "P", // P ink
@@ -73,14 +73,14 @@ void DeckStorage::deactivate()
 void DeckStorage::next_tape()
 {
     _tape_idx ++;
-    if (_tape_idx >= kStorageSlotCount) _tape_idx = 0;
+    if (_tape_idx >= kStorageTapeCount) _tape_idx = 0;
     _read_slots();
 }
 
 void DeckStorage::previous_tape()
 {
     if (_tape_idx > 0) _tape_idx --;
-    else _tape_idx = kStorageSlotCount - 1;
+    else _tape_idx = kStorageTapeCount - 1;
     _read_slots();
 }
 

@@ -99,7 +99,7 @@ public:
 private:
     Config() {}
     Values _vals;
-    bool _is_loaded;
+    bool _is_loaded = false;
 };
 
 

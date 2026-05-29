@@ -288,9 +288,9 @@ void Vox::_do_trigger()
 
 void Vox::_set_decay_start() {
     auto decay_length = kSliceSlope * _playhead_increment;
-    if (decay_length < _size) {
-        _decay_start = _size - decay_length;
-    }
+    // When the slope is longer than the whole grain (high increment + small slice),
+    // the entire grain is the fade: start decay at 0 rather than leaving a stale value.
+    _decay_start = std::max(0.f, _size - decay_length);
 }
 
 void Vox::_stop() 
