@@ -2,10 +2,16 @@
 
 //https://en.wikipedia.org/wiki/WAV
 
+#include <cstdint>
+#include <cstddef>
+#include <cstring>
+
 struct WavHeader {
   // Master RIFF chunk
   uint8_t FileTypeBlocID[4] = {'R', 'I', 'F', 'F'};
-  size_t size;
+  uint32_t size;  // RIFF chunk size: a 32-bit field per the WAV spec (was size_t,
+                  // which is 4 bytes only on the 32-bit target and breaks the
+                  // 44-byte layout / static_assert on a 64-bit host).
   uint8_t FileFormatID[4] = {'W', 'A', 'V', 'E'};
   
   // Chunk describing the data format

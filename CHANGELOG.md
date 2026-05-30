@@ -66,13 +66,25 @@ harden the code against future changes.
   `SynClock` emits exactly `_ticks_per_clock` internal ticks per external clock pulse for
   24->48 and 12->48 PPQN, including when the internal timer is over-driven (S3). Also covers
   the `Config` text parser (S5): valid parse, the `is_loaded()` default (V1), and the
-  documented brittleness (mid-token whitespace stripping, unknown/overlong names ignored).
+  documented brittleness (mid-token whitespace stripping, unknown/overlong names ignored);
+  the `wav.h` header builder/parser (canonical 44-byte layout, build->serialize->parse
+  round-trip, rejection of short/non-RIFF input); and `SpeedMap` (semitone->speed table:
+  octave/fifth anchors, end clamping, monotonicity). A `test/stubs/daisysp.h` shim supplies
+  the few DaisySP symbols referenced by otherwise-pure headers. 59 checks across 5 classes.
 
 ### Fixed (portability)
 
 - **`divider.h` now includes `<cmath>` for `std::round`** (was relying on `<math.h>`, which
   only places `round` in `std::` on the ARM toolchain, not in standard libc++). Surfaced by
   the new host harness; no effect on the firmware build. (`src/core/divider.h`)
+
+- **`WavHeader::size` retyped `size_t` -> `uint32_t`.** The RIFF chunk-size field is a
+  32-bit field per the WAV spec; `size_t` is 4 bytes only on the 32-bit target, so the
+  44-byte layout (and its `static_assert`) held there but broke on a 64-bit host and would
+  emit a malformed header on any 64-bit build. Layout-identical on-target (verified: the
+  firmware binary is byte-for-byte unchanged in size); `wav.h` also now includes the
+  `<cstdint>`/`<cstddef>`/`<cstring>` it uses rather than relying on its includers.
+  Surfaced by the host harness. (`src/memory/wav.h`)
 
 ## [1.0.2]
 

@@ -4,13 +4,17 @@
 # Run with: make -C test test
 
 CXX      ?= c++
-CXXFLAGS := -std=c++17 -O0 -g -Wall -Wextra -I../src -I../src/core
+# -Istubs provides minimal host shims (e.g. daisysp.h) for headers that pull in
+# library deps but whose logic under test is pure.
+CXXFLAGS := -std=c++17 -O0 -g -Wall -Wextra \
+            -Istubs -I../src -I../src/core -I../src/memory -I../src/ui
 
 # Production sources under test (compiled natively, unchanged).
 UNIT_SRC := ../src/core/divider.cpp ../src/core/synclock.cpp
 
 # Test sources.
-TEST_SRC := test_main.cpp test_divider.cpp test_synclock.cpp test_config.cpp
+TEST_SRC := test_main.cpp test_divider.cpp test_synclock.cpp test_config.cpp \
+            test_wav.cpp test_speedmap.cpp
 
 runner: $(UNIT_SRC) $(TEST_SRC) check.h
 	$(CXX) $(CXXFLAGS) $(UNIT_SRC) $(TEST_SRC) -o runner

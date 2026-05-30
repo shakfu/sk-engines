@@ -16,6 +16,21 @@ inline int g_fail = 0;
     }                                                                          \
   } while (0)
 
+#define CHECK_NEAR(a, b, eps)                                                  \
+  do {                                                                         \
+    double _a = (a);                                                           \
+    double _b = (b);                                                           \
+    double _d = _a - _b;                                                       \
+    if (_d < 0) _d = -_d;                                                      \
+    if (_d <= (eps)) {                                                         \
+      ++g_pass;                                                                \
+    } else {                                                                   \
+      ++g_fail;                                                                \
+      std::printf("  FAIL %s:%d  %s ~= %s  (got %g vs %g)\n", __FILE__,        \
+                  __LINE__, #a, #b, _a, _b);                                   \
+    }                                                                          \
+  } while (0)
+
 #define CHECK_EQ(a, b)                                                         \
   do {                                                                         \
     auto _a = (a);                                                             \
