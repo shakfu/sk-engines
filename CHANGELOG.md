@@ -70,7 +70,9 @@ harden the code against future changes.
   the `wav.h` header builder/parser (canonical 44-byte layout, build->serialize->parse
   round-trip, rejection of short/non-RIFF input); and `SpeedMap` (semitone->speed table:
   octave/fifth anchors, end clamping, monotonicity). A `test/stubs/daisysp.h` shim supplies
-  the few DaisySP symbols referenced by otherwise-pure headers. 59 checks across 5 classes.
+  the few DaisySP symbols referenced by otherwise-pure headers (`fmap`, `fclamp`); and
+  `Follower` (mean-square envelope follower: reset, steady-state convergence, output
+  clamping, amp scaling, attack-faster-than-release). 67 checks across 6 classes.
 
 ### Fixed (portability)
 
@@ -85,6 +87,10 @@ harden the code against future changes.
   firmware binary is byte-for-byte unchanged in size); `wav.h` also now includes the
   `<cstdint>`/`<cstddef>`/`<cstring>` it uses rather than relying on its includers.
   Surfaced by the host harness. (`src/memory/wav.h`)
+
+- **`follower.cpp` now includes `<cmath>` for `std::exp`** (was relying on `<math.h>`; same
+  std-namespace portability issue as `divider.h`). Surfaced by the host harness; no effect
+  on the firmware build. (`src/core/follower.cpp`)
 
 ## [1.0.2]
 

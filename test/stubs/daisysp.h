@@ -15,4 +15,9 @@ inline float fmap(float in, float min, float max, Mapping = Mapping::LINEAR) {
   return min + in * (max - min);
 }
 
+// DaisySP's branchless clamp of `in` to [min,max].
+inline float fclamp(float in, float min, float max) {
+  return std::clamp(in, min, max);
+}
+
 }  // namespace daisysp

@@ -10,11 +10,11 @@ CXXFLAGS := -std=c++17 -O0 -g -Wall -Wextra \
             -Istubs -I../src -I../src/core -I../src/memory -I../src/ui
 
 # Production sources under test (compiled natively, unchanged).
-UNIT_SRC := ../src/core/divider.cpp ../src/core/synclock.cpp
+UNIT_SRC := ../src/core/divider.cpp ../src/core/synclock.cpp ../src/core/follower.cpp
 
 # Test sources.
 TEST_SRC := test_main.cpp test_divider.cpp test_synclock.cpp test_config.cpp \
-            test_wav.cpp test_speedmap.cpp
+            test_wav.cpp test_speedmap.cpp test_follower.cpp
 
 runner: $(UNIT_SRC) $(TEST_SRC) check.h
 	$(CXX) $(CXXFLAGS) $(UNIT_SRC) $(TEST_SRC) -o runner

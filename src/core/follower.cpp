@@ -1,6 +1,6 @@
 #include "follower.h"
 #include "daisysp.h"
-#include <math.h>
+#include <cmath> // std::exp
 
 using namespace spotykach;
 
