@@ -17,7 +17,12 @@ static constexpr size_t kSampleRate            { 48000 };
 static constexpr uint8_t kDecksCount           { 2 };
 static constexpr uint8_t kBuffersPerDeckCount  { 1 };
 static constexpr uint8_t kChannelsCount        { 2 };
+// 16-bit storage halves bytes/frame, so the same SDRAM holds twice the seconds.
+#if LOFI_INT16
+static constexpr uint8_t kSourceMaxSeconds     { 84 };
+#else
 static constexpr uint8_t kSourceMaxSeconds     { 42 };
+#endif
 
 class SDRAMBuffer {
 public:

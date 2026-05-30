@@ -2,6 +2,7 @@
 
 #include <daisy_seed.h>
 #include "nocopy.h"
+#include "../core/pcm_loader.h"
 
 namespace spotykach {
 
@@ -78,6 +79,8 @@ class Card
     size_t    _size;
     size_t    _offset;
     size_t    _size_read_audio;
+
+    PcmLoader _loader;  // audio-load accounting + on-the-fly width conversion
 
     bool _notify_finish_processing;
 };

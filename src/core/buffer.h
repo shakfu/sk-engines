@@ -13,10 +13,18 @@ namespace spotykach {
 
 class Buffer {
 public:
+    // Loop-buffer sample storage. Default is 32-bit float; LOFI_INT16 stores 16-bit PCM,
+    // halving bytes per frame (doubles record time / frees SDRAM). Conversion happens only
+    // at the read/write boundary in buffer.cpp; the rest of the class treats Frame opaquely.
+#if LOFI_INT16
+    using Sample = int16_t;
+#else
+    using Sample = float;
+#endif
     struct Frame {
-        float l;
-        float r;
-    };  
+        Sample l;
+        Sample r;
+    };
 
     Buffer();
     ~Buffer() {};

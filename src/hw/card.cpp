@@ -50,19 +50,25 @@ void Card::init_read_audio(const AudioData data)
     }
     
     #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-    if (hdr.NbrChannels == 2 
-        && hdr.BitsPerSample == 32
+    // Accept both supported depths regardless of build: 32-bit float (AudioFormat 3) and
+    // 16-bit PCM (AudioFormat 1). If the file's depth differs from this build's buffer
+    // storage (kWav*), samples are converted on the fly in read_audio() - so float tapes
+    // load into a 16-bit firmware and vice versa.
+    auto fmt_ok = (hdr.AudioFormat == 3 && hdr.BitsPerSample == 32)
+               || (hdr.AudioFormat == 1 && hdr.BitsPerSample == 16);
+    if (hdr.NbrChannels == 2
         && hdr.SampleRate == 48000
-        && hdr.AudioFormat == 3
+        && fmt_ok
         && hdr.DataSize > 0) {
+            _loader.begin((size_t)hdr.DataSize, hdr.BitsPerSample / 8,
+                          data.body, data.body_size, kWavBytesPerSample);
             _offset = 0;
-            _bytes = data.body;
-            _size = std::min(data.body_size, (size_t)hdr.DataSize);
-            _state = State::read_audio;        
+            _size   = _loader.size_bytes();  // keep progress() in sync
+            _state  = State::read_audio;
     }
     else {
         _state = State::failed;
-        _close_file();      
+        _close_file();
     }
 
     if (f_lseek(&_sdfile, hdr_size) != FR_OK) {
@@ -83,13 +89,14 @@ void Card::read_audio()
         return;
     }
 
-    auto buf_len = std::min(_size - _offset, bytesread);
-    std::memcpy(&_bytes[_offset], _buffer, buf_len);
+    // kChunk is a multiple of both sample widths and WAV data is sample-aligned, so every
+    // chunk holds whole samples - no cross-chunk straddle. The loader converts (when the
+    // file depth differs from the buffer) and tracks the byte/frame accounting.
+    bool buffer_full = _loader.feed(_buffer, bytesread);
+    _offset = _loader.offset();                  // keep progress() in sync
+    _size_read_audio = _loader.frames();
 
-    _offset += buf_len;
-    _size_read_audio = _offset / 8; // (2 channels * 4 bytes)
-
-    if (bytesread < kChunk || buf_len < bytesread) {
+    if (bytesread < kChunk || buffer_full) {
         _notify_finish_processing = true;
         _state = State::idle;
         _close_file();

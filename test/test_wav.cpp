@@ -59,4 +59,24 @@ void run_wav_tests() {
     uint8_t garbage[44] = {0};
     CHECK(!wav_header(garbage, sizeof(garbage), out, hs));  // no "RIFF"
   }
+
+  // Format compatibility: the parser reads whatever depth the file declares, so it can
+  // distinguish a 16-bit PCM file from a 32-bit float one on load (LOFI_INT16 migration).
+  {
+    // Start from a valid header, patch the fmt fields to 16-bit PCM, parse it back.
+    WavHeader h = wav_header((size_t)4096);
+    h.AudioFormat = 1;       // PCM integer
+    h.BitsPerSample = 16;
+    h.BytePerBloc = 4;       // 2 bytes * 2 channels
+    h.BytePerSec = 48000 * 4;
+    uint8_t bytes[44];
+    std::memcpy(bytes, &h, sizeof(h));
+
+    WavHeader parsed;
+    size_t hs = 0;
+    CHECK(wav_header(bytes, sizeof(bytes), parsed, hs));
+    CHECK_EQ((int)parsed.AudioFormat, 1);
+    CHECK_EQ((int)parsed.BitsPerSample, 16);
+    CHECK_EQ((int)parsed.DataSize, 4096);
+  }
 }

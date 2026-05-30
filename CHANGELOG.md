@@ -72,7 +72,48 @@ harden the code against future changes.
   octave/fifth anchors, end clamping, monotonicity). A `test/stubs/daisysp.h` shim supplies
   the few DaisySP symbols referenced by otherwise-pure headers (`fmap`, `fclamp`); and
   `Follower` (mean-square envelope follower: reset, steady-state convergence, output
-  clamping, amp scaling, attack-faster-than-release). 67 checks across 6 classes.
+  clamping, amp scaling, attack-faster-than-release); the `sample16` float<->int16
+  conversion (round-trip, clamping, quantization step); `convert_pcm_block` (the load
+  shim: f32<->i16 block conversion, clamping, and float->i16->float round-trip within a
+  quantization step); and `PcmLoader` - a simulation of the SD audio-load accounting
+  (frame counts, truncation to capacity, termination, contiguous placement) across every
+  width combo and many chunk sizes, exercising the exact code card.cpp runs. 116 checks
+  across 9 classes.
+
+- **`LOFI_INT16` 16-bit loop buffer (default off, opt-in via `make LOFI_INT16=1`).** Stores
+  the loop buffer as 16-bit PCM instead of 32-bit float, **doubling record time to 84 s in
+  the same SDRAM** (verified: SDRAM footprint identical at both depths; `SRAM_EXEC` +304 B
+  for the conversion code). Pieces:
+  - `src/core/sample16.h` - pure, host-tested float<->int16 convert with hard clip.
+  - `Buffer::Frame` becomes `int16_t` under the flag (`Buffer::Sample` alias); conversion
+    is confined to the two element-wise sites, `Buffer::_read` and `Buffer::write` (the
+    overdub mix stays in float, then clamps + quantizes). Identity / byte-identical codegen
+    when the flag is off.
+  - `kSourceMaxSeconds` 42 -> 84 under the flag; `wav.h` emits a 16-bit PCM header; the SD
+    load path (`card.cpp`) accepts the matching depth and computes frames from the correct
+    byte width.
+  - `Makefile` gains a `LOFI_INT16=1` build option (mirrors `DEBUG=1`).
+  Audio storage behaviour in the default build is byte-identical (the `int16` paths compile
+  out); the default save format is still 32-bit float.
+
+- **Convert-on-load shim (`src/core/pcm_convert.h`, wired into `card.cpp`).** The SD load
+  path now accepts BOTH 16-bit PCM and 32-bit float files in either build and converts to
+  the buffer's storage width on the fly (`convert_pcm_block`, pure + host-tested). So a
+  16-bit firmware loads legacy float tapes and a float firmware loads 16-bit tapes -
+  resolving the prior "rejects mismatched tapes" limitation; tapes are portable across
+  builds. `kChunk` (32 KB) is a multiple of both sample widths and WAV data is
+  sample-aligned, so chunks never straddle a sample (no carry buffer needed). Loading a
+  longer tape than the buffer holds truncates to capacity. The streaming size/offset/
+  termination math lives in a pure, host-tested helper (`src/core/pcm_loader.h`,
+  `PcmLoader`) that card.cpp delegates to, so the accounting is validated off-target rather
+  than by reasoning alone. Note: this adds the dual-format acceptance + converter to the
+  **default** build too (~+150 B `SRAM_EXEC`), so the default firmware now also reads 16-bit
+  tapes - a small, additive behaviour change. The audible overdub-quantization character of
+  the 16-bit buffer remains unverified by ear. See `docs/lofi-int16-scope.md`.
+
+- **Design scope docs** `docs/lofi-path-b-scope.md` (half-rate buffer) and
+  `docs/lofi-int16-scope.md` (16-bit storage): inventories of the frame<->time/tempo
+  coupling and the change sites for each lo-fi record-time approach.
 
 ### Fixed (portability)
 

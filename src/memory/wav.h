@@ -28,16 +28,29 @@ struct WavHeader {
   uint32_t DataSize;
 };
 
+// Sample storage format for the loop buffer, reflected in the WAV header. Default is
+// 32-bit IEEE-754 float (AudioFormat 3); LOFI_INT16 selects 16-bit PCM (AudioFormat 1).
+// This MUST match Buffer::Frame's actual element type - see docs/lofi-int16-scope.md.
+#if LOFI_INT16
+static constexpr uint16_t kWavAudioFormat    = 1;  // PCM integer
+static constexpr uint16_t kWavBitsPerSample  = 16;
+static constexpr uint16_t kWavBytesPerSample = 2;
+#else
+static constexpr uint16_t kWavAudioFormat    = 3;  // IEEE-754 float
+static constexpr uint16_t kWavBitsPerSample  = 32;
+static constexpr uint16_t kWavBytesPerSample = 4;
+#endif
+
 inline WavHeader wav_header(const size_t size) {
     WavHeader header;
     static_assert(sizeof(header) == 44, "");
 
-    header.AudioFormat = 3;
+    header.AudioFormat = kWavAudioFormat;
     header.NbrChannels = 2;
     header.SampleRate = 48000;
-    header.BytePerBloc = sizeof(float) * header.NbrChannels;
+    header.BytePerBloc = kWavBytesPerSample * header.NbrChannels;
     header.BytePerSec = header.SampleRate * header.BytePerBloc;
-    header.BitsPerSample = 32;
+    header.BitsPerSample = kWavBitsPerSample;
 
     header.DataSize = size;
     header.size = header.DataSize + sizeof(header) - 8;

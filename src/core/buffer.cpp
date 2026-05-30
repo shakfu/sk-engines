@@ -4,8 +4,19 @@
 #include "expose.h"
 #include "daisysp.h"
 #include "../common.h"
+#include "sample16.h"
 
 using namespace spotykach;
+
+// Encode/decode a stored sample to/from the float used by the DSP. Identity (and so
+// byte-identical codegen) when Frame stores float; float<->int16 when LOFI_INT16 is on.
+#if LOFI_INT16
+static inline float    dec(Buffer::Sample s) { return i16_to_float(s); }
+static inline Buffer::Sample enc(float f)    { return float_to_i16(f); }
+#else
+static inline float    dec(Buffer::Sample s) { return s; }
+static inline Buffer::Sample enc(float f)    { return f; }
+#endif
 
 Buffer::Buffer():
 _buffer         { nullptr },
@@ -160,8 +171,8 @@ void Buffer::read_cubic(float frame, float& out0, float& out1)
 void Buffer::_read(size_t frame, float& out0, float& out1) {
     frame %= _size;
     auto f = _buffer[frame];
-    out0 = f.l;
-    out1 = f.r;
+    out0 = dec(f.l);
+    out1 = dec(f.r);
 
     _read_head = frame;
 };
@@ -188,10 +199,10 @@ void Buffer::write(const float in0, const float in1) {
     auto fb = infrasonic::map(_cut_switch.process(), 0.f, 1.f, 1.f, _feedback);
     auto fb_fade = std::clamp(1.f - fade * (1.f - fb), 0.f, 1.f);
 
-    // Write buffer
+    // Write buffer (mix happens in float; enc() clamps + quantizes for int16 storage)
     auto f = _buffer[_write_head];
-    f.l = in0 * fade + f.l * fb_fade;
-    f.r = in1 * fade + f.r * fb_fade;
+    f.l = enc(in0 * fade + dec(f.l) * fb_fade);
+    f.r = enc(in1 * fade + dec(f.r) * fb_fade);
     _buffer[_write_head] = f;
 
     // Advance write head

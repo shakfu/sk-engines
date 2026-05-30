@@ -1,8 +1,13 @@
 # Config Options
 # DEBUG=1
+# LOFI_INT16=1   # store the loop buffer as 16-bit PCM (doubles record time to 84s)
 
 ifeq ($(DEBUG), 1)
 C_DEFS += -DINFS_LOG=1
+endif
+
+ifeq ($(LOFI_INT16), 1)
+C_DEFS += -DLOFI_INT16=1
 endif
 
 USE_FATFS = 1
