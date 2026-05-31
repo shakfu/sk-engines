@@ -167,14 +167,19 @@ int main() {
         }
         check(passthrough, "passthrough process() copies in -> out");
 
+        // Count lit pixels across both rings THROUGH the real LEDRing::apply(sink) blit path
+        // (pixels are private; this also exercises the hardware-free blit the platform uses).
+        auto count_lit = [](DisplayModel& m) {
+            int lit = 0;
+            for (int r = 0; r < 2; r++)
+                m.ring[r].apply([&](uint8_t, uint32_t, float b){ if (b > 0.f) lit++; });
+            return lit;
+        };
+
         // render: a non-zero block peak must light some ring pixels + the play indicators.
         DisplayModel model;
         pe.render(model);
-        int lit = 0;
-        for (int r = 0; r < 2; r++)
-            for (int p = 0; p < DisplayModel::kRingPixels; p++)
-                if (model.ring[r][p].brightness > 0.f) lit++;
-        check(lit > 0, "render() lights ring pixels for a non-zero level");
+        check(count_lit(model) > 0, "render() lights ring pixels for a non-zero level");
         check(model.play[0].brightness > 0.f && model.play[1].brightness > 0.f,
               "render() lights both play indicators");
 
@@ -182,13 +187,11 @@ int main() {
         for (size_t i = 0; i < host::kBlock; i++) { in_l[i] = in_r[i] = 0.f; }
         pe.process(in_ptrs, out_ptrs, host::kBlock);
         DisplayModel silent;
-        for (int p = 0; p < DisplayModel::kRingPixels; p++) silent.ring[0][p] = { 0xdeadbe, 0.9f };
+        silent.ring[0].set_hex_color(0xdeadbe);
+        silent.ring[0].set_segment(0.f, 0.999f);   // pre-dirty: render() must clear() it
+        silent.ring[0].set_updated();
         pe.render(silent);
-        int lit_silent = 0;
-        for (int r = 0; r < 2; r++)
-            for (int p = 0; p < DisplayModel::kRingPixels; p++)
-                if (silent.ring[r][p].brightness > 0.f) lit_silent++;
-        check(lit_silent == 0, "render() shows no meter for silence");
+        check(count_lit(silent) == 0, "render() shows no meter for silence");
     }
 
     if (g_failures == 0) {

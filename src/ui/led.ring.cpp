@@ -128,33 +128,8 @@ void LEDRing::_set(int8_t idx, const infrasonic::Color color, const float bright
     _brights[idx] = (overlay ? _segment_brightness : brightness) * kBrightnessMult;
 }
 
-void set_led(Hardware& hw, const uint16_t ring, const uint16_t idx, const int color, const float brightness)
-{
-    uint16_t ledidx = ring;
-    static const auto kHalf = 16;
-    if(idx <= kHalf)
-    {
-        ledidx += kHalf - idx;
-    }
-    else
-    {
-        ledidx += Hardware::kNumLedsPerRing - 1;
-        ledidx -= idx - kHalf - 1;
-    }
-
-    hw.leds.Set(ledidx, color, brightness);
-}
-void LEDRing::apply(Hardware& hw, const Hardware::LedId ref)
-{
-    for (uint8_t i = 0; i < _brights.size(); i++) {
-        if (_is_updated) {
-            _colors_cache[i] = _colors[i];
-            _brights_cache[i] = _brights[i];
-        }
-        set_led(hw, ref, i, _colors_cache[i].Hex(), _brights_cache[i]);
-    }
-    _is_updated = false;
-}
+// apply() is now a hardware-free template in led.ring.h; the chain-index remap (formerly the
+// set_led() free function here) moved to the platform as CoreUI's blit sink in core.ui.leds.cpp.
 
 void LEDRing::clear()
 {

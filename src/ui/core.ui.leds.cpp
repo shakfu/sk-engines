@@ -76,7 +76,23 @@ static uint32_t grit_color(const Fx::GritMode mode)
     }
 }
 
-void CoreUI::render_leds() 
+// Pixel sink for LEDRing::apply() - maps a ring-local pixel index to the physical LED chain.
+// Moved here (the platform) from led.ring.cpp so the ring canvas stays hardware-free.
+static void set_led(Hardware& hw, const uint16_t ring, const uint16_t idx, const int color, const float brightness)
+{
+    uint16_t ledidx = ring;
+    static const auto kHalf = 16;
+    if (idx <= kHalf) {
+        ledidx += kHalf - idx;
+    }
+    else {
+        ledidx += Hardware::kNumLedsPerRing - 1;
+        ledidx -= idx - kHalf - 1;
+    }
+    hw.leds.Set(ledidx, color, brightness);
+}
+
+void CoreUI::render_leds()
 {
     static auto led_count = 0;
     if (_clock_led_on) {
@@ -152,8 +168,8 @@ void CoreUI::_draw_leds()
     _hw.leds.Set(Hardware::LED_GATE_IN_B, mode_color_b, gate_in_b_bright);
 
     // RINGS ////////////////////////////////////////////////
-    _ring[Deck::A].apply(_hw, Hardware::LED_RING_A);
-    _ring[Deck::B].apply(_hw, Hardware::LED_RING_B);
+    _ring[Deck::A].apply([&](uint8_t i, uint32_t hex, float b){ set_led(_hw, Hardware::LED_RING_A, i, hex, b); });
+    _ring[Deck::B].apply([&](uint8_t i, uint32_t hex, float b){ set_led(_hw, Hardware::LED_RING_B, i, hex, b); });
     
     _led[Hardware::LED_PLAY_A].set(_hw);
     _led[Hardware::LED_REV_A].set(_hw);
@@ -202,7 +218,8 @@ void CoreUI::_draw_launching()
         _ring[ref].set_hex_color(mode_color(_core.deck(ref).mode()));
         _ring[ref].set_segment(0.f, 0.999f);
         _ring[ref].set_updated();
-        _ring[ref].apply(_hw, ref == Deck::A ? Hardware::LED_RING_A : Hardware::LED_RING_B);
+        auto base = ref == Deck::A ? Hardware::LED_RING_A : Hardware::LED_RING_B;
+        _ring[ref].apply([&](uint8_t i, uint32_t hex, float b){ set_led(_hw, base, i, hex, b); });
     }
 
     if (t < 2 * totalFadeInTime) return;

@@ -1,17 +1,23 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
 #include "color.h"
-#include "../hw/hardware.h"
 
 namespace spotykach
 {
+    // A hardware-free ring drawing canvas: all methods operate on the internal per-pixel
+    // _colors/_brights buffers; nothing here knows about the LED hardware. The platform blits
+    // it via the templated apply() below, supplying a pixel sink. This is the Option A foundation
+    // for the LED migration - an engine fills a LEDRing in render(DisplayModel&) and the platform
+    // realizes it. apply() keeps the double-buffer cache + is_updated handshake (main loop
+    // produces, the TIM5 ISR consumes) inside the canvas where that state belongs.
     class LEDRing
     {
     public:
         LEDRing();
         ~LEDRing() = default;
-        
+
         void set_hex_color(const uint32_t);
         void set_brightness(const float);
         void fill_brightness(const float brightness);
@@ -25,7 +31,22 @@ namespace spotykach
 
         bool is_updated() const { return _is_updated; }
         void set_updated() { _is_updated = true; }
-        void apply(Hardware&, const Hardware::LedId);
+
+        // Blit through a caller-supplied sink: void(uint8_t idx, uint32_t hex, float brightness).
+        // The platform's sink maps idx -> the physical LED chain. Same cache/reset semantics as
+        // the former apply(Hardware&, LedId) - behavior-identical, just hardware-free.
+        template <class Sink>
+        void apply(Sink set_pixel)
+        {
+            for (uint8_t i = 0; i < _brights.size(); i++) {
+                if (_is_updated) {
+                    _colors_cache[i] = _colors[i];
+                    _brights_cache[i] = _brights[i];
+                }
+                set_pixel(i, _colors_cache[i].Hex(), _brights_cache[i]);
+            }
+            _is_updated = false;
+        }
 
         void clear();
 

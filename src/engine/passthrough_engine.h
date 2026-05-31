@@ -54,14 +54,16 @@ public:
     Capabilities capabilities() const { return CapTransport; }
 
     // A non-granular display: a symmetric level meter on both rings + lit play indicators.
+    // Drawn with LEDRing's primitives (Option A) - exactly how a granular render() will reuse them.
     void render(DisplayModel& m) const {
         m.clear();
         const float level = _peak > 1.f ? 1.f : _peak;
-        const int lit = static_cast<int>(level * DisplayModel::kRingPixels + 0.5f);
         for (int r = 0; r < 2; r++) {
-            for (int p = 0; p < lit && p < DisplayModel::kRingPixels; p++) {
-                m.ring[r][p] = { 0xffffff, 1.f };
+            if (level > 1e-4f) {
+                m.ring[r].set_hex_color(0xffffff);
+                m.ring[r].set_segment(0.f, level * 0.999f);
             }
+            m.ring[r].set_updated();         // mark ready for the platform blit
             m.play[r] = { 0x00ff00, 1.f };
         }
     }

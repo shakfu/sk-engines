@@ -2,6 +2,11 @@
 #include "Utility/dsp.h"
 #include "expose.h"
 
+// Size-optimize this whole TU to reclaim SRAM_EXEC for the LED migration. The only
+// audio-adjacent code here is read_cv (per-block 500 Hz control glue, not per-sample DSP),
+// so -Os is perf-irrelevant; the audio DSP in core/*.cpp stays -O2 -funroll-loops.
+#pragma GCC optimize("Os")
+
 using namespace spotykach;
 using namespace infrasonic;
 using namespace daisy;
