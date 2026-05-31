@@ -13,10 +13,11 @@
 
 namespace spotykach {
 
-// The granular looper as an IEngine. Phase 2: it owns the Core graph and forwards the audio
-// lifecycle to it. The UI/storage/CV paths still reach the graph through core() until the
-// interaction layer is migrated into this class (Phase 3). The escape hatch is intentional
-// and temporary - it is the seam those later increments collapse.
+// The granular looper as an IEngine. It owns the Core graph, forwards the audio lifecycle, and
+// (after the input migration) owns all granular *input* meaning: parameters, MIDI, and pad
+// gestures - see the grouped methods below. The refactor is PAUSED at this input-decoupled
+// milestone; the output/IO side (LEDs, CV, gate, storage) still reaches the graph through the
+// core() escape hatch documented at that method. See docs/refactor-status.md.
 class GranularEngine : public IEngine {
 public:
     GranularEngine() = default;
@@ -62,7 +63,19 @@ public:
     void clear_sequence(Deck::Ref);
     void disarm_track(Deck::Ref); // disarm the deck's track if armed (Alt-pad action)
 
-    // Temporary direct access for the still-coupled UI/storage/CV paths.
+    // Escape hatch: direct access to the granular Core for the FOUR remaining couplings the
+    // refactor paused before decoupling (input side - knobs/MIDI/pads - is already on the
+    // engine API above). A second, non-granular engine cannot run until these are migrated to
+    // engine-side handlers:
+    //   1. LED rendering (core.ui.leds.cpp) - reads deck/buffer/generator/fx state to draw
+    //      rings + indicators; needs IEngine::render(DisplayModel&) + the MValue value-display
+    //      moved into a platform toolkit.
+    //   2. CV input (CoreUI::read_cv)        - writes deck mod-ins; needs an onCV handler.
+    //   3. Gate input (CoreUI::process_gate_in) - deck.trigger + voxs().read_reset_is_triggered;
+    //      needs an engine gate/trigger handler.
+    //   4. SD storage (Storage)              - deck buffer save/load/clear; needs a storage
+    //      capability the engine exposes.
+    // See docs/refactor-status.md for the resume roadmap.
     Core& core() { return _core; }
 
 private:

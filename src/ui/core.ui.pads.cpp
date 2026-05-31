@@ -1,5 +1,9 @@
 #include "core.ui.h"
 
+// Pad gesture handling runs only in the main loop (ProcessPads), never the audio path -
+// optimize for size to reclaim SRAM_EXEC. Perf-irrelevant here.
+#pragma GCC optimize("Os")
+
 using namespace spotykach;
 
 void CoreUI::_on_pad_touch(Hardware::Pad pad)

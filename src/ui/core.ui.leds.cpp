@@ -2,6 +2,10 @@
 #include "Utility/dsp.h"
 #include "config.h"
 
+// LED rendering runs only in the 62 Hz TIM5 path (render_leds), never the per-sample/per-block
+// audio path - so optimize this whole TU for size to reclaim SRAM_EXEC. Perf-irrelevant here.
+#pragma GCC optimize("Os")
+
 using namespace spotykach;
 using namespace infrasonic;
 using namespace daisy;
