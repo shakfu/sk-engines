@@ -57,17 +57,16 @@ Everything builds, flashes, and runs at each round; every step is behavior-prese
 
 ### Still coupled — the `engine.core()` escape hatch (LED migration in progress)
 
-The platform reaches the granular `Core` directly only for **LED rendering** (`core.ui.leds.cpp`).
-That migration is now under way; what's left after Rounds prep/1/2 (below):
+In `core.ui.leds.cpp` the only remaining `Core` read is **the ring steady-state** (`_draw_ring`) —
+buffer segment, playheads, record/overdub heads. This is Round 3 (next): the steady-state is
+interleaved with transient `MValue` value-displays (`_show_value(pos)`, the size-change arc,
+`_show_pitch`, poly-slice) that draw *relative to the segment geometry*. The fix has the engine
+draw the steady-state and return the geometry the platform overlays render against; the `MValue`
+overlays stay platform (knob pickup state). After Round 3 the LED file no longer touches `Core`.
 
-1. **The ring steady-state** (`_draw_ring`) — buffer segment, playheads, record/overdub heads.
-   This is the hard piece: the steady-state is interleaved with transient `MValue` value-displays
-   (`_show_value(pos)`, the size-change arc, `_show_pitch`, poly-slice) that draw *relative to the
-   segment geometry*. Separating them is the `render(DisplayModel&)` + `MValue`-toolkit work.
-2. **Transport / topology reads** in the ISR `_draw_leds` (and `_draw_launching`,
-   `_show_key_intervals`) — `driver()` clock source/color, `mod()` sync, `route()`, `deck.mode()`.
-   A distinct concern: the `Driver`/transport lives in `Core` today but is conceptually platform,
-   so it likely wants its own round before the `core()` hatch is finally cut.
+Separately (not a LED concern), `core.ui.cpp`/`pads`/`midi` still call `_core.driver()` for
+transport *actions* (`tick`/`toggle_play`/`reset`), kept by design — so the `engine.core()` hatch
+survives the LED migration; cutting it is the transport-ownership round (see roadmap).
 
 ### LED migration progress (committed, flash-verified)
 
@@ -85,6 +84,14 @@ That migration is now under way; what's left after Rounds prep/1/2 (below):
   structs); `_draw_fx`/`_draw_play`/`_draw_alt` read those instead of `_core.deck()/.fx()/.track()`,
   keeping the platform's color palette + blink/timer/storage logic. Those three are now
   `_core.`-free (faithful query substitution, same shape as the 3c pad migrations).
+- **Round 2.5 — transport/topology.** `GranularEngine` exposes `transport_leds`/`deck_leds`/`mix`/
+  `route`; the ISR `_draw_leds`, `_draw_launching`, and `_show_key_intervals` read those, and the
+  `clock_*_color` helpers take state instead of `Driver&`. **`_draw_ring` is now the sole remaining
+  `_core.` reader in `core.ui.leds.cpp`** — Round 3 (the ring steady-state) is cleanly isolated.
+
+  Note: "LEDs off `core()`" is not the same as "the `core()` hatch is removed". `core.ui.cpp`/
+  `pads`/`midi` still call `_core.driver()` for transport *actions* (`tick`/`toggle_play`/`reset`),
+  kept by design pending the transport-ownership decision (see roadmap).
 
 ### Grounding sketch (done) — `DisplayModel` + `PassthroughEngine` (host-only)
 
