@@ -39,9 +39,7 @@ void GranularEngine::set_param(const ParamId id, const Deck::Ref ref, const floa
         case ParamId::GritMix:       deck.fx().set_grit_mix(v); break;
         case ParamId::Feedback:      deck.set_feedback(v); break;
         case ParamId::Mix:           deck.set_inout_mix(v); break;
-        // The modulator's alt/range toggle is a modifier-layer concern that stays in the
-        // platform; it migrates with the live rewire. Apply the base behaviour here.
-        case ParamId::ModSpeed:      _core.mod(deck_ref).set_speed_norm(v, false); break;
+        case ParamId::ModSpeed:      set_mod_speed(ref, v, false); break; // sync comes via set_mod_speed live
         case ParamId::ModAmp:        _core.mod(deck_ref).set_amp_norm(v); break;
 
         // Global params (deck arg ignored).
@@ -135,6 +133,51 @@ void GranularEngine::disarm_track(const Deck::Ref ref)
 {
     auto& t = _core.deck(_safe_ref(ref)).track();
     if (t.is_armed()) t.disarm();
+}
+
+void GranularEngine::set_mod_speed(const Deck::Ref ref, const float value, const bool sync)
+{
+    _param_cache[static_cast<size_t>(ParamId::ModSpeed)][_safe_ref(ref)] = value;
+    _core.mod(_safe_ref(ref)).set_speed_norm(value, sync);
+}
+
+void GranularEngine::cv_mix(const Deck::Ref ref, const float value)
+{
+    _core.deck(_safe_ref(ref)).inout_mix_mod_in(value);
+}
+
+void GranularEngine::cv_size_pos(const Deck::Ref ref, const float value)
+{
+    auto& deck = _core.deck(_safe_ref(ref));
+    deck.size_mod_in(value);
+    deck.start_mod_in(value);
+}
+
+void GranularEngine::cv_voct(const Deck::Ref ref, const float value)
+{
+    const auto deck_ref = _safe_ref(ref);
+    const auto speed = _speed_map.bipolar_pitch2speed(value);
+    _voct_speed[deck_ref] = speed;
+    _core.deck(deck_ref).voxs().pitch_speed_mod_in(speed);
+}
+
+void GranularEngine::cv_crossfade(const float value)
+{
+    _core.mix_mod_in(value);
+}
+
+void GranularEngine::on_gate_trigger(const Deck::Ref ref)
+{
+    const auto deck_ref = _safe_ref(ref);
+    auto e = make_event();
+    e.p3 = _voct_speed[deck_ref];
+    e.p3_on = true;
+    _core.deck(deck_ref).trigger(&e);
+}
+
+bool GranularEngine::gate_out_triggered(const Deck::Ref ref)
+{
+    return _core.deck(_safe_ref(ref)).voxs().read_reset_is_triggered();
 }
 
 void GranularEngine::set_fx(const Deck::Ref ref, const FxKind kind, const bool on)

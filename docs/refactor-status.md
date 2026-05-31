@@ -44,18 +44,20 @@ builds, flashes, and runs; this is a deliberate stopping point, not a half-finis
   transport→play/stop are `engine.handle_midi_*`.
 - **Pads** — `core.ui.pads.cpp` is **deck-DSP-free**; all flux/grit/play/rev/seq/alt actions go
   through the engine. Only transport (`driver`) calls remain, by design.
+- **CV + gate** — `read_cv` calls `engine.cv_mix`/`cv_size_pos`/`cv_voct`/`cv_crossfade`
+  (platform still does the hardware read + calibration); `process_gate_in`/`_process_gate_out`
+  call `engine.on_gate_trigger` / `engine.gate_out_triggered` (platform keeps edge/latency +
+  the gate-out pulse). `cv_voct` caches the V/Oct speed the gate trigger uses.
 
 ### Still coupled (deferred) — the `engine.core()` escape hatch
 
-The platform still reaches the granular `Core` directly for four things (see the `core()`
+The platform still reaches the granular `Core` directly for **two** things (see the `core()`
 comment in `granular_engine.h`). A non-granular 2nd engine can't run until these move to
 engine-side handlers:
 
 1. **LED rendering** (`core.ui.leds.cpp`) — reads deck/buffer/generator/fx state to draw rings
    + indicators, interleaved with the `MValue` value-display overlay.
-2. **CV in** (`CoreUI::read_cv`) — writes deck mod-ins.
-3. **Gate in** (`CoreUI::process_gate_in`) — `deck.trigger` + `voxs().read_reset_is_triggered`.
-4. **SD storage** (`Storage`) — deck buffer save/load/clear.
+2. **SD storage** (`Storage`) — deck buffer save/load/clear.
 
 ### Caveat: concrete vs abstract
 

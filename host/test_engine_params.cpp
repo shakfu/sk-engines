@@ -100,7 +100,20 @@ int main() {
         engine.set_param(ParamId::FluxMix, Deck::A, 0.3f);
         check(approx(engine.core().deck(Deck::A).fx().flux_mix(), 0.3f), "FluxMix lands on fx().flux_mix()");
 
-        // (2) finite-output smoke: feed a tone through a few blocks after the param sweep.
+        // (4) CV + gate + mod-speed: the host CAN drive these directly (unlike pads/LEDs).
+        // Exercise every handler across both decks; just assert no crash + cache where applicable.
+        for (auto ref : {Deck::A, Deck::B}) {
+            engine.cv_mix(ref, 0.2f);
+            engine.cv_size_pos(ref, 0.3f);
+            engine.cv_voct(ref, 0.0f);    // 0 semitones -> speed 1.0; caches _voct_speed for the gate
+            engine.set_mod_speed(ref, 0.5f, true);
+            check(approx(engine.param(ParamId::ModSpeed, ref), 0.5f), "set_mod_speed caches ModSpeed");
+            engine.on_gate_trigger(ref);          // fire the deck at the cached V/Oct speed
+            (void)engine.gate_out_triggered(ref); // bool query, must not crash
+        }
+        engine.cv_crossfade(0.5f);
+
+        // (2) finite-output smoke: feed a tone through a few blocks after the sweep + CV/gate.
         bool finite = true;
         for (int b = 0; b < 200; b++) {
             for (size_t i = 0; i < host::kBlock; i++) {
@@ -113,7 +126,7 @@ int main() {
                 if (!std::isfinite(out_l[i]) || !std::isfinite(out_r[i])) finite = false;
             }
         }
-        check(finite, "process() output stays finite after a full param sweep");
+        check(finite, "process() output stays finite after a full param + CV/gate sweep");
     }
 
     if (g_failures == 0) {

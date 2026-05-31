@@ -63,17 +63,29 @@ public:
     void clear_sequence(Deck::Ref);
     void disarm_track(Deck::Ref); // disarm the deck's track if armed (Alt-pad action)
 
-    // Escape hatch: direct access to the granular Core for the FOUR remaining couplings the
-    // refactor paused before decoupling (input side - knobs/MIDI/pads - is already on the
-    // engine API above). A second, non-granular engine cannot run until these are migrated to
-    // engine-side handlers:
+    // Modulator speed (Phase 3c). sync = the Alt modifier (LFO sync vs free).
+    void set_mod_speed(Deck::Ref, float value, bool sync);
+
+    // CV inputs (Phase 3c). The platform reads + calibrates each jack and routes by role; the
+    // engine decides what each CV does. cv_voct caches the V/Oct speed for the gate trigger.
+    void cv_mix(Deck::Ref, float value);
+    void cv_size_pos(Deck::Ref, float value);
+    void cv_voct(Deck::Ref, float value);
+    void cv_crossfade(float value);
+
+    // Gate (Phase 3c). on_gate_trigger fires the deck at the last V/Oct speed; the platform
+    // owns edge/latency detection + the gate-out pulse timing. gate_out_triggered reports a
+    // loop-reset event for the platform's gate-out.
+    void on_gate_trigger(Deck::Ref);
+    bool gate_out_triggered(Deck::Ref);
+
+    // Escape hatch: direct access to the granular Core for the TWO remaining couplings (input,
+    // CV, and gate are already on the engine API above). A second, non-granular engine cannot
+    // run until these are migrated to engine-side handlers:
     //   1. LED rendering (core.ui.leds.cpp) - reads deck/buffer/generator/fx state to draw
     //      rings + indicators; needs IEngine::render(DisplayModel&) + the MValue value-display
     //      moved into a platform toolkit.
-    //   2. CV input (CoreUI::read_cv)        - writes deck mod-ins; needs an onCV handler.
-    //   3. Gate input (CoreUI::process_gate_in) - deck.trigger + voxs().read_reset_is_triggered;
-    //      needs an engine gate/trigger handler.
-    //   4. SD storage (Storage)              - deck buffer save/load/clear; needs a storage
+    //   2. SD storage (Storage)             - deck buffer save/load/clear; needs a storage
     //      capability the engine exposes.
     // See docs/refactor-status.md for the resume roadmap.
     Core& core() { return _core; }
@@ -85,6 +97,7 @@ private:
 
     Core _core;
     SpeedMap<60> _speed_map;
+    float _voct_speed[Deck::Count] = { 1.f, 1.f }; // last V/Oct CV speed, used by gate triggers
     float _param_cache[static_cast<size_t>(ParamId::Count)][Deck::Count] = {};
 };
 

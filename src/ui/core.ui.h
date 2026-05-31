@@ -15,7 +15,6 @@
 #include "nocopy.h"
 #include "hold.h"
 #include "mvalue.h"
-#include "core/speed.map.h"
 #include "calibrator.h"
 #include "time.iterval.h"
 #include "led.ring.h"
@@ -80,7 +79,6 @@ private:
     void _on_quarter(const bool /*is key quarter*/);
     void _set_tempo_by_size(const Deck::Ref, const float fraction);
 
-    void _trigger(const Deck::Ref, const float speed, const bool discont = false);
 
     // LEDs ////////////////////////////////////////
     void _draw_leds();
@@ -198,7 +196,6 @@ private:
 
     float _lfo_a;
     float _lfo_b;
-    std::array<float, Deck::Count> _speed_mult;
 
     daisy::StopwatchTimer _blink_timer;
     daisy::StopwatchTimer _arm_blink_timer;
@@ -211,16 +208,12 @@ private:
 
     bool _show_rec_a;
     bool _show_rec_b;
-    bool _middle_pitch_a;
-    bool _middle_pitch_b;
     float pitch_seg_a;
     float pitch_seg_b;
 
     std::bitset<2> _gate_in;
     TimeInterval<8/*ms*/> _gate_a_latency;
     TimeInterval<8/*ms*/> _gate_b_latency;
-
-    SpeedMap<60> _speed_map;
 
     TimeInterval<1000/*ms*/> _value_display_timeout;
 

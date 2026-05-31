@@ -49,8 +49,6 @@ void CoreUI::init() {
     auto on_clock_out = std::bind(&CoreUI::_process_clock_out, this);
     _core.driver().set_on_clock_out(on_clock_out);
 
-    _speed_map.init();
-
     for (int i = 0; i < Hardware::LED_LAST; i++) _led[i].init(i);
 };
 
@@ -191,10 +189,7 @@ void CoreUI::process()
             if (_pitch_quantized.test(Deck::A)) {
                 speed_a = snapped_speed(speed_a);
             }
-            // Straggler: Speed carries the set_speed() middle-pitch return value, which the
-            // param API doesn't model yet; kept a direct Core call until Phase 3c.
-            if (deck_a.mode() == Mode::Slice) deck_a.voxs().set_pitch(speed_a);
-            else _middle_pitch_a = deck_a.voxs().set_speed(speed_a);
+            _engine.set_param(ParamId::Speed, Deck::A, speed_a);
         }
     }
     if (_apply.test(Hardware::CTRL_PITCH_B)) {
@@ -209,16 +204,12 @@ void CoreUI::process()
             if (_pitch_quantized.test(Deck::B)) {
                 speed_b = snapped_speed(speed_b);
             }
-            // Straggler: Speed carries the set_speed() middle-pitch return value, which the
-            // param API doesn't model yet; kept a direct Core call until Phase 3c.
-            if (deck_b.mode() == Mode::Slice) deck_b.voxs().set_pitch(speed_b);
-            else _middle_pitch_b = deck_b.voxs().set_speed(speed_b);
+            _engine.set_param(ParamId::Speed, Deck::B, speed_b);
         }
     }
     if (_apply.test(Hardware::CTRL_MODFREQ_A)) {
         if (_tap_hold.passed()) _engine.set_param(ParamId::Tempo, Deck::A, _tempo.value());
-        // Straggler: ModSpeed carries the Alt sync flag; routes via the param API in 3c.
-        else _core.mod(Deck::A).set_speed_norm(_mod_speed[Deck::A].value(), _touched.test(Alt));
+        else _engine.set_mod_speed(Deck::A, _mod_speed[Deck::A].value(), _touched.test(Alt));
     }
     if (_apply.test(Hardware::CTRL_MOD_AMT_A)) {
         if (_tap_hold.passed()) _engine.set_param(ParamId::ClickMix, Deck::A, _click_mix.value());
@@ -226,8 +217,7 @@ void CoreUI::process()
     }
     if (_apply.test(Hardware::CTRL_MODFREQ_B)) {
         if (_tap_hold.passed()) _engine.set_param(ParamId::PanSpeed, Deck::B, _pan_speed.value());
-        // Straggler: ModSpeed carries the Alt sync flag; routes via the param API in 3c.
-        else _core.mod(Deck::B).set_speed_norm(_mod_speed[Deck::B].value(), _touched.test(Alt));
+        else _engine.set_mod_speed(Deck::B, _mod_speed[Deck::B].value(), _touched.test(Alt));
     }
     if (_apply.test(Hardware::CTRL_MOD_AMT_B)) {
         if (_tap_hold.passed()) _engine.set_param(ParamId::PanRange, Deck::B, _pan_range.value());
@@ -274,44 +264,31 @@ void CoreUI::process()
 
 // CV ///////////////////////////////////////
 void CoreUI::read_cv() {
-    auto& deck_a = _core.deck(Deck::A);
-
+    // Platform reads + calibrates each CV jack; the engine routes by role.
     auto mix_mod_a = _hw.GetControlVoltageValue(Hardware::CV_MIX_A);
-    auto cor_mix_mod_a = _calibrator.correct(Hardware::CV_MIX_A, mix_mod_a);
-    deck_a.inout_mix_mod_in(cor_mix_mod_a);
+    _engine.cv_mix(Deck::A, _calibrator.correct(Hardware::CV_MIX_A, mix_mod_a));
 
     auto pos_size_mod_a = _hw.GetControlVoltageValue(Hardware::CV_SIZE_POS_A);
     auto cor_pos_size_mod_a = _calibrator.correct(Hardware::CV_SIZE_POS_A, pos_size_mod_a);
     cor_pos_size_mod_a = std::round(cor_pos_size_mod_a * 1000.f) / 1000.f;
-
-    deck_a.size_mod_in(cor_pos_size_mod_a);
-    deck_a.start_mod_in(cor_pos_size_mod_a);
+    _engine.cv_size_pos(Deck::A, cor_pos_size_mod_a);
 
     auto raw_cv_a = _hw.GetControlVoltageValue(Hardware::CV_V_OCT_A);
-    auto voct_a = _calibrator.correctVOctA(raw_cv_a);
-    _speed_mult[Deck::A] = _speed_map.bipolar_pitch2speed(voct_a);
-    deck_a.voxs().pitch_speed_mod_in(_speed_mult[Deck::A]);
-
-    auto& deck_b = _core.deck(Deck::B);
+    _engine.cv_voct(Deck::A, _calibrator.correctVOctA(raw_cv_a));
 
     auto mix_mod_b = _hw.GetControlVoltageValue(Hardware::CV_MIX_B);
-    auto cor_mix_mod_b = _calibrator.correct(Hardware::CV_MIX_B, mix_mod_b);
-    deck_b.inout_mix_mod_in(cor_mix_mod_b);
+    _engine.cv_mix(Deck::B, _calibrator.correct(Hardware::CV_MIX_B, mix_mod_b));
 
     auto pos_size_mod_b = _hw.GetControlVoltageValue(Hardware::CV_SIZE_POS_B);
     auto cor_pos_size_mod_b = _calibrator.correct(Hardware::CV_SIZE_POS_B, pos_size_mod_b);
     cor_pos_size_mod_b = std::round(cor_pos_size_mod_b * 1000.f) / 1000.f;
-    deck_b.size_mod_in(cor_pos_size_mod_b);
-    deck_b.start_mod_in(cor_pos_size_mod_b);
+    _engine.cv_size_pos(Deck::B, cor_pos_size_mod_b);
 
     auto raw_cv_b = _hw.GetControlVoltageValue(Hardware::CV_V_OCT_B);
-    auto voct_b = _calibrator.correctVOctB(raw_cv_b);
-    _speed_mult[Deck::B] = _speed_map.bipolar_pitch2speed(voct_b);
-    deck_b.voxs().pitch_speed_mod_in(_speed_mult[Deck::B]);
+    _engine.cv_voct(Deck::B, _calibrator.correctVOctB(raw_cv_b));
 
     auto mix_mod = _hw.GetControlVoltageValue(Hardware::CV_CROSSFADE);
-    auto cor_mix_mod = _calibrator.correct(Hardware::CV_CROSSFADE, mix_mod);
-    _core.mix_mod_in(cor_mix_mod);
+    _engine.cv_crossfade(_calibrator.correct(Hardware::CV_CROSSFADE, mix_mod));
 }
 
 // Gate /////////////////////////////////////
@@ -324,7 +301,8 @@ void CoreUI::process_gate_in()
         }
         _gate_in.set(0, a_high);
         if (_gate_a_latency.is_passed()) {
-            _trigger(Deck::A, _speed_mult[Deck::A]);
+            _engine.on_gate_trigger(Deck::A);
+            _show_gate_in(Deck::A);
         }
     }
     
@@ -335,13 +313,14 @@ void CoreUI::process_gate_in()
         }
         _gate_in.set(1, b_high);
         if (_gate_b_latency.is_passed()) {
-            _trigger(Deck::B, _speed_mult[Deck::B]);
+            _engine.on_gate_trigger(Deck::B);
+            _show_gate_in(Deck::B);
         }
     }
 }
 void CoreUI::_process_gate_out(const Deck::Ref ref)
 {
-    if (_core.deck(ref).voxs().read_reset_is_triggered()) {
+    if (_engine.gate_out_triggered(ref)) {
         _gate_out_timer[ref].Restart();
         _gate_out_high[ref] = true;
     }

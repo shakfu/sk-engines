@@ -52,15 +52,6 @@ bool CoreUI::_process_midi()
     }
     return has_clock;
 }
-void CoreUI::_trigger(const Deck::Ref ref, const float speed, const bool discont)
-{
-    auto e = make_event();
-    e.discont = discont;
-    e.p3 = speed;
-    e.p3_on = true;
-    _core.deck(ref).trigger(&e);
-    _show_gate_in(ref);
-}
 bool CoreUI::_process_realtime(daisy::MidiEvent& event)
 {
     switch (event.srt_type) {
