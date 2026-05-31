@@ -48,16 +48,20 @@ builds, flashes, and runs; this is a deliberate stopping point, not a half-finis
   (platform still does the hardware read + calibration); `process_gate_in`/`_process_gate_out`
   call `engine.on_gate_trigger` / `engine.gate_out_triggered` (platform keeps edge/latency +
   the gate-out pulse). `cv_voct` caches the V/Oct speed the gate trigger uses.
+- **Storage** — `Storage`/`DeckStorage` hold a `GranularEngine*` (not `Deck*`) and save/load the
+  loop buffer through a byte-based audio port (`audio_data`/`audio_recorded_bytes`/
+  `audio_capacity_bytes`/`audio_apply_loaded`/`audio_is_empty`). The tape/slot state machine,
+  preload, and SD `Card` I/O stay platform.
 
 ### Still coupled (deferred) — the `engine.core()` escape hatch
 
-The platform still reaches the granular `Core` directly for **two** things (see the `core()`
-comment in `granular_engine.h`). A non-granular 2nd engine can't run until these move to
-engine-side handlers:
+The platform reaches the granular `Core` directly for **one** thing only (see the `core()`
+comment in `granular_engine.h`). A non-granular 2nd engine can't render its own UI until it
+moves to an engine-side handler:
 
 1. **LED rendering** (`core.ui.leds.cpp`) — reads deck/buffer/generator/fx state to draw rings
-   + indicators, interleaved with the `MValue` value-display overlay.
-2. **SD storage** (`Storage`) — deck buffer save/load/clear.
+   + indicators, interleaved with the `MValue` value-display overlay. The hard redesign
+   (`render(DisplayModel&)` + moving `MValue` into a platform toolkit).
 
 ### Caveat: concrete vs abstract
 

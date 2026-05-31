@@ -110,6 +110,17 @@ int main() {
             check(approx(engine.param(ParamId::ModSpeed, ref), 0.5f), "set_mod_speed caches ModSpeed");
             engine.on_gate_trigger(ref);          // fire the deck at the cached V/Oct speed
             (void)engine.gate_out_triggered(ref); // bool query, must not crash
+
+            // (5) storage audio port: byte view + apply-loaded round-trip.
+            check(engine.audio_data(ref) != nullptr, "audio_data is non-null");
+            check(engine.audio_capacity_bytes(ref) ==
+                      host::kSourceFrames * sizeof(Buffer::Frame), "audio_capacity_bytes matches buffer");
+            engine.audio_apply_loaded(ref, 100);
+            check(!engine.audio_is_empty(ref), "audio not empty after apply_loaded(100)");
+            check(engine.audio_recorded_bytes(ref) == 100 * sizeof(Buffer::Frame),
+                  "audio_recorded_bytes reflects apply_loaded");
+            engine.audio_apply_loaded(ref, 0);
+            check(engine.audio_is_empty(ref), "audio empty after apply_loaded(0)");
         }
         engine.cv_crossfade(0.5f);
 

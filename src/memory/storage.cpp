@@ -2,6 +2,7 @@
 #include <string.h>
 #include "../hw/buffer.sdram.h"
 #include "storage.h"
+#include "engine/granular_engine.h"
 #include "wav.h"
 
 using namespace spotykach;
@@ -46,11 +47,12 @@ _recent_tape_idx { kNone },
 _recent_slot_idx { kNone }
 {}
 
-void DeckStorage::init(Card* card, Deck* deck)
+void DeckStorage::init(Card* card, GranularEngine* engine, Deck::Ref ref)
 {
     _card = card;
-    _deck = deck;
-    _deck_dir = _deck->ref == Deck::A ? A : B;
+    _engine = engine;
+    _ref = ref;
+    _deck_dir = _ref == Deck::A ? A : B;
 }
 
 void DeckStorage::set_on_save_audio(std::function<void(const Deck::Ref)> on_saved)
@@ -91,7 +93,7 @@ void DeckStorage::_read_slots()
     if (_state != State::selecting) return;
     char audio_path[12]; // /A/G/1.WAV
     for (size_t i = 0; i < _slots.size(); i++) {
-        audio_file_path(_deck->ref, _tape_idx, i, audio_path);
+        audio_file_path(_ref, _tape_idx, i, audio_path);
         _slots[i].is_empty = !_card->file_exists(audio_path);
     }
     _slot_idx = _tape_idx == _recent_tape_idx ? _recent_slot_idx : kNone;
@@ -99,15 +101,12 @@ void DeckStorage::_read_slots()
 
 void DeckStorage::save()
 {
-    if (_deck->is_empty()) return;
+    if (_engine->audio_is_empty(_ref)) return;
 
     Card::AudioData ad;
-    
-    auto audio = _deck->buffer().raw();
-    auto audio_size = _deck->buffer().rec_size();
 
-    auto body_size = audio_size * sizeof(Buffer::Frame);
-    ad.body = reinterpret_cast<uint8_t*>(audio);
+    auto body_size = _engine->audio_recorded_bytes(_ref);
+    ad.body = _engine->audio_data(_ref);
     ad.body_size = body_size;
 
     auto header = wav_header(body_size);
@@ -136,14 +135,10 @@ void DeckStorage::load()
     _recent_tape_idx = _tape_idx;
     _recent_slot_idx = _slot_idx;
 
-    auto audio = _deck->buffer().raw();
-    auto audio_size = _deck->buffer().size();
-
     Card::AudioData ad;
 
-    auto body_size = audio_size * sizeof(Buffer::Frame);
-    ad.body = reinterpret_cast<uint8_t*>(audio);
-    ad.body_size = body_size;
+    ad.body = _engine->audio_data(_ref);
+    ad.body_size = _engine->audio_capacity_bytes(_ref);
 
     ad.root_dir = (char *)kRootDir.c_str();
     ad.deck_dir = (char *)_deck_dir.c_str();
@@ -172,7 +167,7 @@ void DeckStorage::preload()
     uint8_t tape, slot;
     if (!_read_preload_source(tape, slot)) return;
     char audio_path[12]; // /SK/G/1.WAV
-    audio_file_path(_deck->ref, tape, slot, audio_path);
+    audio_file_path(_ref, tape, slot, audio_path);
     if (_card->file_exists(audio_path)) {
         _tape_idx = tape;
         _slot_idx = slot;
@@ -190,7 +185,7 @@ bool DeckStorage::_read_preload_source(uint8_t& tape, uint8_t& slot)
     If tape/slot is 0, no preload happening.
     */
     if (size < kMemSize) return false;
-    switch (_deck->ref) {
+    switch (_ref) {
         case Deck::A: {
             tape = data[0] - '0';
             slot = data[1] - '0';
@@ -238,11 +233,11 @@ static void write_preload_source(Card* card, const Deck::Ref deck, const uint8_t
 }
 void DeckStorage::_save_preload_source()
 {
-    write_preload_source(_card, _deck->ref, _tape_idx, _slot_idx);
+    write_preload_source(_card, _ref, _tape_idx, _slot_idx);
 }
 void DeckStorage::_clear_preload_source()
 {
-    write_preload_source(_card, _deck->ref, kNone, kNone);
+    write_preload_source(_card, _ref, kNone, kNone);
 }
 
 void DeckStorage::process() 
@@ -267,8 +262,7 @@ void DeckStorage::process()
             if (_card->state() == Card::State::read_audio) _card->read_audio();
             else { 
                 if (_card->notify_finish_processing()) {
-                    _deck->buffer().set_rec_size(_card->size_audio());
-                    _deck->apply_start_size();
+                    _engine->audio_apply_loaded(_ref, _card->size_audio());
                     if (!_is_preloading && Config::dynamic().is_preload_on()) _save_preload_source();
                 }
                 _is_preloading = false;
@@ -280,7 +274,7 @@ void DeckStorage::process()
             if (_card->state() == Card::State::write_audio) _card->write_audio();
             else {
                 if (_card->notify_finish_processing()) {
-                    _on_audio_saved(_deck->ref);
+                    _on_audio_saved(_ref);
                     if (Config::dynamic().is_preload_on()) _save_preload_source();
                 }
                 deactivate();

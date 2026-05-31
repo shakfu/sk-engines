@@ -10,6 +10,8 @@
 
 namespace spotykach {
 
+class GranularEngine; // platform's audio storage port (deck buffer save/load)
+
 static const std::string kConfig = "SK/config.txt";
 static const std::string kMemory = "SK/MEM";
 
@@ -38,7 +40,7 @@ public:
     DeckStorage();
     ~DeckStorage() = default;
 
-    void init(Card*, Deck*);
+    void init(Card*, GranularEngine*, Deck::Ref);
 
     bool is_idle() const { return _state == State::idle; }
     bool is_selecting() const { return _state == State::selecting; }
@@ -46,7 +48,7 @@ public:
     bool is_released() const { return !is_selecting() && !is_processing(); }
     bool is_preloading() const { return _is_preloading; }
     State state() const { return _state; }
-    Deck::Ref deck_ref() const { return _deck->ref; }
+    Deck::Ref deck_ref() const { return _ref; }
     float progress() const { return _state != State::idle ? _card->progress() : 0; }
 
     void set_on_save_audio(std::function<void(const Deck::Ref)>);
@@ -85,7 +87,8 @@ private:
     static constexpr uint8_t kNone = 0xff;
 
     Card* _card;
-    Deck* _deck;
+    GranularEngine* _engine;
+    Deck::Ref _ref;
     State _state;
 
     std::string _deck_dir;
@@ -114,12 +117,12 @@ class Storage {
         {};
         ~Storage() = default;
 
-        void init(Deck& deck_a, Deck& deck_b)
+        void init(GranularEngine& engine)
         {
             _card.init(SDRAMBuffer::pool().card_buffer());
-            
-            _deck_storage[Deck::A].init(&_card, &deck_a);
-            _deck_storage[Deck::B].init(&_card, &deck_b);
+
+            _deck_storage[Deck::A].init(&_card, &engine, Deck::A);
+            _deck_storage[Deck::B].init(&_card, &engine, Deck::B);
 
             using namespace std::placeholders;
             auto on_save = std::bind(&Storage::_on_audio_saved, this, _1);

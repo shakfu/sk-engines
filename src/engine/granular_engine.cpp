@@ -180,6 +180,33 @@ bool GranularEngine::gate_out_triggered(const Deck::Ref ref)
     return _core.deck(_safe_ref(ref)).voxs().read_reset_is_triggered();
 }
 
+bool GranularEngine::audio_is_empty(const Deck::Ref ref)
+{
+    return _core.deck(_safe_ref(ref)).is_empty();
+}
+
+uint8_t* GranularEngine::audio_data(const Deck::Ref ref)
+{
+    return reinterpret_cast<uint8_t*>(_core.deck(_safe_ref(ref)).buffer().raw());
+}
+
+size_t GranularEngine::audio_recorded_bytes(const Deck::Ref ref)
+{
+    return _core.deck(_safe_ref(ref)).buffer().rec_size() * sizeof(Buffer::Frame);
+}
+
+size_t GranularEngine::audio_capacity_bytes(const Deck::Ref ref)
+{
+    return _core.deck(_safe_ref(ref)).buffer().size() * sizeof(Buffer::Frame);
+}
+
+void GranularEngine::audio_apply_loaded(const Deck::Ref ref, const size_t frames)
+{
+    auto& deck = _core.deck(_safe_ref(ref));
+    deck.buffer().set_rec_size(frames);
+    deck.apply_start_size();
+}
+
 void GranularEngine::set_fx(const Deck::Ref ref, const FxKind kind, const bool on)
 {
     auto& fx = _core.deck(_safe_ref(ref)).fx();

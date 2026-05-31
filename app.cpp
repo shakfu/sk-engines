@@ -150,7 +150,7 @@ void AppImpl::Init()
 
     _ui.init();
     #ifdef STORAGE
-    _storage.init(_engine.core().deck(Deck::A), _engine.core().deck(Deck::B));
+    _storage.init(_engine);
     _storage.read_settigs();
     #endif
 

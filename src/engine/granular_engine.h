@@ -79,15 +79,21 @@ public:
     void on_gate_trigger(Deck::Ref);
     bool gate_out_triggered(Deck::Ref);
 
-    // Escape hatch: direct access to the granular Core for the TWO remaining couplings (input,
-    // CV, and gate are already on the engine API above). A second, non-granular engine cannot
-    // run until these are migrated to engine-side handlers:
-    //   1. LED rendering (core.ui.leds.cpp) - reads deck/buffer/generator/fx state to draw
-    //      rings + indicators; needs IEngine::render(DisplayModel&) + the MValue value-display
-    //      moved into a platform toolkit.
-    //   2. SD storage (Storage)             - deck buffer save/load/clear; needs a storage
-    //      capability the engine exposes.
-    // See docs/refactor-status.md for the resume roadmap.
+    // Storage audio port (Phase 3c, "TapeStorage" capability). The platform's Storage owns the
+    // tape/slot state machine + SD I/O; it gets the deck's loop buffer as a raw byte range to
+    // save/load. `frames` in audio_apply_loaded is the card's WAV-derived size_audio().
+    bool   audio_is_empty(Deck::Ref);
+    uint8_t* audio_data(Deck::Ref);
+    size_t audio_recorded_bytes(Deck::Ref);
+    size_t audio_capacity_bytes(Deck::Ref);
+    void   audio_apply_loaded(Deck::Ref, size_t frames);
+
+    // Escape hatch: direct access to the granular Core for the ONE remaining coupling - LED
+    // rendering (input, CV, gate, and storage are all on the engine API above). A second,
+    // non-granular engine cannot render its own UI until this is migrated:
+    //   LED rendering (core.ui.leds.cpp) - reads deck/buffer/generator/fx state to draw rings +
+    //   indicators; needs IEngine::render(DisplayModel&) + the MValue value-display moved into a
+    //   platform toolkit. The hard redesign - see docs/refactor-status.md for the resume plan.
     Core& core() { return _core; }
 
 private:
