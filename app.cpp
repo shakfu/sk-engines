@@ -9,6 +9,7 @@
 #include "ui/core.ui.h"
 #include "core/core.h"
 #include "core/itimesource.h"
+#include "engine/granular_engine.h"
 #include "memory/storage.h"
 #include "expose.h"
 
@@ -33,7 +34,7 @@ struct DaisyTimeSource : ITimeSource {
 class AppImpl {
   public:
     AppImpl():
-    _ui     { CoreUI(_hw, _core, _settings, _storage) }
+    _ui     { CoreUI(_hw, _engine.core(), _settings, _storage) }
     {}
 
     ~AppImpl() = default;
@@ -41,8 +42,8 @@ class AppImpl {
     void Init();
     void Loop();
     void mod_src(float& out0, float& out1) {
-        _core.mod(Deck::A).process(out0);
-        _core.mod(Deck::B).process(out1);
+        _engine.core().mod(Deck::A).process(out0);
+        _engine.core().mod(Deck::B).process(out1);
 
         _ui.set_lfo(out0, out1);
     }
@@ -62,7 +63,7 @@ class AppImpl {
     bool _log_enabled;
 
     DaisyTimeSource _time_source;
-    Core        _core;
+    GranularEngine  _engine;
     CoreUI      _ui;
     Hardware    _hw;
     Settings    _settings;
@@ -145,11 +146,11 @@ void AppImpl::Init()
     ctx.buffers.slices[Deck::B] = pool.slices_b();
     ctx.buffers.track[Deck::A] = pool.track_buffer_a();
     ctx.buffers.track[Deck::B] = pool.track_buffer_b();
-    _core.init(ctx);
+    _engine.init(ctx);
 
     _ui.init();
     #ifdef STORAGE
-    _storage.init(_core.deck(Deck::A), _core.deck(Deck::B));
+    _storage.init(_engine.core().deck(Deck::A), _engine.core().deck(Deck::B));
     _storage.read_settigs();
     #endif
 
@@ -187,7 +188,7 @@ void AppImpl::Loop()
         }
 
         _ui.process();
-        _core.prepare();
+        _engine.prepare();
         #ifdef STORAGE
         _storage.process();
         #endif
@@ -224,7 +225,7 @@ void AppImpl::ProcessAudio(AudioHandle::InputBuffer  in,
     _hw.ProcessAnalogControls();
     _ui.tick();
     _ui.read_cv();
-    _core.process(in, out, size);
+    _engine.process(in, out, size);
 
     #ifdef METER
     Meter::cpu().load.OnBlockEnd();

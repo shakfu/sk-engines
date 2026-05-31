@@ -24,6 +24,7 @@
 #include "core/itimesource.h"
 #include "core/mode.h"
 #include "core/event.h"
+#include "engine/granular_engine.h"
 
 #include "wav.h"
 
@@ -130,19 +131,23 @@ int main(int argc, char** argv) {
     ctx.time = &time;
     hb.fill(ctx.buffers);
 
-    auto core = std::make_unique<Core>();
-    core->init(ctx);
+    // Drive the audio lifecycle through the IEngine interface (proving the Phase 2 seam
+    // off-target); reach the graph directly via core() for the host-side UI-equivalent setup.
+    auto engine = std::make_unique<GranularEngine>();
+    IEngine& eng = *engine;
+    eng.init(ctx);
+    Core& core = engine->core();
 
     // The driver fires these per quarter / clock-out; the UI installs them on hardware, so
     // the host must provide no-ops or the empty std::functions throw bad_function_call.
-    core->driver().set_on_quarter([](bool) {});
-    core->driver().set_on_clock_out([]() {});
+    core.driver().set_on_quarter([](bool) {});
+    core.driver().set_on_clock_out([]() {});
 
-    core->set_route(Route::Stereo);
-    core->set_route(Route::DoubleMono); // force a known route (set_route early-returns on no-op)
-    core->infer_panner_mode();
+    core.set_route(Route::Stereo);
+    core.set_route(Route::DoubleMono); // force a known route (set_route early-returns on no-op)
+    core.infer_panner_mode();
     for (auto ref : {Deck::A, Deck::B}) {
-        core->deck(ref).set_mode(Mode::Reel);
+        core.deck(ref).set_mode(Mode::Reel);
     }
 
     // Tail to let any loop play out after the input ends.
@@ -157,7 +162,7 @@ int main(int argc, char** argv) {
     out.l.resize(total_frames);
     out.r.resize(total_frames);
 
-    if (do_record) core->deck(Deck::A).toggle_recording(); // arm; detector records on sound
+    if (do_record) core.deck(Deck::A).toggle_recording(); // arm; detector records on sound
 
     float in_l[kBlock], in_r[kBlock];
     float out_l[kBlock], out_r[kBlock];
@@ -168,8 +173,8 @@ int main(int argc, char** argv) {
     for (size_t pos = 0; pos < total_frames; pos += kBlock) {
         // Once the input is consumed, optionally stop recording and start playback.
         if (do_record && !switched_to_play && pos >= in.frames()) {
-            core->deck(Deck::A).disarm();
-            core->deck(Deck::A).play();
+            core.deck(Deck::A).disarm();
+            core.deck(Deck::A).play();
             switched_to_play = true;
         }
 
@@ -179,8 +184,8 @@ int main(int argc, char** argv) {
             in_r[i] = (s < in.frames()) ? in.r[s] : 0.f;
         }
 
-        core->driver().tick(false);          // internal clock advances one 500 Hz block
-        core->process(in_ptrs, out_ptrs, kBlock);
+        core.driver().tick(false);           // internal clock advances one 500 Hz block
+        eng.process(in_ptrs, out_ptrs, kBlock);
 
         for (size_t i = 0; i < kBlock; i++) {
             out.l[pos + i] = out_l[i];
