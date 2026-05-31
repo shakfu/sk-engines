@@ -10,6 +10,7 @@
 #include "color.h"
 #include "hw/hardware.h"
 #include "core/core.h"
+#include "engine/granular_engine.h"
 #include "memory/storage.h"
 #include "nocopy.h"
 #include "hold.h"
@@ -34,7 +35,7 @@ static constexpr std::array<float, 7> kSpeedSteps = {
 
 class CoreUI {
 public:
-    CoreUI(Hardware&, Core&, Settings&, Storage&);
+    CoreUI(Hardware&, GranularEngine&, Settings&, Storage&);
     ~CoreUI() = default;
 
     void init();
@@ -148,7 +149,8 @@ private:
     void _reset_changing_value_id();
 
     Hardware& _hw;
-    Core& _core;
+    GranularEngine& _engine;
+    Core& _core; // bound to _engine.core(); existing direct-Core usages keep working
     Settings& _settings;
     Storage& _storage;
     Calibrator _calibrator;

@@ -34,7 +34,7 @@ struct DaisyTimeSource : ITimeSource {
 class AppImpl {
   public:
     AppImpl():
-    _ui     { CoreUI(_hw, _engine.core(), _settings, _storage) }
+    _ui     { CoreUI(_hw, _engine, _settings, _storage) }
     {}
 
     ~AppImpl() = default;

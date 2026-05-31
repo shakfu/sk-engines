@@ -34,6 +34,7 @@ CPP_SOURCES = \
 	main.cpp \
 	app.cpp \
 	$(wildcard src/core/*.cpp) \
+	$(wildcard src/engine/*.cpp) \
 	$(wildcard src/hw/*.cpp) \
 	$(wildcard src/ui/*.cpp) \
 	$(wildcard src/memory/*.cpp)

@@ -13,9 +13,10 @@ static float snapped_speed(const float speed)
     return kSpeedSteps[idx];
 }
 
-CoreUI::CoreUI(Hardware& hw, Core& core, Settings& settings, Storage& storage):
+CoreUI::CoreUI(Hardware& hw, GranularEngine& engine, Settings& settings, Storage& storage):
 _hw                 { hw },
-_core               { core },
+_engine             { engine },
+_core               { engine.core() },
 _settings           { settings },
 _storage            { storage },
 _calibrator         { Calibrator(hw, settings) },
@@ -133,129 +134,135 @@ void CoreUI::process()
 
     if (_apply.test(Hardware::CTRL_POS_A)) {
         if (_touched.test(FluxA)) {
-            deck_a.fx().set_flux_fb(_flux_fb[Deck::A].value());
+            _engine.set_param(ParamId::FluxFb, Deck::A, _flux_fb[Deck::A].value());
         }
         else {
-            deck_a.set_start(_pos[Deck::A].value());
+            _engine.set_param(ParamId::Pos, Deck::A, _pos[Deck::A].value());
         }
     }
     if (_apply.test(Hardware::CTRL_POS_B)) {
         if (_touched.test(FluxB)) {
-            deck_b.fx().set_flux_fb(_flux_fb[Deck::B].value());
+            _engine.set_param(ParamId::FluxFb, Deck::B, _flux_fb[Deck::B].value());
         }
         else {
-            deck_b.set_start(_pos[Deck::B].value());
+            _engine.set_param(ParamId::Pos, Deck::B, _pos[Deck::B].value());
         }
     }
     if (_apply.test(Hardware::CTRL_ENV_A)) {
-        if (is_chord_a) deck_a.set_size(_env_size[Deck::A].value());
-        deck_a.voxs().set_shape(_env[Deck::A].value());
+        if (is_chord_a) _engine.set_param(ParamId::EnvSize, Deck::A, _env_size[Deck::A].value());
+        _engine.set_param(ParamId::Env, Deck::A, _env[Deck::A].value());
     }
     if (_apply.test(Hardware::CTRL_ENV_B)) {
-        if (is_chord_b) deck_b.set_size(_env_size[Deck::B].value());
-        deck_b.voxs().set_shape(_env[Deck::B].value());
+        if (is_chord_b) _engine.set_param(ParamId::EnvSize, Deck::B, _env_size[Deck::B].value());
+        _engine.set_param(ParamId::Env, Deck::B, _env[Deck::B].value());
     }
     if (_apply.test(Hardware::CTRL_SIZE_A)) {
         if (is_chord_a) {
-            deck_a.voxs().set_win_size(_win[Deck::A].value());
-            deck_a.voxs().set_win_spread(_size[Deck::A].value());
+            _engine.set_param(ParamId::Win, Deck::A, _win[Deck::A].value());
+            _engine.set_param(ParamId::Size, Deck::A, _size[Deck::A].value());
         }
         else if (deck_a.mode() == Mode::Slice && _touched.test(Alt)) {
-            deck_a.set_force_mono((1.f - _poly_slice[Deck::A].value()) > .5f);
+            _engine.set_param(ParamId::PolySlice, Deck::A, _poly_slice[Deck::A].value());
         }
         else {
-            deck_a.set_size(_size[Deck::A].value());
+            _engine.set_param(ParamId::Size, Deck::A, _size[Deck::A].value());
         }
     }
     if (_apply.test(Hardware::CTRL_SIZE_B)) {
         if (is_chord_b) {
-            deck_b.voxs().set_win_size(_win[Deck::B].value());
-            deck_b.voxs().set_win_spread(_size[Deck::B].value());
+            _engine.set_param(ParamId::Win, Deck::B, _win[Deck::B].value());
+            _engine.set_param(ParamId::Size, Deck::B, _size[Deck::B].value());
         }
         else if (deck_b.mode() == Mode::Slice && _touched.test(Alt)) {
-            deck_b.set_force_mono((1.f - _poly_slice[Deck::B].value()) > .5f);
+            _engine.set_param(ParamId::PolySlice, Deck::B, _poly_slice[Deck::B].value());
         }
         else {
-            deck_b.set_size(_size[Deck::B].value());
+            _engine.set_param(ParamId::Size, Deck::B, _size[Deck::B].value());
         }
     }
     if (_apply.test(Hardware::CTRL_PITCH_A)) {
         if (_touched.test(FluxA)) {
-            deck_a.fx().set_flux_intensity(_flux_intens[Deck::A].value());
+            _engine.set_param(ParamId::FluxIntensity, Deck::A, _flux_intens[Deck::A].value());
         }
         else if (_touched.test(GritA)) {
-            deck_a.fx().set_grit_intensity(_grit_intens[Deck::A].value());
+            _engine.set_param(ParamId::GritIntensity, Deck::A, _grit_intens[Deck::A].value());
         }
         else {
             auto speed_a = _speed[Deck::A].value();
             if (_pitch_quantized.test(Deck::A)) {
                 speed_a = snapped_speed(speed_a);
             }
+            // Straggler: Speed carries the set_speed() middle-pitch return value, which the
+            // param API doesn't model yet; kept a direct Core call until Phase 3c.
             if (deck_a.mode() == Mode::Slice) deck_a.voxs().set_pitch(speed_a);
             else _middle_pitch_a = deck_a.voxs().set_speed(speed_a);
         }
     }
     if (_apply.test(Hardware::CTRL_PITCH_B)) {
         if (_touched.test(FluxB)) {
-            deck_b.fx().set_flux_intensity(_flux_intens[Deck::B].value());
+            _engine.set_param(ParamId::FluxIntensity, Deck::B, _flux_intens[Deck::B].value());
         }
         else if (_touched.test(GritB)) {
-            deck_b.fx().set_grit_intensity(_grit_intens[Deck::B].value());
+            _engine.set_param(ParamId::GritIntensity, Deck::B, _grit_intens[Deck::B].value());
         }
         else {
             auto speed_b = _speed[Deck::B].value();
             if (_pitch_quantized.test(Deck::B)) {
                 speed_b = snapped_speed(speed_b);
             }
+            // Straggler: Speed carries the set_speed() middle-pitch return value, which the
+            // param API doesn't model yet; kept a direct Core call until Phase 3c.
             if (deck_b.mode() == Mode::Slice) deck_b.voxs().set_pitch(speed_b);
             else _middle_pitch_b = deck_b.voxs().set_speed(speed_b);
         }
     }
     if (_apply.test(Hardware::CTRL_MODFREQ_A)) {
-        if (_tap_hold.passed()) _core.driver().set_tempo_norm(_tempo.value());
+        if (_tap_hold.passed()) _engine.set_param(ParamId::Tempo, Deck::A, _tempo.value());
+        // Straggler: ModSpeed carries the Alt sync flag; routes via the param API in 3c.
         else _core.mod(Deck::A).set_speed_norm(_mod_speed[Deck::A].value(), _touched.test(Alt));
     }
     if (_apply.test(Hardware::CTRL_MOD_AMT_A)) {
-        if (_tap_hold.passed()) _core.set_click_mix(_click_mix.value());
-        else _core.mod(Deck::A).set_amp_norm(_mod_amp[Deck::A].value());
+        if (_tap_hold.passed()) _engine.set_param(ParamId::ClickMix, Deck::A, _click_mix.value());
+        else _engine.set_param(ParamId::ModAmp, Deck::A, _mod_amp[Deck::A].value());
     }
     if (_apply.test(Hardware::CTRL_MODFREQ_B)) {
-        if (_tap_hold.passed()) _core.panner().set_speed(_pan_speed.value());
+        if (_tap_hold.passed()) _engine.set_param(ParamId::PanSpeed, Deck::B, _pan_speed.value());
+        // Straggler: ModSpeed carries the Alt sync flag; routes via the param API in 3c.
         else _core.mod(Deck::B).set_speed_norm(_mod_speed[Deck::B].value(), _touched.test(Alt));
     }
     if (_apply.test(Hardware::CTRL_MOD_AMT_B)) {
-        if (_tap_hold.passed()) _core.panner().set_range(_pan_range.value());
-        else _core.mod(Deck::B).set_amp_norm(_mod_amp[Deck::B].value());
+        if (_tap_hold.passed()) _engine.set_param(ParamId::PanRange, Deck::B, _pan_range.value());
+        else _engine.set_param(ParamId::ModAmp, Deck::B, _mod_amp[Deck::B].value());
     }
     if (_apply.test(Hardware::CTRL_SOS_A)) {
         if (_tap_hold.passed()) {
-            _core.driver().set_key_tick_interval_norm(_key_interval.value());
+            _engine.set_param(ParamId::KeyInterval, Deck::A, _key_interval.value());
         }
         else if (_touched.test(FluxA)) {
-            deck_a.fx().set_flux_mix(_flux_mix[Deck::A].value());
+            _engine.set_param(ParamId::FluxMix, Deck::A, _flux_mix[Deck::A].value());
         }
         else if (_touched.test(GritA)) {
-            deck_a.fx().set_grit_mix(_grit_mix[Deck::A].value());
+            _engine.set_param(ParamId::GritMix, Deck::A, _grit_mix[Deck::A].value());
         }
         else if (_touched.test(Alt)) {
-            deck_a.set_feedback(_feedback[Deck::A].value());
+            _engine.set_param(ParamId::Feedback, Deck::A, _feedback[Deck::A].value());
         }
         else {
-            deck_a.set_inout_mix(_mix[Deck::A].value());
+            _engine.set_param(ParamId::Mix, Deck::A, _mix[Deck::A].value());
         }
     }
     if (_apply.test(Hardware::CTRL_SOS_B)) {
         if (_touched.test(FluxB)) {
-            deck_b.fx().set_flux_mix(_flux_mix[Deck::B].value());
+            _engine.set_param(ParamId::FluxMix, Deck::B, _flux_mix[Deck::B].value());
         }
         else if (_touched.test(GritB)) {
-            deck_b.fx().set_grit_mix(_grit_mix[Deck::B].value());
+            _engine.set_param(ParamId::GritMix, Deck::B, _grit_mix[Deck::B].value());
         }
         else if (_touched.test(Alt)) {
-            deck_b.set_feedback(_feedback[Deck::B].value());
+            _engine.set_param(ParamId::Feedback, Deck::B, _feedback[Deck::B].value());
         }
         else {
-            deck_b.set_inout_mix(_mix[Deck::B].value());
+            _engine.set_param(ParamId::Mix, Deck::B, _mix[Deck::B].value());
         }
     }
 
@@ -527,7 +534,7 @@ void CoreUI::_process_ui_queue()
                     break;
 
                 case Hardware::CTRL_CROSSFADE:
-                    _core.set_mix(val);
+                    _engine.set_param(ParamId::Crossfade, Deck::A, val);
                     break;
             }
 

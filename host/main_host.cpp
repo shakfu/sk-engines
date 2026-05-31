@@ -21,67 +21,18 @@
 #include <vector>
 
 #include "core/core.h"
-#include "core/itimesource.h"
 #include "core/mode.h"
-#include "core/event.h"
 #include "engine/granular_engine.h"
 
+#include "host_setup.h"
 #include "wav.h"
 
 using namespace spotykach;
 
 namespace {
 
-constexpr size_t kBlock = 96;
-constexpr float  kSampleRate = 48000.f;
-constexpr size_t kHostSourceFrames = static_cast<size_t>(kSampleRate) * 15; // 15 s loop buffer
-
-// Monotonic millisecond/microsecond clock for the core. Wall-clock based, which is fine for
-// tap-tempo and reset timing in an offline run.
-struct HostTimeSource : ITimeSource {
-    using clock = std::chrono::steady_clock;
-    clock::time_point start = clock::now();
-    uint32_t now_ms() const override {
-        return static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - start).count());
-    }
-    uint32_t now_us() const override {
-        return static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - start).count());
-    }
-};
-
-// Owns the heap allocations the core borrows through EngineBuffers.
-struct HostBuffers {
-    std::vector<Buffer::Frame> source[Deck::Count];
-    std::vector<float>         detect[Deck::Count][2];
-    std::vector<float>         delay[Deck::Count][2];
-    std::vector<size_t>        slices[Deck::Count];
-    std::vector<Event>         track[Deck::Count];
-
-    void allocate() {
-        for (int d = 0; d < Deck::Count; d++) {
-            source[d].assign(kHostSourceFrames, Buffer::Frame{});
-            for (int c = 0; c < 2; c++) {
-                detect[d][c].assign(Detector::kWindow, 0.f);
-                delay[d][c].assign(Fx::kEchoDelayBufferLength, 0.f);
-            }
-            slices[d].assign(kMaxSlicePointCount, 0);
-            track[d].assign(Track::kLength, Event{});
-        }
-    }
-
-    void fill(EngineBuffers& b) {
-        b.source_frames = kHostSourceFrames;
-        for (int d = 0; d < Deck::Count; d++) {
-            b.source[d] = source[d].data();
-            b.detect[d][0] = detect[d][0].data();
-            b.detect[d][1] = detect[d][1].data();
-            b.delay[d][0] = delay[d][0].data();
-            b.delay[d][1] = delay[d][1].data();
-            b.slices[d] = slices[d].data();
-            b.track[d] = track[d].data();
-        }
-    }
-};
+constexpr size_t kBlock = host::kBlock;
+constexpr float  kSampleRate = host::kSampleRate;
 
 void synth_tone(host::Audio& a, float seconds, float freq) {
     a.sample_rate = 48000;
@@ -121,15 +72,9 @@ int main(int argc, char** argv) {
     }
 
     // --- set up the core ---
-    HostTimeSource time;
-    HostBuffers hb;
-    hb.allocate();
-
-    EngineContext ctx;
-    ctx.sample_rate = kSampleRate;
-    ctx.block_size = static_cast<float>(kBlock);
-    ctx.time = &time;
-    hb.fill(ctx.buffers);
+    host::TimeSource time;
+    host::Buffers hb;
+    auto ctx = host::make_context(hb, time);
 
     // Drive the audio lifecycle through the IEngine interface (proving the Phase 2 seam
     // off-target); reach the graph directly via core() for the host-side UI-equivalent setup.

@@ -17,21 +17,31 @@ DAISYSP_INC = $(addprefix -I,$(wildcard $(DAISYSP)/*/))
 INCLUDES  = -Ishim -I$(ROOT)/src -I. -I$(DAISYSP) $(DAISYSP_INC)
 CXXFLAGS  = -std=c++17 -O2 -Wall -Wno-unused-variable -Wno-unused-but-set-variable $(INCLUDES)
 
-CORE_SRC   = $(wildcard $(ROOT)/src/core/*.cpp)
+CORE_SRC    = $(wildcard $(ROOT)/src/core/*.cpp)
+ENGINE_SRC  = $(wildcard $(ROOT)/src/engine/*.cpp)
 DAISYSP_SRC = $(wildcard $(DAISYSP)/*/*.cpp)
-SRC        = main_host.cpp $(CORE_SRC) $(DAISYSP_SRC)
+LIB_SRC     = $(CORE_SRC) $(ENGINE_SRC) $(DAISYSP_SRC)
 
-.PHONY: all clean run
+SRC        = main_host.cpp $(LIB_SRC)
+TEST       = $(BUILD)/test_engine_params
+
+.PHONY: all clean run test
 all: $(TARGET)
 
 $(TARGET): $(SRC) | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(SRC) -o $@
+
+$(TEST): test_engine_params.cpp $(LIB_SRC) | $(BUILD)
+	$(CXX) $(CXXFLAGS) test_engine_params.cpp $(LIB_SRC) -o $@
 
 $(BUILD):
 	mkdir -p $(BUILD)
 
 run: $(TARGET)
 	./$(TARGET)
+
+test: $(TEST)
+	./$(TEST)
 
 clean:
 	rm -rf $(BUILD)
