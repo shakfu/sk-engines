@@ -328,12 +328,13 @@ void CoreUI::_draw_ring(const Deck::Ref ref)
     auto& ring = _display.ring[ref];
     if (ring.is_updated()) return;
 
-    auto& deck = _core.deck(ref);
-    auto default_color = mode_color(deck.mode());
+    auto default_color = mode_color(_engine.deck_leds(ref).mode);
 
     ring.clear();
     ring.set_hex_color(default_color);
     ring.set_brightness(.5f);
+
+    RingGeometry geo{};
 
     auto storage_state = _storage.of(ref).state();
     if (storage_state != DeckStorage::State::idle) {
@@ -362,7 +363,7 @@ void CoreUI::_draw_ring(const Deck::Ref ref)
         _show_size_quarters(ref, default_color);
     }
     else if (_touched.test(ref == Deck::A ? GritA : GritB)) {
-        auto fx_color = grit_color(deck.fx().grit_mode());
+        auto fx_color = grit_color(_engine.fx_leds(ref).grit_mode);
         _show_value(_grit_intens[ref], ring, fx_color, ValueDisplay::Always);
         _show_value(_grit_mix[ref], ring, fx_color);
     }
@@ -371,82 +372,52 @@ void CoreUI::_draw_ring(const Deck::Ref ref)
         _show_value(_flux_mix[ref], ring, kDelayColor);
         _show_value(_flux_fb[ref], ring, kDelayColor);
     } 
-    else if (deck.is_empty() && !deck.is_armed()) { 
-        ring.set_hex_color(default_color);
-        ring.set_brightness(_led_breathe_brightness * .5f);
-        ring.set_segment(0.0f, 0.999f);
+    else {
+        geo = _engine.render_ring(ring, ref, _led_breathe_brightness);
     }
-    else if (deck.is_recording() && !deck.is_overdubbing()) {
-        auto& buff = deck.buffer();
-        auto size = buff.norm_rec_size();
-        /* show recorded segment */
-        ring.set_segment(0.f, size);
-        /* show write head */
-        ring.set_point_hex_color(kRed);
-        ring.add_point(size, .9f, true, false);
-    }  
-    else if (!deck.is_empty()) {
-        // BUFFER SEGMENT ///////////////////////////////////////////
-        auto segment_start = deck.norm_start();
-        auto segment_size = 0.f;
-        if (deck.mode() == Mode::Drift) {
-            segment_size = deck.voxs().win_spread() * .95f;
-            segment_start -= segment_size * .5f;
-        }
-        else {
-            segment_size = deck.norm_size(true);  
-        }
-        ring.set_segment(segment_start, segment_start + segment_size);
-        // PLAYHEADS /////////////////////////////////////////////////
-        ring.set_point_hex_color(kWhite);
-        if (deck.is_generating()) {
-            for (auto i = 0; i < Generator::kVoxCount; i++) {
-                if (deck.envelope_at(i) > 0) {
-                    auto ph = deck.norm_playhead_at(i);
-                    ring.add_point(ph, deck.envelope_at(i));
-                }
-            }
-        }
+
+    // Transient overlays for the playing case (matches the old !empty branch): position deviation,
+    // the size-change overlay, and the overdub write-head - composited on the engine's segment, in
+    // the same order (size overlay first, then the overdub head on top).
+    if (geo.playing) {
         // POSITION & SIZE
         _show_value(_pos[ref], ring, kWhite, ValueDisplay::OnMoveDiffOnly);
         if (_is_changing(_size[ref]) && !_size[ref].is_tracking()) {
-            if (deck.mode() == Mode::Drift) {
+            if (geo.mode == Mode::Drift) {
                 // DRAW SPREAD
                 float red_value = std::max(_size[ref].in_value(), _size[ref].value()) * .95f;
                 // RED
                 ring.set_brightness(.6f);
                 ring.set_hex_color(kRed);
-                segment_start = deck.norm_start() - red_value * .5f;
-                ring.set_segment(segment_start, segment_start + red_value, true);
+                auto seg_start = geo.start - red_value * .5f;
+                ring.set_segment(seg_start, seg_start + red_value, true);
                 if (_size[ref].in_value() > _size[ref].value()) {
-                    ring.add_point(segment_start, .8f, true);
-                    ring.add_point(segment_start + red_value, .8f, true);
+                    ring.add_point(seg_start, .8f, true);
+                    ring.add_point(seg_start + red_value, .8f, true);
                 }
                 // WHITE
                 float white_value = std::min(_size[ref].in_value(), _size[ref].value()) * .95f;
                 ring.set_brightness(.8f);
                 ring.set_hex_color(kWhite);
-                segment_start = deck.norm_start() - white_value * .5f;
-                ring.set_segment(segment_start, segment_start + white_value, true);
+                seg_start = geo.start - white_value * .5f;
+                ring.set_segment(seg_start, seg_start + white_value, true);
             }
             else {
-                ring.set_brightness(.6f); 
+                ring.set_brightness(.6f);
                 ring.set_hex_color(kRed);
-                auto current_val = segment_start + segment_size;
-                auto new_val = segment_start + _size[ref].in_value();
+                auto current_val = geo.start + geo.size;
+                auto new_val = geo.start + _size[ref].in_value();
                 auto start = std::min(current_val, new_val);
                 auto end = std::max(current_val, new_val);
-                while (end >= 1.f) end -= 1.f; //WORKAROUND. Needs to be fixed in _display.ring[ref].set_segment().
+                while (end >= 1.f) end -= 1.f; //WORKAROUND. Needs to be fixed in LEDRing::set_segment().
                 ring.set_segment(start, end);
-                ring.add_point(segment_start + _size[ref].in_value(), .95f);
+                ring.add_point(geo.start + _size[ref].in_value(), .95f);
             }
         }
-        
-        if (deck.is_overdubbing()) {
-            auto& buff = deck.buffer();
+
+        if (geo.overdubbing) {
             ring.set_point_hex_color(kRed);
-            auto wh = static_cast<float>(buff.write_head()) / buff.rec_size();
-            ring.add_point(wh, .9f, true, false);
+            ring.add_point(geo.overdub_head, .9f, true, false);
         }
     }
     

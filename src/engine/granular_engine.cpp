@@ -243,6 +243,63 @@ DeckLeds GranularEngine::deck_leds(const Deck::Ref ref)
 float GranularEngine::mix() const   { return _core.mix(); }
 Route GranularEngine::route() const { return _core.route(); }
 
+// Steady-state ring draw, ported verbatim from core.ui.leds.cpp _draw_ring's three steady-state
+// arms. The caller (platform) has cleared the ring + set the default mode color + .5 brightness;
+// the empty/recording/playing branches draw on that baseline. Os-tagged: runs in the main-loop UI
+// tick (not audio RT), and moving it out of the -Os leds.cpp into this -O2 TU must not grow code.
+__attribute__((optimize("Os")))
+RingGeometry GranularEngine::render_ring(LEDRing& ring, const Deck::Ref ref_in, const float breathe_brightness)
+{
+    auto& deck = _core.deck(_safe_ref(ref_in));
+    const auto mode = deck.mode();
+
+    if (deck.is_empty() && !deck.is_armed()) {
+        ring.set_brightness(breathe_brightness * .5f);
+        ring.set_segment(0.f, 0.999f);
+        return {};
+    }
+    if (deck.is_recording() && !deck.is_overdubbing()) {
+        auto size = deck.buffer().norm_rec_size();
+        ring.set_segment(0.f, size);
+        ring.set_point_hex_color(0xff0000); // kRed
+        ring.add_point(size, .9f, true, false);
+        return {};
+    }
+    if (!deck.is_empty()) {
+        const float start = deck.norm_start();
+        float size;
+        float seg_start = start;
+        if (mode == Mode::Drift) {
+            size = deck.voxs().win_spread() * .95f;
+            seg_start = start - size * .5f;
+        }
+        else {
+            size = deck.norm_size(true);
+        }
+        ring.set_segment(seg_start, seg_start + size);
+        ring.set_point_hex_color(0xffffff); // kWhite
+        if (deck.is_generating()) {
+            for (auto i = 0; i < Generator::kVoxCount; i++) {
+                if (deck.envelope_at(i) > 0) {
+                    ring.add_point(deck.norm_playhead_at(i), deck.envelope_at(i));
+                }
+            }
+        }
+        RingGeometry geo;
+        geo.playing = true;
+        geo.start = start;
+        geo.size = size;
+        geo.mode = mode;
+        geo.overdubbing = deck.is_overdubbing();
+        if (geo.overdubbing) {
+            auto& buff = deck.buffer();
+            geo.overdub_head = static_cast<float>(buff.write_head()) / buff.rec_size();
+        }
+        return geo;
+    }
+    return {}; // empty-but-armed: nothing drawn (matches the old else-if chain)
+}
+
 void GranularEngine::set_fx(const Deck::Ref ref, const FxKind kind, const bool on)
 {
     auto& fx = _core.deck(_safe_ref(ref)).fx();

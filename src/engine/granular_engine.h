@@ -4,6 +4,7 @@
 
 #include "engine/iengine.h"
 #include "engine/engine_params.h"
+#include "engine/display_model.h"
 #include "core/core.h"
 #include "core/speed.map.h"
 #include "nocopy.h"
@@ -28,6 +29,18 @@ struct AltLeds  { bool track_armed; bool track_recording; };
 // without yet resolving that ownership question (a later round).
 struct TransportLeds { Driver::Source source; bool key_at_quarter; bool key_sub_quarter; bool external_sync; uint8_t key_interval; };
 struct DeckLeds      { Mode mode; Modulator::Type mod_type; bool mod_synced; };
+
+// Geometry of the steady-state ring the engine drew, for the platform's transient overlays
+// (pos / size-change / overdub-head) to render against. playing == false means the engine drew
+// the empty-breathe / recording / nothing case and the platform skips those overlays.
+struct RingGeometry {
+    bool  playing      = false;  // engine drew the !empty playing segment
+    float start        = 0.f;    // raw norm_start (overlays recompute against this)
+    float size         = 0.f;    // segment_size drawn (post-.95 spread for Drift)
+    Mode  mode         = Mode::Reel;
+    bool  overdubbing  = false;
+    float overdub_head = 0.f;    // write_head / rec_size, drawn AFTER the size overlay (order)
+};
 
 // The granular looper as an IEngine. It owns the Core graph, forwards the audio lifecycle, and
 // (after the input migration) owns all granular *input* meaning: parameters, MIDI, and pad
@@ -115,6 +128,11 @@ public:
     DeckLeds      deck_leds(Deck::Ref);
     float         mix() const;   // A/B crossfade (fader LEDs)
     Route         route() const; // channel topology (mode L/C/R LED)
+
+    // Steady-state ring draw (LED migration Round 3). Caller must have cleared the ring and set
+    // the default (mode) color + 0.5 brightness; this draws the empty/recording/playing segment +
+    // heads on that baseline and returns the geometry the platform's pos/size/overdub overlays use.
+    RingGeometry render_ring(LEDRing& ring, Deck::Ref, float breathe_brightness);
 
     // Escape hatch: direct access to the granular Core for the ONE remaining coupling - LED
     // rendering (input, CV, gate, and storage are all on the engine API above). A second,
