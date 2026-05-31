@@ -2,6 +2,8 @@
 // SPOTYKACH ///////////////////////////////////////////////
 #include "engine/granular_engine.h"
 #include "core/mode.h"
+#include "core/event.h"
+#include "config.h"
 
 using namespace spotykach;
 
@@ -63,4 +65,34 @@ Capabilities GranularEngine::capabilities() const
 {
     return CapRecording | CapTapeStorage | CapStepSequencer
          | CapLaunchQuant | CapTransport | CapDualDeck;
+}
+
+Deck::Ref GranularEngine::handle_midi_note(const uint8_t channel, const uint8_t note)
+{
+    auto& c = Config::dynamic();
+    auto ref = Deck::Count;
+    if (channel == c.midi_channel_a()) ref = Deck::A;
+    else if (channel == c.midi_channel_b()) ref = Deck::B;
+    if (ref == Deck::Count) return Deck::Count;
+
+    auto e = make_event();
+    e.discont = true; // MIDI note: discontinuous (not trailed by a V/Oct change)
+    e.p3 = _speed_map.bipolar_pitch2speed(static_cast<float>(note) - 60.f);
+    e.p3_on = true;
+    _core.deck(ref).trigger(&e);
+    return ref;
+}
+
+void GranularEngine::handle_midi_transport(const bool start)
+{
+    auto& c = Config::dynamic();
+    if (start) {
+        _core.driver().reset();
+        if (c.midi_play_stop_a() && !_core.deck(Deck::A).is_empty()) _core.deck(Deck::A).play();
+        if (c.midi_play_stop_b() && !_core.deck(Deck::B).is_empty()) _core.deck(Deck::B).play();
+    }
+    else {
+        if (c.midi_play_stop_a()) _core.deck(Deck::A).stop();
+        if (c.midi_play_stop_b()) _core.deck(Deck::B).stop();
+    }
 }

@@ -5,7 +5,11 @@
 #include "engine/iengine.h"
 #include "engine/engine_params.h"
 #include "core/core.h"
+#include "core/speed.map.h"
 #include "nocopy.h"
+
+#include <cstdint>
+
 
 namespace spotykach {
 
@@ -18,7 +22,7 @@ public:
     GranularEngine() = default;
     ~GranularEngine() override = default;
 
-    void init(const EngineContext& ctx) override { _core.init(ctx); }
+    void init(const EngineContext& ctx) override { _core.init(ctx); _speed_map.init(); }
     void prepare() override { _core.prepare(); }
     void process(const float* const* in, float** out, size_t size) override {
         _core.process(in, out, size);
@@ -32,6 +36,13 @@ public:
 
     Capabilities capabilities() const;
 
+    // MIDI meaning (Phase 3c). The platform parses MIDI and clocks transport; the engine
+    // decides what notes and transport mean for this instrument.
+    // handle_midi_note: channel->deck, note->speed, trigger. Returns the triggered deck
+    // (or Deck::Count if the channel is unmatched) so the platform can flash the gate LED.
+    Deck::Ref handle_midi_note(uint8_t channel, uint8_t note);
+    void handle_midi_transport(bool start); // true=start/continue, false=stop
+
     // Temporary direct access for the still-coupled UI/storage/CV paths.
     Core& core() { return _core; }
 
@@ -41,6 +52,7 @@ private:
     static Deck::Ref _safe_ref(Deck::Ref ref) { return ref < Deck::Count ? ref : Deck::A; }
 
     Core _core;
+    SpeedMap<60> _speed_map;
     float _param_cache[static_cast<size_t>(ParamId::Count)][Deck::Count] = {};
 };
 

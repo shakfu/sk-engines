@@ -15,7 +15,7 @@
 #include "nocopy.h"
 #include "hold.h"
 #include "mvalue.h"
-#include "speed.map.h"
+#include "core/speed.map.h"
 #include "calibrator.h"
 #include "time.iterval.h"
 #include "led.ring.h"
@@ -70,7 +70,6 @@ private:
     void _process_gate_out(const Deck::Ref);
     bool _process_midi();
     bool _process_realtime(daisy::MidiEvent&);
-    void _process_note_on(daisy::NoteOnEvent&);
 
     void _on_pad_touch(Hardware::Pad pad);
     void _on_pad_release(Hardware::Pad pad);

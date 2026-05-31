@@ -42,7 +42,8 @@ bool CoreUI::_process_midi()
             
             case MidiMessageType::NoteOn: {
                 auto e = event.AsNoteOn();
-                _process_note_on(e);
+                auto ref = _engine.handle_midi_note(e.channel, e.note);
+                if (ref != Deck::Count) _show_gate_in(ref);
             }
             break;
 
@@ -51,17 +52,7 @@ bool CoreUI::_process_midi()
     }
     return has_clock;
 }
-void CoreUI::_process_note_on(daisy::NoteOnEvent& note_on)
-{
-    auto ref = Deck::Count;
-    auto& c = Config::dynamic();
-    if (note_on.channel == c.midi_channel_a()) ref = Deck::A;
-    else if (note_on.channel == c.midi_channel_b()) ref = Deck::B;
-    if (ref != Deck::Count) {
-        _trigger(ref, _speed_map.bipolar_pitch2speed(note_on.note - 60), true);
-    }
-}
-void CoreUI::_trigger(const Deck::Ref ref, const float speed, const bool discont) 
+void CoreUI::_trigger(const Deck::Ref ref, const float speed, const bool discont)
 {
     auto e = make_event();
     e.discont = discont;
@@ -72,27 +63,14 @@ void CoreUI::_trigger(const Deck::Ref ref, const float speed, const bool discont
 }
 bool CoreUI::_process_realtime(daisy::MidiEvent& event)
 {
-    auto& c = Config::dynamic();
-
     switch (event.srt_type) {
         case SystemRealTimeType::TimingClock: return true;
         case SystemRealTimeType::Start:
-        case SystemRealTimeType::Continue: {
-            _core.driver().reset();
-            if (c.midi_play_stop_a() && !_core.deck(Deck::A).is_empty()) _core.deck(Deck::A).play();
-            if (c.midi_play_stop_b() && !_core.deck(Deck::B).is_empty()) _core.deck(Deck::B).play();    
-            break;
-        }
-
-        case SystemRealTimeType::Stop: {
-            if (c.midi_play_stop_a()) _core.deck(Deck::A).stop();
-            if (c.midi_play_stop_b()) _core.deck(Deck::B).stop();
-            break;
-        }
-
+        case SystemRealTimeType::Continue: _engine.handle_midi_transport(true); break;
+        case SystemRealTimeType::Stop:     _engine.handle_midi_transport(false); break;
         default: break;
     }
-    
+
     return false;
 }
 
