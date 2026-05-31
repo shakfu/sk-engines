@@ -22,6 +22,13 @@ struct FxLeds   { Fx::GritMode grit_mode; bool grit_on; bool flux_on; };
 struct PlayLeds { Mode mode; bool playing; bool play_queued; bool reverse; bool armed; bool recording; Deck::Source source; };
 struct AltLeds  { bool track_armed; bool track_recording; };
 
+// Transport + topology indicator state for the platform's ISR LED render (_draw_leds) and the
+// launch-quant display. Same query pattern as the *Leds above. NOTE: the Driver/transport lives
+// in Core today but is conceptually platform; this keeps the core() reads off the LED code
+// without yet resolving that ownership question (a later round).
+struct TransportLeds { Driver::Source source; bool key_at_quarter; bool key_sub_quarter; bool external_sync; uint8_t key_interval; };
+struct DeckLeds      { Mode mode; Modulator::Type mod_type; bool mod_synced; };
+
 // The granular looper as an IEngine. It owns the Core graph, forwards the audio lifecycle, and
 // (after the input migration) owns all granular *input* meaning: parameters, MIDI, and pad
 // gestures - see the grouped methods below. The refactor is PAUSED at this input-decoupled
@@ -102,6 +109,12 @@ public:
     FxLeds   fx_leds(Deck::Ref);
     PlayLeds play_leds(Deck::Ref);
     AltLeds  alt_leds(Deck::Ref);
+
+    // Transport + topology state for the ISR LED render (_draw_leds) and launch-quant display.
+    TransportLeds transport_leds();
+    DeckLeds      deck_leds(Deck::Ref);
+    float         mix() const;   // A/B crossfade (fader LEDs)
+    Route         route() const; // channel topology (mode L/C/R LED)
 
     // Escape hatch: direct access to the granular Core for the ONE remaining coupling - LED
     // rendering (input, CV, gate, and storage are all on the engine API above). A second,

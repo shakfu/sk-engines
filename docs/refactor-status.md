@@ -8,10 +8,12 @@ Turn this firmware into a **fixed hardware/UI platform** that hosts a swappable 
 the parameters and DSP. (Organelle/Axoloti/plugin-host model on fixed hardware.) The granular
 looper is the first/reference engine.
 
-## Where it stands — PAUSED at the input-decoupled milestone
+## Where it stands — LED migration in progress
 
-The **input side is fully on the engine**; the **output/IO side is deferred**. Everything
-builds, flashes, and runs; this is a deliberate stopping point, not a half-finished state.
+The **input side + CV/gate/storage are fully on the engine**; the **LED rendering** is the last
+coupling and is now being migrated round by round (prep + Round 1 structural + Round 2 indicators
+done and flash-verified; the ring steady-state and transport indicators remain — see below).
+Everything builds, flashes, and runs at each round; every step is behavior-preserving.
 
 ### Layers today
 
@@ -53,15 +55,36 @@ builds, flashes, and runs; this is a deliberate stopping point, not a half-finis
   `audio_capacity_bytes`/`audio_apply_loaded`/`audio_is_empty`). The tape/slot state machine,
   preload, and SD `Card` I/O stay platform.
 
-### Still coupled (deferred) — the `engine.core()` escape hatch
+### Still coupled — the `engine.core()` escape hatch (LED migration in progress)
 
-The platform reaches the granular `Core` directly for **one** thing only (see the `core()`
-comment in `granular_engine.h`). A non-granular 2nd engine can't render its own UI until it
-moves to an engine-side handler:
+The platform reaches the granular `Core` directly only for **LED rendering** (`core.ui.leds.cpp`).
+That migration is now under way; what's left after Rounds prep/1/2 (below):
 
-1. **LED rendering** (`core.ui.leds.cpp`) — reads deck/buffer/generator/fx state to draw rings
-   + indicators, interleaved with the `MValue` value-display overlay. The hard redesign
-   (`render(DisplayModel&)` + moving `MValue` into a platform toolkit).
+1. **The ring steady-state** (`_draw_ring`) — buffer segment, playheads, record/overdub heads.
+   This is the hard piece: the steady-state is interleaved with transient `MValue` value-displays
+   (`_show_value(pos)`, the size-change arc, `_show_pitch`, poly-slice) that draw *relative to the
+   segment geometry*. Separating them is the `render(DisplayModel&)` + `MValue`-toolkit work.
+2. **Transport / topology reads** in the ISR `_draw_leds` (and `_draw_launching`,
+   `_show_key_intervals`) — `driver()` clock source/color, `mod()` sync, `route()`, `deck.mode()`.
+   A distinct concern: the `Driver`/transport lives in `Core` today but is conceptually platform,
+   so it likely wants its own round before the `core()` hatch is finally cut.
+
+### LED migration progress (committed, flash-verified)
+
+- **Prep — hardware-free ring canvas + SRAM headroom.** `LEDRing` lost its `apply(Hardware&,LedId)`
+  member and `hw/hardware.h` include; it now blits through a templated `apply(Sink)` (the platform
+  supplies a pixel sink; the chain-index remap `set_led` moved platform-side). The cache +
+  `is_updated` double-buffer handshake stays inside the canvas. `DisplayModel` holds `LEDRing
+  ring[2]`. `-Os` added to `core.ui.cpp`. (Key constraint to preserve: `LEDRing` is a
+  producer/consumer across two contexts — main loop draws, the TIM5 ISR blits + resets
+  `is_updated`.)
+- **Round 1 — structural.** `CoreUI`'s ring storage became a `DisplayModel _display` member
+  (`_ring[ref]` -> `_display.ring[ref]`), so the model is the platform's live ring buffer that
+  `engine.render(DisplayModel&)` will fill. Behavior-identical.
+- **Round 2 — indicators.** `GranularEngine` exposes `fx_leds`/`play_leds`/`alt_leds` (POD state
+  structs); `_draw_fx`/`_draw_play`/`_draw_alt` read those instead of `_core.deck()/.fx()/.track()`,
+  keeping the platform's color palette + blink/timer/storage logic. Those three are now
+  `_core.`-free (faithful query substitution, same shape as the 3c pad migrations).
 
 ### Grounding sketch (done) — `DisplayModel` + `PassthroughEngine` (host-only)
 
@@ -104,28 +127,31 @@ exercise the pot/pad/LED/MIDI hardware paths — those changes are verified by f
 ## Memory budget
 
 The app boots from SRAM (`BOOT_SRAM`, `alt_sram.lds`); code lives in the **186 KB SRAM_EXEC**
-region, currently ~99.2% full (~1.4 KB free). ITCMRAM relocation was rejected (under BOOT_SRAM
+region, currently ~99.3% full (~1.25 KB free). ITCMRAM relocation was rejected (under BOOT_SRAM
 the load image can't cleanly leave SRAM_EXEC without relying on unverifiable bootloader load
-behavior). The two largest non-RT UI TUs (`core.ui.leds.cpp`, `core.ui.pads.cpp`) are compiled
-`-Os` (`#pragma GCC optimize`) to claw back space; the audio DSP stays `-O2 -funroll-loops`.
-**The deferred LED migration needs more headroom** — next safe lever is `-Os` on `core.ui.cpp`
-(its only audio-adjacent code, `read_cv`, is per-block 500 Hz, not per-sample).
+behavior). The three non-RT UI TUs `core.ui.leds.cpp`, `core.ui.pads.cpp`, and `core.ui.cpp` are
+compiled `-Os` (`#pragma GCC optimize`) to claw back space; the audio DSP stays
+`-O2 -funroll-loops`. The `-Os`-on-`core.ui.cpp` lever has been spent. If Round 3 needs more
+headroom, the remaining levers are `-Os` on `core.ui.midi.cpp` or tagging individual migrated
+`render()` methods `__attribute__((optimize("Os")))` while `process()` stays `-O2`.
 
 ## Resume roadmap
 
-1. **LEDs → `IEngine::render(DisplayModel&)`** (largest/riskiest). The `DisplayModel` is already
-   sketched concrete to the panel (`src/engine/display_model.h`, 2×32-px rings + named indicators)
-   and validated by `PassthroughEngine` (see "Grounding sketch" above); this round makes the
-   granular engine fill it. Likely extract `LEDRing`'s drawing half (minus `apply`) into ring
-   primitives; move `MValue` into a **platform toolkit keyed by `ParamId`** with engine-declared
-   per-param color/format so the platform owns the value-display overlay. Resolve the ring
-   compositing rule (transient value-display vs steady-state).
-2. **CV / gate / storage** off the granular `Core` (engine `onCV`, gate/trigger handler,
-   storage capability). Co-requisite with LEDs for a 2nd engine.
-3. **2nd engine** (e.g. passthrough/delay, `Capabilities = {Transport}` only) as a separate
-   firmware variant — flushes hidden coupling, validates capability opt-in, and grounds the
-   `DisplayModel`/render design with a real second consumer.
-4. **Build/boundary enforcement + DSP libraries** — split into compile units / static libs,
+1. **Round 3 — the ring → `render(DisplayModel&)`** (the hard piece). Move `_draw_ring`'s
+   steady-state (segment/playheads/heads) into the engine, filling `_display.ring[ref]`. Co-design
+   it with the **`MValue` → platform toolkit keyed by `ParamId`** (engine-declared per-param
+   color/format) so the platform owns the transient value-display overlay that currently
+   interleaves with the steady-state. Resolve the compositing rule (transient vs steady-state) and
+   have the engine return the segment geometry the overlays render against.
+2. **Transport / topology indicators** — get `_draw_leds`/`_draw_launching`/`_show_key_intervals`
+   off `driver()`/`mod()`/`route()`/`deck.mode()`. Likely entails deciding whether `Driver`/
+   transport stays in `Core` or becomes a platform-owned service. After this the `core()` hatch can
+   be cut.
+3. **Lift the shared `IEngine` interface** — `CoreUI`/`Storage` hold a concrete `GranularEngine&`/
+   `*`; a 2nd engine needs the granular surface lifted to the interface (or per-engine dispatch).
+4. **2nd engine** (e.g. the `PassthroughEngine` sketch promoted to a firmware variant,
+   `Capabilities = {Transport}`) — flushes hidden coupling, validates capability opt-in.
+5. **Build/boundary enforcement + DSP libraries** — split into compile units / static libs,
    drop the blanket `-Isrc/`, separate platform/engine include roots.
 
 Detailed per-phase notes live in the planning doc the maintainer keeps outside the repo.

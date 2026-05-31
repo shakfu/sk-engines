@@ -36,24 +36,24 @@ static constexpr std::array<uint32_t, kStorageTapeCount> kTapeColor = {
     kTurq,    //T urquoise
     0xffDE21  //Y ellow
 };
-static uint32_t clock_source_color(Driver& d) 
+static uint32_t clock_source_color(Driver::Source source)
 {
-    switch (d.source()) {
+    switch (source) {
         case Driver::Source::internal: return kGreen;
         case Driver::Source::ts4: return kPink;
         case Driver::Source::midi: return kTurq;
         default: return kWhite;
     }
 }
-static uint32_t clock_color(Driver& d, const bool is_key)
+static uint32_t clock_color(const TransportLeds& t, const bool is_key)
 {
-    uint32_t src_color = clock_source_color(d);
-    if (is_key) { 
-        if (d.is_key_at_quarter()) return d.is_external_sync() ? src_color : kWhite; 
-        return d.is_key_sub_quarter() ? src_color : kWhite;
+    uint32_t src_color = clock_source_color(t.source);
+    if (is_key) {
+        if (t.key_at_quarter) return t.external_sync ? src_color : kWhite;
+        return t.key_sub_quarter ? src_color : kWhite;
     }
-    else { 
-        return src_color; 
+    else {
+        return src_color;
     }
 }
 static uint32_t count_in_color(const bool is_key)
@@ -115,41 +115,43 @@ void CoreUI::_draw_leds()
     }
 
     _breathe_led();
-    
-    auto& deck_a = _core.deck(Deck::A);
-    auto& deck_b = _core.deck(Deck::B);
 
-    auto mode_color_a = mode_color(deck_a.mode()); 
-    
+    auto da = _engine.deck_leds(Deck::A);
+    auto db = _engine.deck_leds(Deck::B);
+    auto trn = _engine.transport_leds();
+    auto mix = _engine.mix();
+
+    auto mode_color_a = mode_color(da.mode);
+
     _led[Hardware::LED_GRIT_A].set(_hw);
     _led[Hardware::LED_FLUX_A].set(_hw);
-    _hw.leds.Set(Hardware::LED_FADER_A, kWhite, 1.f - _core.mix());
+    _hw.leds.Set(Hardware::LED_FADER_A, kWhite, 1.f - mix);
 
-    auto clck_src_color = clock_source_color(_core.driver());
+    auto clck_src_color = clock_source_color(trn.source);
 
     auto cycle_a_color = kWhite;
-    if (_core.mod(Deck::A).type() == Modulator::Type::Follow) cycle_a_color = mode_color_a;
-    else if (_core.mod(Deck::A).is_synced()) cycle_a_color = clck_src_color;
+    if (da.mod_type == Modulator::Type::Follow) cycle_a_color = mode_color_a;
+    else if (da.mod_synced) cycle_a_color = clck_src_color;
     _hw.leds.Set(Hardware::LED_CYCLE_A, cycle_a_color, _lfo_a);
 
-    auto mode_color_b = mode_color(deck_b.mode());
+    auto mode_color_b = mode_color(db.mode);
     _led[Hardware::LED_GRIT_B].set(_hw);
     _led[Hardware::LED_FLUX_B].set(_hw);
-    _hw.leds.Set(Hardware::LED_FADER_B, kWhite, _core.mix());
+    _hw.leds.Set(Hardware::LED_FADER_B, kWhite, mix);
 
     auto cycle_b_color = kWhite;
-    if (_core.mod(Deck::B).type() == Modulator::Type::Follow) cycle_b_color = mode_color_b;
-    else if (_core.mod(Deck::B).is_synced()) cycle_b_color = clck_src_color;
+    if (db.mod_type == Modulator::Type::Follow) cycle_b_color = mode_color_b;
+    else if (db.mod_synced) cycle_b_color = clck_src_color;
     _hw.leds.Set(Hardware::LED_CYCLE_B, cycle_b_color, _lfo_b);
 
-    switch (_core.route()) {
+    switch (_engine.route()) {
         case Route::DoubleMono: _hw.leds.Set(Hardware::LED_MODE_LEFT, kWhite, .8f); break;
         case Route::Stereo: _hw.leds.Set(Hardware::LED_MODE_CENTER, kWhite, .8f); break;
         case Route::GenerativeStereo: _hw.leds.Set(Hardware::LED_MODE_RIGHT, kWhite, .8f); break;
     }
 
     if (_clock_led_on || _clock_source_changed) {
-        auto color = _clock_source_changed ? clck_src_color : clock_color(_core.driver(), _show_key_quarter);
+        auto color = _clock_source_changed ? clck_src_color : clock_color(trn, _show_key_quarter);
         _hw.leds.Set(Hardware::LED_CLOCK_IN, color, 1.f);
     }
 
@@ -215,7 +217,7 @@ void CoreUI::_draw_launching()
     auto brightness = .7f * LUT_Sin_Value_At(phase * kLUTSinSize);
     for (auto ref: { Deck::A, Deck::B }) {
         _display.ring[ref].set_brightness(brightness);
-        _display.ring[ref].set_hex_color(mode_color(_core.deck(ref).mode()));
+        _display.ring[ref].set_hex_color(mode_color(_engine.deck_leds(ref).mode));
         _display.ring[ref].set_segment(0.f, 0.999f);
         _display.ring[ref].set_updated();
         auto base = ref == Deck::A ? Hardware::LED_RING_A : Hardware::LED_RING_B;
@@ -568,7 +570,8 @@ void CoreUI::_show_key_intervals()
         _display.ring[Deck::A].set_segment(start, end);
     }
 
-    auto interval = _core.driver().key_interval();
+    auto trn = _engine.transport_leds();
+    auto interval = trn.key_interval;
     uint8_t step;
     uint8_t steps;
     using KI = kKeyInterval;
@@ -579,8 +582,8 @@ void CoreUI::_show_key_intervals()
     }
     uint32_t color;
     for (uint8_t i = 0; i < steps; i++) {
-        if (i == 0) color = _core.driver().is_key_sub_quarter() ? clock_source_color(_core.driver()) : kWhite;
-        else color = clock_source_color(_core.driver());
+        if (i == 0) color = trn.key_sub_quarter ? clock_source_color(trn.source) : kWhite;
+        else color = clock_source_color(trn.source);
         _display.ring[Deck::A].set_point_hex_color(color);
         _display.ring[Deck::A].set_point(i * step + 4, i % 4 && interval != KI::k1_16 ? .25f : .7f);
     }

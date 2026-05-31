@@ -227,6 +227,22 @@ AltLeds GranularEngine::alt_leds(const Deck::Ref ref)
     return { track.is_armed(), track.is_recording() };
 }
 
+TransportLeds GranularEngine::transport_leds()
+{
+    auto& d = _core.driver();
+    return { d.source(), d.is_key_at_quarter(), d.is_key_sub_quarter(),
+             d.is_external_sync(), d.key_interval() };
+}
+
+DeckLeds GranularEngine::deck_leds(const Deck::Ref ref)
+{
+    const auto r = _safe_ref(ref);
+    return { _core.deck(r).mode(), _core.mod(r).type(), _core.mod(r).is_synced() };
+}
+
+float GranularEngine::mix() const   { return _core.mix(); }
+Route GranularEngine::route() const { return _core.route(); }
+
 void GranularEngine::set_fx(const Deck::Ref ref, const FxKind kind, const bool on)
 {
     auto& fx = _core.deck(_safe_ref(ref)).fx();
