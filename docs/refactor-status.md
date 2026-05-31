@@ -63,6 +63,31 @@ moves to an engine-side handler:
    + indicators, interleaved with the `MValue` value-display overlay. The hard redesign
    (`render(DisplayModel&)` + moving `MValue` into a platform toolkit).
 
+### Grounding sketch (done) — `DisplayModel` + `PassthroughEngine` (host-only)
+
+Before committing to the LED redesign, the display contract was made concrete against a real
+second consumer. Two new headers, **not wired into the firmware** (`app.cpp`/`src/ui/` unchanged,
+so zero on-device impact — they only compile into the host test):
+
+- **`src/engine/display_model.h`** — hardware-agnostic panel data an engine's `render()` fills
+  and the platform blits to WS2812: `Pixel ring[2][32]` + named `Indicator`s (`play/rev/grit/
+  flux/gate_in/cycle/alt`, `mode_left/center/right`, `clock_in`, `fader[2]`, `spot`) + `clear()`.
+  The engine never touches `Hardware`/`LEDRing` (those carry `apply(Hardware&)`); it only fills
+  this data and the platform owns the model->`LedId` blit. The real LED migration will likely add
+  `set_segment`/`add_point` primitives by extracting `LEDRing`'s drawing half (minus `apply`).
+- **`src/engine/passthrough_engine.h`** — a deliberately non-granular `PassthroughEngine : IEngine`:
+  stereo passthrough `process` (tracks last-block peak), `capabilities() == CapTransport` only
+  (opts out of Recording/Tape/Sequencer), and `render(DisplayModel&)` drawing a level meter on
+  both rings + lit play indicators. Its comment enumerates the **full** platform-driven surface a
+  real 2nd engine must implement (`set_param`/`param`, `handle_midi_*`, `set_fx`/`on_*_pad`,
+  `cv_*`/`on_gate_*`, the `audio_*` storage port, `render`) and notes these belong on a **lifted
+  shared interface** — today `CoreUI`/`Storage` hold a concrete `GranularEngine&`/`*`.
+
+`host/test_engine_params.cpp` got a passthrough smoke (capabilities, in==out passthrough, render
+lights rings/play, silence collapses the meter and proves `clear()`). What the sketch grounds: the
+`DisplayModel` contract holds for a non-looper, capability opt-in works, and the "lift a shared
+interface" requirement is now explicit in code. `make -j8` SRAM_EXEC stays 99.37% (unchanged).
+
 ### Caveat: concrete vs abstract
 
 The granular input methods live on the **concrete `GranularEngine`**, not on the abstract
@@ -88,9 +113,11 @@ behavior). The two largest non-RT UI TUs (`core.ui.leds.cpp`, `core.ui.pads.cpp`
 
 ## Resume roadmap
 
-1. **LEDs → `IEngine::render(DisplayModel&)`** (largest/riskiest). Define a `DisplayModel`
-   concrete to the panel (2×32-px rings + named indicators); the engine fills the steady-state
-   intent; move `MValue` into a **platform toolkit keyed by `ParamId`** with engine-declared
+1. **LEDs → `IEngine::render(DisplayModel&)`** (largest/riskiest). The `DisplayModel` is already
+   sketched concrete to the panel (`src/engine/display_model.h`, 2×32-px rings + named indicators)
+   and validated by `PassthroughEngine` (see "Grounding sketch" above); this round makes the
+   granular engine fill it. Likely extract `LEDRing`'s drawing half (minus `apply`) into ring
+   primitives; move `MValue` into a **platform toolkit keyed by `ParamId`** with engine-declared
    per-param color/format so the platform owns the value-display overlay. Resolve the ring
    compositing rule (transient value-display vs steady-state).
 2. **CV / gate / storage** off the granular `Core` (engine `onCV`, gate/trigger handler,

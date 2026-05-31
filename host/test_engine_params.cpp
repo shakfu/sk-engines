@@ -14,6 +14,8 @@
 #include "core/core.h"
 #include "core/mode.h"
 #include "engine/granular_engine.h"
+#include "engine/passthrough_engine.h"
+#include "engine/display_model.h"
 #include "host_setup.h"
 
 using namespace spotykach;
@@ -138,6 +140,55 @@ int main() {
             }
         }
         check(finite, "process() output stays finite after a full param + CV/gate sweep");
+    }
+
+    // (6) Second-engine grounding: a non-granular PassthroughEngine through the same IEngine
+    // seam + the DisplayModel render contract. Proves the contract fits an engine that opts out
+    // of Recording/Tape/Sequencer and isn't a looper. (Host-only sketch; not in firmware.)
+    {
+        std::printf("passthrough engine\n");
+        PassthroughEngine pe;
+        pe.init(ctx);
+        pe.prepare();
+
+        // capabilities: Transport only - no Recording/Tape/Sequencer.
+        check(pe.capabilities() == CapTransport, "passthrough capabilities() == CapTransport");
+
+        // process: out == in, sample for sample.
+        bool passthrough = true;
+        for (size_t i = 0; i < host::kBlock; i++) {
+            float s = 0.4f * std::sin(2.f * 3.14159265f * 330.f * i / host::kSampleRate);
+            in_l[i] = in_r[i] = s;
+            out_l[i] = out_r[i] = -1.f; // poison: render must overwrite
+        }
+        pe.process(in_ptrs, out_ptrs, host::kBlock);
+        for (size_t i = 0; i < host::kBlock; i++) {
+            if (!approx(out_l[i], in_l[i]) || !approx(out_r[i], in_r[i])) passthrough = false;
+        }
+        check(passthrough, "passthrough process() copies in -> out");
+
+        // render: a non-zero block peak must light some ring pixels + the play indicators.
+        DisplayModel model;
+        pe.render(model);
+        int lit = 0;
+        for (int r = 0; r < 2; r++)
+            for (int p = 0; p < DisplayModel::kRingPixels; p++)
+                if (model.ring[r][p].brightness > 0.f) lit++;
+        check(lit > 0, "render() lights ring pixels for a non-zero level");
+        check(model.play[0].brightness > 0.f && model.play[1].brightness > 0.f,
+              "render() lights both play indicators");
+
+        // silence -> meter collapses; render() must clear() stale pixels (pre-dirtied here).
+        for (size_t i = 0; i < host::kBlock; i++) { in_l[i] = in_r[i] = 0.f; }
+        pe.process(in_ptrs, out_ptrs, host::kBlock);
+        DisplayModel silent;
+        for (int p = 0; p < DisplayModel::kRingPixels; p++) silent.ring[0][p] = { 0xdeadbe, 0.9f };
+        pe.render(silent);
+        int lit_silent = 0;
+        for (int r = 0; r < 2; r++)
+            for (int p = 0; p < DisplayModel::kRingPixels; p++)
+                if (silent.ring[r][p].brightness > 0.f) lit_silent++;
+        check(lit_silent == 0, "render() shows no meter for silence");
     }
 
     if (g_failures == 0) {
