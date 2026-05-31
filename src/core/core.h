@@ -7,6 +7,7 @@
 
 #include "nocopy.h"
 #include "config.h"
+#include "engine_context.h"
 
 #include "driver.h"
 #include "modulator.h"
@@ -32,7 +33,7 @@ public:
   Core();
   ~Core() {}
   
-  void init(const float sample_rate, const float buffer_size);
+  void init(const EngineContext& ctx);
 
   Driver& driver() { return _driver; }
   Panner& panner() { return _panner; }

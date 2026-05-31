@@ -1,5 +1,7 @@
 #include "detector.h"
 #include "daisysp.h"
+#include <algorithm>
+#include <cmath>
 
 using namespace spotykach;
 
@@ -14,9 +16,11 @@ _will_close    { false },
 _is_closing    { false }
 {};
 
-void Detector::init(float** buf)
+void Detector::init(float** buf, const float sample_rate)
 {
   _buffer = buf;
+  // 10 ms detection window, clamped to the static buffer capacity (kWindow).
+  _window = std::min(kWindow, static_cast<size_t>(std::lround(0.010f * sample_rate)));
 }
 
 void Detector::set_armed(const bool armed) {
@@ -27,7 +31,7 @@ void Detector::set_armed(const bool armed) {
         _average = 0;
         _will_close = false;
         _is_closing = false;
-        auto size = sizeof(float) * kWindow;
+        auto size = sizeof(float) * _window;
         std::memset(_buffer[0], 0, size);
         std::memset(_buffer[1], 0, size);
     } 
@@ -48,7 +52,7 @@ void Detector::process(const float in0, const float in1, float& out0, float& out
         out0 = _buffer[0][_read_head];
         out1 = _buffer[1][_read_head];
 
-      if (++_read_head == kWindow) {
+      if (++_read_head == _window) {
         _read_head = 0;
         
         // If it's the last cycle, close the gate.
@@ -88,7 +92,7 @@ void Detector::process(const float in0, const float in1, float& out0, float& out
     auto kof = (abs_in > _average) ? kKofRise : kKofFall;
     _average = abs_in + kof * (_average - abs_in);
     
-    if (++_write_head == kWindow) {
+    if (++_write_head == _window) {
       // Convert average to dB
       auto db_average = 20.f * daisysp::fastlog10f(_average);
 

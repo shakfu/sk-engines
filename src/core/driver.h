@@ -1,10 +1,11 @@
 #pragma once
 
-#include <daisy_seed.h>
 #include <stdint.h>
 #include <array>
+#include <functional>
 
 #include "nocopy.h"
+#include "itimesource.h"
 #include "synclock.h"
 #include "divider.h"
 #include "deck.h"
@@ -66,7 +67,7 @@ public:
     Driver(Deck&, Deck&, Click&, Panner&, Modulator*);
     ~Driver() {};
 
-    void init(const float sample_rate, const float buffer_size);
+    void init(const float sample_rate, const float buffer_size, const ITimeSource* time);
 
     void toggle_play(const Deck::Ref deck);
     
@@ -109,8 +110,9 @@ private:
     Panner&     _panner;
 
     Modulator*  _mod;
-    
-    daisy::StopwatchTimer _reset_timer;
+
+    const ITimeSource* _time = nullptr;
+    uint32_t _reset_us = 0;
 
     std::function<void(const bool /*is key quarter*/)> _on_quarter;
     std::function<void()> _on_clock_out;

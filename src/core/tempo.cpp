@@ -1,9 +1,7 @@
 #include "tempo.h"
-#include "daisy_seed.h"
 #include "expose.h"
 
 using namespace spotykach;
-using namespace daisy;
 
 Tempo::Tempo():
 _prev_time  { 0 },
@@ -14,7 +12,7 @@ _full       { false }
 
 void Tempo::tap() 
 {
-    auto time = System::GetNow();
+    auto time = _time ? _time->now_ms() : 0;
     if (_prev_time != 0) {
         auto diff = time - _prev_time;
         if (diff < .6f * _avg || diff > 1.4f * _avg) {

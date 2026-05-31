@@ -25,9 +25,11 @@ _key_tick_interval  { 4 },
 _tap                { false }
 {};
 
-void Driver::init(const float sample_rate, const float buffer_size) 
+void Driver::init(const float sample_rate, const float buffer_size, const ITimeSource* time)
 {
-    _reset_timer.Init();
+    _time = time;
+    _tempo.set_time_source(time);
+    _reset_us = _time ? _time->now_us() : 0;
 
     _clock.Init(2000, kPPQNIntern); //2000 mks => 500Hz (see app.cpp)
     _clock.SetPPQNIn(Source::ts4);
@@ -72,7 +74,7 @@ void Driver::toggle_play(Deck::Ref deck) {
 
 void Driver::_on_clock_tick(const bool external_tick) {
     if (external_tick) {
-        _reset_timer.Restart();
+        _reset_us = _time ? _time->now_us() : 0;
         _send_clock = true;
     }
 
@@ -117,7 +119,8 @@ void Driver::reset()
 
 void Driver::_divider_reset_counts(const bool force)
 {
-    if (_reset_timer.HasPassedUs(4000/*4ms*/) || force) { 
+    auto reset_elapsed_us = _time ? (_time->now_us() - _reset_us) : 0xFFFFFFFFu;
+    if (reset_elapsed_us >= 4000u/*4ms*/ || force) {
         //The clock is stopped or we're long after the tick, 
         // so the next one will be the key
         _key_tick_count = 0;

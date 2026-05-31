@@ -1,7 +1,6 @@
 #include "core.h"
 #include "daisysp.h"
 #include <functional>
-#include "hw/buffer.sdram.h"
 #include "mode.h"
 #include "expose.h"
 
@@ -18,31 +17,12 @@ _driver { Driver(_decks[Deck::A], _decks[Deck::B], _click, _panner, _mod.data())
     _xfade.SetStage(.5f);
 };
   
-void Core::init(const float sample_rate, const float callback_buffer_size) {
-    _driver.init(sample_rate, callback_buffer_size);
+void Core::init(const EngineContext& ctx) {
+    const auto sample_rate = ctx.sample_rate;
+    _driver.init(sample_rate, ctx.block_size, ctx.time);
     _panner.init(sample_rate);
     _click.init(sample_rate);
     _mix_smooth.init(sample_rate);
-
-    auto& pool = SDRAMBuffer::pool();
-    auto size = pool.sourceBufferSize(); 
-
-    static Buffer::Frame* main_buf[Deck::Count] = { pool.sourceBuffer(), pool.sourceBuffer() };
-
-    static float* detect_buf[Deck::Count][2] = {
-        { pool.detectorBuffer(), pool.detectorBuffer() },
-        { pool.detectorBuffer(), pool.detectorBuffer() }
-    };
-    static float* delay_buf[Deck::Count][2] = {
-        { pool.delayBuffer(), pool.delayBuffer() },
-        { pool.delayBuffer(), pool.delayBuffer() }
-    };
-    static size_t* slice_buf[Deck::Count] = { 
-        pool.slices_a(), pool.slices_b() 
-    }; 
-    static Event* track_buf[Deck::Count] = { 
-        pool.track_buffer_a(), pool.track_buffer_b() 
-    };
 
     for (auto d = 0; d < Deck::Count; d++) {
         auto ref = (Deck::Ref)d;
@@ -50,16 +30,16 @@ void Core::init(const float sample_rate, const float callback_buffer_size) {
 
         Deck::Params p;
         p.sample_rate = sample_rate;
-        p.main_buf_size = size;
-        p.main_buf = main_buf[d];
-        p.detect_buf = detect_buf[d];
-        p.delay_buf = delay_buf[d];
-        p.slice_buf = slice_buf[d];
-        p.track_buf = track_buf[d];
+        p.main_buf_size = ctx.buffers.source_frames;
+        p.main_buf = ctx.buffers.source[d];
+        p.detect_buf = const_cast<float**>(ctx.buffers.detect[d]);
+        p.delay_buf = const_cast<float**>(ctx.buffers.delay[d]);
+        p.slice_buf = ctx.buffers.slices[d];
+        p.track_buf = ctx.buffers.track[d];
         deck(ref).init(p);
-        
+
         _mod[ref].init(sample_rate);
-    }  
+    }
 };
 
 Panner::Mode _panner_mode(const spotykach::Mode mode)

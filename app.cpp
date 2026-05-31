@@ -5,8 +5,10 @@
 #include "common.h"
 #include "settings.h"
 #include "hw/hardware.h"
+#include "hw/buffer.sdram.h"
 #include "ui/core.ui.h"
 #include "core/core.h"
+#include "core/itimesource.h"
 #include "memory/storage.h"
 #include "expose.h"
 
@@ -21,6 +23,12 @@ using namespace daisy;
 using namespace infrasonic;
 
 namespace spotykach {
+
+// Hardware-backed clock for the DSP core. Off-target builds (host harness) supply their own.
+struct DaisyTimeSource : ITimeSource {
+    uint32_t now_ms() const override { return daisy::System::GetNow(); }
+    uint32_t now_us() const override { return daisy::System::GetUs(); }
+};
 
 class AppImpl {
   public:
@@ -53,6 +61,7 @@ class AppImpl {
     #endif
     bool _log_enabled;
 
+    DaisyTimeSource _time_source;
     Core        _core;
     CoreUI      _ui;
     Hardware    _hw;
@@ -116,7 +125,28 @@ void AppImpl::Init()
     auto sample_rate = 48000;
     auto block_size = 96;
     _hw.Init(sample_rate, block_size);
-    _core.init(sample_rate, block_size);
+
+    // Pull the large buffers from the SDRAM pool and inject them into the core. The
+    // hand-out order must match the core's previous direct pulls (decks A then B).
+    auto& pool = SDRAMBuffer::pool();
+    EngineContext ctx;
+    ctx.sample_rate = sample_rate;
+    ctx.block_size = block_size;
+    ctx.time = &_time_source;
+    ctx.buffers.source_frames = pool.sourceBufferSize();
+    for (auto d = 0; d < Deck::Count; d++) {
+        ctx.buffers.source[d] = pool.sourceBuffer();
+        ctx.buffers.detect[d][0] = pool.detectorBuffer();
+        ctx.buffers.detect[d][1] = pool.detectorBuffer();
+        ctx.buffers.delay[d][0] = pool.delayBuffer();
+        ctx.buffers.delay[d][1] = pool.delayBuffer();
+    }
+    ctx.buffers.slices[Deck::A] = pool.slices_a();
+    ctx.buffers.slices[Deck::B] = pool.slices_b();
+    ctx.buffers.track[Deck::A] = pool.track_buffer_a();
+    ctx.buffers.track[Deck::B] = pool.track_buffer_b();
+    _core.init(ctx);
+
     _ui.init();
     #ifdef STORAGE
     _storage.init(_core.deck(Deck::A), _core.deck(Deck::B));
