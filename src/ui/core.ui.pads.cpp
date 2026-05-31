@@ -15,22 +15,22 @@ void CoreUI::_on_pad_touch(Hardware::Pad pad)
             
         case P::RevA: _on_play_touch(Deck::A, true); break;
 
-        case P::FluxA: 
+        case P::FluxA:
             _touched.set(FluxA);
             if (is_alt_touched) {
-                deck_a.fx().toggle_flux_lock();
+                _engine.toggle_fx_lock(Deck::A, FxKind::Flux);
             } else {
-                deck_a.fx().set_flux_on(true);
+                _engine.set_fx(Deck::A, FxKind::Flux, true);
             }
             break;
 
-        case P::GritA: 
+        case P::GritA:
             _touched.set(GritA);
             if (is_alt_touched) {
-                deck_a.fx().toggle_grit_lock();
-            }  
+                _engine.toggle_fx_lock(Deck::A, FxKind::Grit);
+            }
             else {
-                deck_a.fx().set_grit_on(true);
+                _engine.set_fx(Deck::A, FxKind::Grit, true);
             }
             break;
             
@@ -38,22 +38,22 @@ void CoreUI::_on_pad_touch(Hardware::Pad pad)
 
         case P::RevB: _on_play_touch(Deck::B, true); break;
         
-        case P::FluxB: 
+        case P::FluxB:
             _touched.set(FluxB);
-             if (is_alt_touched) {
-                deck_b.fx().toggle_flux_lock();
+            if (is_alt_touched) {
+                _engine.toggle_fx_lock(Deck::B, FxKind::Flux);
             } else {
-                deck_b.fx().set_flux_on(true);
+                _engine.set_fx(Deck::B, FxKind::Flux, true);
             }
             break;
 
         case P::GritB:
             _touched.set(GritB);
             if (is_alt_touched) {
-                deck_b.fx().toggle_grit_lock();
-            } 
+                _engine.toggle_fx_lock(Deck::B, FxKind::Grit);
+            }
             else {
-                deck_b.fx().set_grit_on(true);
+                _engine.set_fx(Deck::B, FxKind::Grit, true);
             }
             break;
 
@@ -124,25 +124,25 @@ void CoreUI::_on_pad_release(Hardware::Pad pad)
 
         case P::FluxA:
             _touched.reset(FluxA);
-            _core.deck(Deck::A).fx().set_flux_on(false);
+            _engine.set_fx(Deck::A, FxKind::Flux, false);
             _changing_value_id[Deck::A] = 0;
             break;
 
         case P::GritA:
             _touched.reset(GritA);
-            _core.deck(Deck::A).fx().set_grit_on(false);
+            _engine.set_fx(Deck::A, FxKind::Grit, false);
             _changing_value_id[Deck::A] = 0;
             break;
 
         case P::FluxB:
             _touched.reset(FluxB);
-            _core.deck(Deck::B).fx().set_flux_on(false);
+            _engine.set_fx(Deck::B, FxKind::Flux, false);
             _changing_value_id[Deck::B] = 0;
             break;
 
         case P::GritB:
             _touched.reset(GritB);
-            _core.deck(Deck::B).fx().set_grit_on(false);
+            _engine.set_fx(Deck::B, FxKind::Grit, false);
             _changing_value_id[Deck::B] = 0;
             break;
 
@@ -207,13 +207,13 @@ void CoreUI::_on_alt_touch()
     
     auto& deck_a = _core.deck(Deck::A);
     if (deck_a.track().is_armed()) deck_a.track().disarm();
-    if (_touched.test(GritA)) deck_a.fx().toggle_grit_lock();
-    if (_touched.test(FluxA)) deck_a.fx().toggle_flux_lock();
+    if (_touched.test(GritA)) _engine.toggle_fx_lock(Deck::A, FxKind::Grit);
+    if (_touched.test(FluxA)) _engine.toggle_fx_lock(Deck::A, FxKind::Flux);
 
-    auto& deck_b = _core.deck(Deck::B); 
+    auto& deck_b = _core.deck(Deck::B);
     if (deck_b.track().is_armed()) deck_b.track().disarm();
-    if (_touched.test(GritB)) deck_b.fx().toggle_grit_lock();
-    if (_touched.test(FluxB)) deck_b.fx().toggle_flux_lock();
+    if (_touched.test(GritB)) _engine.toggle_fx_lock(Deck::B, FxKind::Grit);
+    if (_touched.test(FluxB)) _engine.toggle_fx_lock(Deck::B, FxKind::Flux);
 
     if (_tap_hold.passed()) {
         _core.driver().toggle_source();

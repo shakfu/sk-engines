@@ -43,6 +43,11 @@ public:
     Deck::Ref handle_midi_note(uint8_t channel, uint8_t note);
     void handle_midi_transport(bool start); // true=start/continue, false=stop
 
+    // FX pads (Phase 3c). The platform owns the pad gesture + modifier state; the engine
+    // owns what flux/grit do. set_fx is momentary on/off; toggle_fx_lock is the alt+pad latch.
+    void set_fx(Deck::Ref, FxKind, bool on);
+    void toggle_fx_lock(Deck::Ref, FxKind);
+
     // Temporary direct access for the still-coupled UI/storage/CV paths.
     Core& core() { return _core; }
 

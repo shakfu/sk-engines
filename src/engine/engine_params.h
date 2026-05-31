@@ -36,6 +36,9 @@ enum class ParamId : uint8_t {
     Count
 };
 
+// The two end-of-chain effects, addressed by the flux/grit pads.
+enum class FxKind { Flux, Grit };
+
 // Optional behaviours an engine opts into. The platform offers these as a toolkit; a
 // variant enables only the subset it needs (a non-looper omits Recording/TapeStorage/etc.).
 enum Capability : uint32_t {

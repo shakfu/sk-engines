@@ -83,6 +83,20 @@ Deck::Ref GranularEngine::handle_midi_note(const uint8_t channel, const uint8_t 
     return ref;
 }
 
+void GranularEngine::set_fx(const Deck::Ref ref, const FxKind kind, const bool on)
+{
+    auto& fx = _core.deck(_safe_ref(ref)).fx();
+    if (kind == FxKind::Flux) fx.set_flux_on(on);
+    else                      fx.set_grit_on(on);
+}
+
+void GranularEngine::toggle_fx_lock(const Deck::Ref ref, const FxKind kind)
+{
+    auto& fx = _core.deck(_safe_ref(ref)).fx();
+    if (kind == FxKind::Flux) fx.toggle_flux_lock();
+    else                      fx.toggle_grit_lock();
+}
+
 void GranularEngine::handle_midi_transport(const bool start)
 {
     auto& c = Config::dynamic();
