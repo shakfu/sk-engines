@@ -48,6 +48,20 @@ public:
     void set_fx(Deck::Ref, FxKind, bool on);
     void toggle_fx_lock(Deck::Ref, FxKind);
 
+    // Play/Rev pads (Phase 3c). The platform owns tap/hold + storage/tape + LED; the engine
+    // owns the granular play/record/stop decision. on_play_pad returns is_empty (for the LED).
+    void stop_if_generating(Deck::Ref);
+    void clear_buffer(Deck::Ref);
+    void on_record_pad(Deck::Ref, bool reverse);
+    bool on_play_pad(Deck::Ref, bool reverse);
+
+    // Seq pads (Phase 3c). Platform owns storage/tape + the hold-to-clear timer; the engine
+    // owns the sequencer: arm/disarm the track, trigger it, and clear the recorded sequence.
+    void on_seq_toggle_arm(Deck::Ref);
+    void on_seq_trigger(Deck::Ref);
+    void clear_sequence(Deck::Ref);
+    void disarm_track(Deck::Ref); // disarm the deck's track if armed (Alt-pad action)
+
     // Temporary direct access for the still-coupled UI/storage/CV paths.
     Core& core() { return _core; }
 

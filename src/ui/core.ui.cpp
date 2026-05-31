@@ -120,10 +120,9 @@ void CoreUI::process()
     if (blink) _arm_blink_timer.Restart();
 
     for (auto ref: { Deck::A, Deck::B }) {
-        auto& deck = _core.deck(ref);
         if (_hold_clear[ref].process()) {
             _hold_clear[ref].end();
-            deck.clear_sequence();
+            _engine.clear_sequence(ref);
         }
         // LEDs /////////
         _draw_ring(ref);

@@ -83,6 +83,60 @@ Deck::Ref GranularEngine::handle_midi_note(const uint8_t channel, const uint8_t 
     return ref;
 }
 
+void GranularEngine::stop_if_generating(const Deck::Ref ref)
+{
+    auto& deck = _core.deck(_safe_ref(ref));
+    if (deck.is_generating()) deck.stop();
+}
+
+void GranularEngine::clear_buffer(const Deck::Ref ref)
+{
+    _core.deck(_safe_ref(ref)).buffer().clear();
+}
+
+void GranularEngine::on_record_pad(const Deck::Ref ref, const bool reverse)
+{
+    const auto src = reverse ? Deck::Source::internal : Deck::Source::external;
+    _core.set_source(src, _safe_ref(ref));
+    _core.deck(_safe_ref(ref)).toggle_recording();
+}
+
+bool GranularEngine::on_play_pad(const Deck::Ref ref, const bool reverse)
+{
+    auto& deck = _core.deck(_safe_ref(ref));
+    deck.disarm();
+    const bool empty = deck.is_empty();
+    if (!deck.is_overdubbing() && (!deck.is_playing() || deck.is_reverse() == reverse)) {
+        _core.driver().toggle_play(_safe_ref(ref));
+    }
+    deck.set_reverse(reverse);
+    return empty;
+}
+
+void GranularEngine::on_seq_toggle_arm(const Deck::Ref ref)
+{
+    auto& t = _core.deck(_safe_ref(ref)).track();
+    if (t.is_armed()) t.disarm();
+    else              t.arm(!_core.driver().is_key_sub_quarter());
+}
+
+void GranularEngine::on_seq_trigger(const Deck::Ref ref)
+{
+    auto e = make_event();
+    _core.deck(_safe_ref(ref)).trigger(&e);
+}
+
+void GranularEngine::clear_sequence(const Deck::Ref ref)
+{
+    _core.deck(_safe_ref(ref)).clear_sequence();
+}
+
+void GranularEngine::disarm_track(const Deck::Ref ref)
+{
+    auto& t = _core.deck(_safe_ref(ref)).track();
+    if (t.is_armed()) t.disarm();
+}
+
 void GranularEngine::set_fx(const Deck::Ref ref, const FxKind kind, const bool on)
 {
     auto& fx = _core.deck(_safe_ref(ref)).fx();

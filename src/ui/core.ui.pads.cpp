@@ -2,10 +2,8 @@
 
 using namespace spotykach;
 
-void CoreUI::_on_pad_touch(Hardware::Pad pad) 
+void CoreUI::_on_pad_touch(Hardware::Pad pad)
 {
-    auto& deck_a = _core.deck(Deck::A);
-    auto& deck_b = _core.deck(Deck::B);
     auto is_alt_touched = _touched.test(Alt);
     _reset_changing_value_id();
 
@@ -65,15 +63,13 @@ void CoreUI::_on_pad_touch(Hardware::Pad pad)
             else if (_storage.of(Deck::A).is_idle()) {
                 if (_tap_hold.passed() && _core.driver().is_external_sync()) {
                     _core.driver().reset();
-                } 
+                }
                 else if (is_alt_touched) {
-                    auto& t = deck_a.track();
-                    if (t.is_armed()) t.disarm(); else t.arm(!_core.driver().is_key_sub_quarter());
+                    _engine.on_seq_toggle_arm(Deck::A);
                     _hold_clear[Deck::A].begin();
                 }
                 else {
-                    auto e = make_event();
-                    deck_a.trigger(&e);
+                    _engine.on_seq_trigger(Deck::A);
                 }
             }
             break;
@@ -85,13 +81,11 @@ void CoreUI::_on_pad_touch(Hardware::Pad pad)
             }
             else if (_storage.of(Deck::B).is_idle()) {
                 if (is_alt_touched) {
-                    auto& t = deck_b.track();
-                    if (t.is_armed()) t.disarm(); else t.arm(!_core.driver().is_key_sub_quarter());
+                    _engine.on_seq_toggle_arm(Deck::B);
                     _hold_clear[Deck::B].begin();
-                } 
+                }
                 else {
-                    auto e = make_event();
-                    deck_b.trigger(&e);    
+                    _engine.on_seq_trigger(Deck::B);
                 }
             }
             break;
@@ -157,17 +151,15 @@ void CoreUI::_on_pad_release(Hardware::Pad pad)
 
 void CoreUI::_on_play_touch(const Deck::Ref ref, const bool reverse)
 {
-    auto& deck = _core.deck(ref);
-
     if (_tap_hold.passed()) {
-        if (deck.is_generating()) deck.stop();
-        
+        _engine.stop_if_generating(ref);
+
         auto& s = _storage.of(ref);
-        
+
         if (s.is_processing()) {
             bool is_loading = s.state() == DeckStorage::State::loading;
             _storage.cancel(ref);
-            if (is_loading) deck.buffer().clear();
+            if (is_loading) _engine.clear_buffer(ref);
         }
         else if (s.is_idle()) _storage.activate(ref);
         else if (s.is_selecting()) _storage.deactivate(ref);
@@ -184,20 +176,13 @@ void CoreUI::_on_play_touch(const Deck::Ref ref, const bool reverse)
         }
         return;
     }
-    
+
     if (_touched.test(Alt)) {
-        auto src = reverse ? Deck::Source::internal : Deck::Source::external;
-        _core.set_source(src, ref);
-        deck.toggle_recording();
+        _engine.on_record_pad(ref, reverse);
         _storage.of(ref).reset_recent_slot();
     }
     else {
-        deck.disarm();
-        if (deck.is_empty()) _show_empty(ref);
-        if (!deck.is_overdubbing() && (!deck.is_playing() || deck.is_reverse() == reverse)) {
-            _core.driver().toggle_play(ref);
-        }
-        deck.set_reverse(reverse);
+        if (_engine.on_play_pad(ref, reverse)) _show_empty(ref);
     }
 }
 
@@ -205,13 +190,11 @@ void CoreUI::_on_alt_touch()
 {
     _touched.set(Alt);
     
-    auto& deck_a = _core.deck(Deck::A);
-    if (deck_a.track().is_armed()) deck_a.track().disarm();
+    _engine.disarm_track(Deck::A);
     if (_touched.test(GritA)) _engine.toggle_fx_lock(Deck::A, FxKind::Grit);
     if (_touched.test(FluxA)) _engine.toggle_fx_lock(Deck::A, FxKind::Flux);
 
-    auto& deck_b = _core.deck(Deck::B);
-    if (deck_b.track().is_armed()) deck_b.track().disarm();
+    _engine.disarm_track(Deck::B);
     if (_touched.test(GritB)) _engine.toggle_fx_lock(Deck::B, FxKind::Grit);
     if (_touched.test(FluxB)) _engine.toggle_fx_lock(Deck::B, FxKind::Flux);
 
