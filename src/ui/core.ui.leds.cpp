@@ -168,8 +168,8 @@ void CoreUI::_draw_leds()
     _hw.leds.Set(Hardware::LED_GATE_IN_B, mode_color_b, gate_in_b_bright);
 
     // RINGS ////////////////////////////////////////////////
-    _ring[Deck::A].apply([&](uint8_t i, uint32_t hex, float b){ set_led(_hw, Hardware::LED_RING_A, i, hex, b); });
-    _ring[Deck::B].apply([&](uint8_t i, uint32_t hex, float b){ set_led(_hw, Hardware::LED_RING_B, i, hex, b); });
+    _display.ring[Deck::A].apply([&](uint8_t i, uint32_t hex, float b){ set_led(_hw, Hardware::LED_RING_A, i, hex, b); });
+    _display.ring[Deck::B].apply([&](uint8_t i, uint32_t hex, float b){ set_led(_hw, Hardware::LED_RING_B, i, hex, b); });
     
     _led[Hardware::LED_PLAY_A].set(_hw);
     _led[Hardware::LED_REV_A].set(_hw);
@@ -214,12 +214,12 @@ void CoreUI::_draw_launching()
     auto phase = .25f * (t - totalFadeInTime) / totalFadeInTime;
     auto brightness = .7f * LUT_Sin_Value_At(phase * kLUTSinSize);
     for (auto ref: { Deck::A, Deck::B }) {
-        _ring[ref].set_brightness(brightness);
-        _ring[ref].set_hex_color(mode_color(_core.deck(ref).mode()));
-        _ring[ref].set_segment(0.f, 0.999f);
-        _ring[ref].set_updated();
+        _display.ring[ref].set_brightness(brightness);
+        _display.ring[ref].set_hex_color(mode_color(_core.deck(ref).mode()));
+        _display.ring[ref].set_segment(0.f, 0.999f);
+        _display.ring[ref].set_updated();
         auto base = ref == Deck::A ? Hardware::LED_RING_A : Hardware::LED_RING_B;
-        _ring[ref].apply([&](uint8_t i, uint32_t hex, float b){ set_led(_hw, base, i, hex, b); });
+        _display.ring[ref].apply([&](uint8_t i, uint32_t hex, float b){ set_led(_hw, base, i, hex, b); });
     }
 
     if (t < 2 * totalFadeInTime) return;
@@ -231,16 +231,16 @@ void CoreUI::_draw_launching()
 // Called from main /////////////////////
 void CoreUI::_draw_fx(const Deck::Ref ref)
 {
-    auto& fx = _core.deck(ref).fx();
+    auto fx = _engine.fx_leds(ref);
     auto grit_id = ref == Deck::A ? Hardware::LED_GRIT_A : Hardware::LED_GRIT_B;
     auto flux_id = ref == Deck::A ? Hardware::LED_FLUX_A : Hardware::LED_FLUX_B;
-    _led[grit_id].on(grit_color(fx.grit_mode()), fx.is_grit_on() ? 1.f : 0.5f);
-    _led[flux_id].on(kDelayColor, fx.is_flux_on() ? 1.f : 0.5f);
+    _led[grit_id].on(grit_color(fx.grit_mode), fx.grit_on ? 1.f : 0.5f);
+    _led[flux_id].on(kDelayColor, fx.flux_on ? 1.f : 0.5f);
 }
 void CoreUI::_draw_play(const Deck::Ref ref, const bool blink)
 {
-    auto& deck = _core.deck(ref);
-    auto color = mode_color(deck.mode());
+    auto p = _engine.play_leds(ref);
+    auto color = mode_color(p.mode);
     auto playId = ref == Deck::A ? Hardware::LED_PLAY_A : Hardware::LED_PLAY_B;
     auto revId = ref == Deck::A ? Hardware::LED_REV_A : Hardware::LED_REV_B;
     _led[playId].off();
@@ -257,22 +257,22 @@ void CoreUI::_draw_play(const Deck::Ref ref, const bool blink)
         }
         return;
     }
-    if (deck.is_playing() || (deck.is_play_queued() && _clock_led_on)) { 
-        auto ledId = deck.is_reverse() ? revId : playId;
+    if (p.playing || (p.play_queued && _clock_led_on)) {
+        auto ledId = p.reverse ? revId : playId;
         _led[ledId].on(color);
     }
-    if (deck.is_armed() || deck.is_recording()) {
-        auto inout = deck.is_armed() != deck.is_recording();
+    if (p.armed || p.recording) {
+        auto inout = p.armed != p.recording;
         auto rec = !inout;
         static bool led_on[Deck::Count] = { false, false };
-        if (deck.mode() == Mode::Slice) {
+        if (p.mode == Mode::Slice) {
             led_on[ref] = _clock_led_on;
         }
         else if (blink) {
             led_on[ref] = !led_on[ref];
         }
         if (rec || (led_on[ref] && inout)) {
-            auto led_id = _core.source(ref) == Deck::Source::external ? playId : revId;
+            auto led_id = p.source == Deck::Source::external ? playId : revId;
             _led[led_id].on(kRed, .8f);
         }
     }
@@ -290,15 +290,15 @@ void  CoreUI::_draw_alt(const Deck::Ref ref)
     _led[ledId].off();
     if (_alt_blink_count[ref] > 0) {
         if (_blink_timer.HasPassedMs(80)) {
-            _alt_blink_count[ref]--;            
+            _alt_blink_count[ref]--;
             _blink_timer.Restart();
         }
         _led[ledId].on(kWhite, _alt_blink_count[ref] % 2);
     }
     // Track recording
-    auto& track = _core.deck(ref).track();
-    auto is_armed = track.is_armed();
-    auto is_recording = track.is_recording();
+    auto alt = _engine.alt_leds(ref);
+    auto is_armed = alt.track_armed;
+    auto is_recording = alt.track_recording;
     if (is_armed || is_recording) {
         uint32_t color = 0;
         if (is_armed && !is_recording && _clock_led_on) {
@@ -323,7 +323,7 @@ void  CoreUI::_draw_alt(const Deck::Ref ref)
 // RING // Called from main ////////////////
 void CoreUI::_draw_ring(const Deck::Ref ref)
 {
-    auto& ring = _ring[ref];
+    auto& ring = _display.ring[ref];
     if (ring.is_updated()) return;
 
     auto& deck = _core.deck(ref);
@@ -434,7 +434,7 @@ void CoreUI::_draw_ring(const Deck::Ref ref)
                 auto new_val = segment_start + _size[ref].in_value();
                 auto start = std::min(current_val, new_val);
                 auto end = std::max(current_val, new_val);
-                while (end >= 1.f) end -= 1.f; //WORKAROUND. Needs to be fixed in _ring[ref].set_segment().
+                while (end >= 1.f) end -= 1.f; //WORKAROUND. Needs to be fixed in _display.ring[ref].set_segment().
                 ring.set_segment(start, end);
                 ring.add_point(segment_start + _size[ref].in_value(), .95f);
             }
@@ -522,7 +522,7 @@ void CoreUI::_show_value(const MValue& val, LEDRing& ring, const uint32_t def_co
 void CoreUI::_show_pitch(const Deck::Ref ref)
 {
     if (!_is_changing(_speed[ref])) return;
-    auto& ring = _ring[ref];
+    auto& ring = _display.ring[ref];
 
     ring.set_hex_color(kWhite);
     ring.set_segment(0.f, 0.998f);
@@ -553,19 +553,19 @@ void CoreUI::_show_slots(const Deck::Ref ref)
         auto bright = .8f;
         if (i == s.selected_slot_idx()) bright = _led_breathe_brightness * .8f;
         else bright = slot.is_empty ? .3f : .85f;
-        _ring[ref].set_point_hex_color(i == s.selected_slot_idx() ? kWhite : kTapeColor[s.selected_tape_idx()]);
-        for (uint8_t i = 0; i < 2; i++) _ring[ref].set_point(idx + i, bright);    
+        _display.ring[ref].set_point_hex_color(i == s.selected_slot_idx() ? kWhite : kTapeColor[s.selected_tape_idx()]);
+        for (uint8_t i = 0; i < 2; i++) _display.ring[ref].set_point(idx + i, bright);    
         idx += 5; //2 segment + 3 gap
     }
 }
 void CoreUI::_show_key_intervals() 
 {
     if (!_key_interval.is_tracking()) {
-        _ring[Deck::A].set_brightness(_led_breathe_brightness * .6f); 
-        _ring[Deck::A].set_hex_color(kRed);
+        _display.ring[Deck::A].set_brightness(_led_breathe_brightness * .6f); 
+        _display.ring[Deck::A].set_hex_color(kRed);
         auto start = std::min(_key_interval.value(), _key_interval.in_value());
         auto end = std::max(_key_interval.value(), _key_interval.in_value());
-        _ring[Deck::A].set_segment(start, end);
+        _display.ring[Deck::A].set_segment(start, end);
     }
 
     auto interval = _core.driver().key_interval();
@@ -581,24 +581,24 @@ void CoreUI::_show_key_intervals()
     for (uint8_t i = 0; i < steps; i++) {
         if (i == 0) color = _core.driver().is_key_sub_quarter() ? clock_source_color(_core.driver()) : kWhite;
         else color = clock_source_color(_core.driver());
-        _ring[Deck::A].set_point_hex_color(color);
-        _ring[Deck::A].set_point(i * step + 4, i % 4 && interval != KI::k1_16 ? .25f : .7f);
+        _display.ring[Deck::A].set_point_hex_color(color);
+        _display.ring[Deck::A].set_point(i * step + 4, i % 4 && interval != KI::k1_16 ? .25f : .7f);
     }
 }
 void CoreUI::_show_size_quarters(const Deck::Ref ref, const uint32_t color)
 {
     auto steps = 1 + round(_size_quarters[ref].value() * 15);
     for (uint8_t i = 0; i < steps; i++) {
-        _ring[ref].set_point_hex_color(i % 4 ? color : kWhite);
-        _ring[ref].set_point(i * 2 + 4, .7f);
+        _display.ring[ref].set_point_hex_color(i % 4 ? color : kWhite);
+        _display.ring[ref].set_point(i * 2 + 4, .7f);
     }
 }
 void CoreUI::_show_error(const Deck::Ref ref)
 {
     if (_blink_led_on) {
-        _ring[ref].set_hex_color(kRed);
-        _ring[ref].set_brightness(.6f);
-        _ring[ref].set_segment(0.f, 0.98f);
+        _display.ring[ref].set_hex_color(kRed);
+        _display.ring[ref].set_brightness(.6f);
+        _display.ring[ref].set_segment(0.f, 0.98f);
     }
 }
 

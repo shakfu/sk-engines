@@ -13,6 +13,15 @@
 
 namespace spotykach {
 
+// Indicator state the platform's LED code reads to render the flux/grit, play/rev, and alt
+// (track) indicators. This is the LED migration's intermediate step (Round 2): the engine
+// reports granular indicator state and the platform still owns the color palette + the
+// blink/timer/storage/_touched compositing. The end state (render(DisplayModel&)) will have the
+// engine fill the DisplayModel indicators directly; these queries retire then.
+struct FxLeds   { Fx::GritMode grit_mode; bool grit_on; bool flux_on; };
+struct PlayLeds { Mode mode; bool playing; bool play_queued; bool reverse; bool armed; bool recording; Deck::Source source; };
+struct AltLeds  { bool track_armed; bool track_recording; };
+
 // The granular looper as an IEngine. It owns the Core graph, forwards the audio lifecycle, and
 // (after the input migration) owns all granular *input* meaning: parameters, MIDI, and pad
 // gestures - see the grouped methods below. The refactor is PAUSED at this input-decoupled
@@ -87,6 +96,12 @@ public:
     size_t audio_recorded_bytes(Deck::Ref);
     size_t audio_capacity_bytes(Deck::Ref);
     void   audio_apply_loaded(Deck::Ref, size_t frames);
+
+    // LED indicator state (LED migration Round 2). The platform reads these to render the
+    // flux/grit, play/rev, and alt indicators; it keeps the colors + blink/timer/storage logic.
+    FxLeds   fx_leds(Deck::Ref);
+    PlayLeds play_leds(Deck::Ref);
+    AltLeds  alt_leds(Deck::Ref);
 
     // Escape hatch: direct access to the granular Core for the ONE remaining coupling - LED
     // rendering (input, CV, gate, and storage are all on the engine API above). A second,

@@ -207,6 +207,26 @@ void GranularEngine::audio_apply_loaded(const Deck::Ref ref, const size_t frames
     deck.apply_start_size();
 }
 
+FxLeds GranularEngine::fx_leds(const Deck::Ref ref)
+{
+    auto& fx = _core.deck(_safe_ref(ref)).fx();
+    return { fx.grit_mode(), fx.is_grit_on(), fx.is_flux_on() };
+}
+
+PlayLeds GranularEngine::play_leds(const Deck::Ref ref)
+{
+    const auto r = _safe_ref(ref);
+    auto& deck = _core.deck(r);
+    return { deck.mode(), deck.is_playing(), deck.is_play_queued(), deck.is_reverse(),
+             deck.is_armed(), deck.is_recording(), _core.source(r) };
+}
+
+AltLeds GranularEngine::alt_leds(const Deck::Ref ref)
+{
+    auto& track = _core.deck(_safe_ref(ref)).track();
+    return { track.is_armed(), track.is_recording() };
+}
+
 void GranularEngine::set_fx(const Deck::Ref ref, const FxKind kind, const bool on)
 {
     auto& fx = _core.deck(_safe_ref(ref)).fx();

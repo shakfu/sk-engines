@@ -11,6 +11,7 @@
 #include "hw/hardware.h"
 #include "core/core.h"
 #include "engine/granular_engine.h"
+#include "engine/display_model.h"
 #include "memory/storage.h"
 #include "nocopy.h"
 #include "hold.h"
@@ -188,7 +189,10 @@ private:
     MValue _pan_speed;
     MValue _pan_range;
 
-    std::array<LEDRing, Deck::Count> _ring;
+    // The live LED display the platform renders into and blits. Its two ring canvases ARE the
+    // per-deck rings (formerly a standalone std::array<LEDRing>); engine.render(DisplayModel&)
+    // will fill these in the LED migration. Indicators are still driven via _led[] for now.
+    DisplayModel _display;
 
     float _led_breathe_phase;
     float _led_breathe_brightness;
