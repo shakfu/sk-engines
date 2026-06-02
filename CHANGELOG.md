@@ -31,6 +31,26 @@ by the Git tag / release they ship in. The latest released baseline is 1.0.2.
 
 ### Changed
 
+- **Platform/engine decoupling: the UI/HW platform no longer touches the DSP core.** A
+  multi-round, behaviour-preserving, hardware-verified refactor inserted an `IEngine` seam
+  (`src/engine/iengine.h`) between the fixed platform (`CoreUI`/`Storage`/`Hardware`) and a
+  swappable DSP engine (the granular looper, now `GranularEngine`). The platform drives the
+  engine entirely through `IEngine`: parameters (`set_param`/`param` keyed by `ParamId`),
+  categorical config (`set_config` for route / deck mode / LFO shape / mod flags, plus
+  `toggle_grit_mode` and `tempo_to_fit`), knob layout (`deck_layout`/`size_sets_tempo`, so the
+  platform branches the SIZE/ENV knobs without reading the engine's `Mode`), MIDI, pads,
+  CV/gate, the tape-storage audio port, transport, and the DAC mod-CV output. The
+  `engine.core()` escape hatch and the concrete `GranularEngine&` constructor are gone -
+  `CoreUI` holds only `IEngine&`, `Storage` an `IEngine*` - and `src/core/` is now
+  platform-independent (no libDaisy include; sample rate, block size, buffers and the clock are
+  injected via `EngineContext`/`ITimeSource`). The per-control MValue pickup state was rekeyed
+  by `ParamId` (one array replacing ~21 named members). `capabilities()` gained its first real
+  consumer: `Storage` skips tape save/load/preload unless the engine advertises `CapTapeStorage`.
+  No runtime audio behaviour change in the granular build (verified by flashing); the seam is
+  additive, so `SRAM_EXEC` rose to ~99.95% used (~88 B free) - the cost is amortised across
+  future engines that reuse the whole platform. (`src/engine/`, `src/ui/`, `src/memory/`,
+  `src/core/`)
+
 - **SD path building uses manual string joins instead of `sprintf`.** All five `sprintf`
   calls (plain `%s` concatenations) were replaced with `strcpy`/`strcat`. This lets the
   linker drop the `sprintf`/`fprintf` objects, recovering ~648 B of the nearly-full
@@ -54,6 +74,23 @@ harden the code against future changes.
   from slot count. (`src/memory/storage.cpp`)
 
 ### Added
+
+- **Swappable DSP engine, selected at build time.** The firmware is now a fixed hardware/UI
+  platform that hosts one `IEngine` implementation per build. `make` builds the granular looper
+  (default); `make ENGINE=passthrough` builds a minimal stereo-passthrough variant
+  (`capabilities() == 0`, ~150 KB vs the granular ~186 KB as the granular DSP is dropped).
+  Selection is one build-time choice: the `ENGINE` Makefile variable emits a single
+  `-DSPK_ENGINE_*`, which `src/engine/engine_select.h` maps to the concrete `ActiveEngine`
+  that `app.cpp` instantiates as a static member; the platform only ever sees `IEngine` (no
+  per-feature `#ifdef`s). A stamp dependency (`build/.engine-stamp`) rebuilds the engine-dependent
+  object when `ENGINE` changes, so switching variants needs no `make clean`. Both variants
+  verified on hardware via `make program-dfu`. (`src/engine/engine_select.h`,
+  `src/engine/passthrough_engine.h`, `Makefile`, `app.cpp`)
+
+- **Off-target engine harness** (`make -C host`): runs the real `Core`/`GranularEngine` over WAV
+  through the `IEngine` interface, with `make -C host test` asserting the parameter API across all
+  deck modes. Does not build or affect the firmware; the pot/pad/LED/MIDI hardware paths remain
+  hardware-verified only. (`host/`)
 
 - **In-repo developer documentation** under `docs/`: `architecture.md`, `source-guide.md`,
   a firmware-tracked `manual.md`, and `review-260529.md` (a code/architecture review with

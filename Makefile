@@ -57,6 +57,18 @@ CPP_SOURCES = \
 SYSTEM_FILES_DIR = $(LIBDAISY_DIR)/core
 include $(SYSTEM_FILES_DIR)/Makefile
 
+# Rebuild the engine-dependent object when ENGINE changes. Objects are compiled with -DSPK_ENGINE_*,
+# but make can't see flag changes, so `make ENGINE=passthrough` over a stale granular build would
+# relink the wrong engine (undefined-reference to the other engine's vtable). app.cpp is the only TU
+# that includes engine_select.h, so make it depend on a stamp whose content is rewritten only when
+# ENGINE differs -> app.o rebuilds exactly on a switch, no manual `make clean` needed.
+build/app.o: build/.engine-stamp
+build/.engine-stamp: FORCE
+	@mkdir -p build
+	@echo '$(ENGINE)' | cmp -s - $@ 2>/dev/null || echo '$(ENGINE)' > $@
+.PHONY: FORCE
+FORCE:
+
 libs:
 	cd $(LIBDAISY_DIR) && $(MAKE)
 	cd $(DAISYSP_DIR) && $(MAKE)

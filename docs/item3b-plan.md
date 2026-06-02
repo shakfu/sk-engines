@@ -48,7 +48,13 @@ separate and optional:
    64 MB). The `EngineBuffers` shape is the known seam impurity (architecture.md §3) — generalising
    it is out of scope here.
 
-## 3b-1 — DONE 2026-06-03 (both variants build clean; flash-verify passthrough on hardware pending)
+## 3b-1 — DONE + FLASH-VERIFIED 2026-06-03 (passthrough runs on the real board via `make program-dfu`)
+
+> Gotcha (2026-06-03): daisy-web-programmer flashed a cached/stale granular image, which looked like
+> "the looper still works" on the passthrough build. `make program-dfu` flashes the actual
+> `build/spotykach.bin` and ran the real passthrough. Use `make program-dfu` (or clear the
+> web-programmer cache) when swapping variants. The passthrough ELF was independently verified
+> granular-free (`nm`: 0 GranularEngine symbols, audio path = PassthroughEngine::process).
 
 Implemented all five steps below. Results:
 - `make` (granular, default): builds clean, **190376 B / 88 B free** (+48 B vs the 3(a) build, from the
@@ -62,6 +68,13 @@ What still needs hardware: flash `make ENGINE=passthrough` and confirm it boots 
 audio without crashing (esp. no preload null-deref even with a granular sample on the SD card); LEDs
 blank is expected. Then reflash granular and confirm tape save/load/preload still works (regression
 check for the capability gate).
+
+**Engine-switch rebuild guard (added 2026-06-03):** a bare `make ENGINE=passthrough` over a stale
+granular build first FAILED with `undefined reference to vtable for GranularEngine` — make can't see
+the `-DSPK_ENGINE_*` flag change, so it left `app.o` stale. Fixed with a stamp: `build/app.o` (the
+only TU that includes `engine_select.h`) depends on `build/.engine-stamp`, whose content is rewritten
+only when `ENGINE` differs, so `app.o` rebuilds exactly on a switch. Verified both directions now
+build clean with no manual `make clean`.
 
 ### Implemented steps
 
