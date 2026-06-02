@@ -7,6 +7,27 @@
 
 using namespace spotykach;
 
+// Pre-seeds the param cache from the DSP's initial state so the platform seeds its MValue pickup
+// via param() instead of reaching into Core for _init_values (item 3a-3b). Only the genuinely
+// engine-derived seeds; the platform keeps its UI-default literals for the rest. Once at boot, so
+// size-optimised to stay off the SRAM_EXEC ceiling.
+__attribute__((optimize("Os")))
+void GranularEngine::init(const EngineContext& ctx)
+{
+    _core.init(ctx);
+    _speed_map.init();
+    for (auto ref : { Deck::A, Deck::B }) {
+        auto& deck = _core.deck(ref);
+        auto& fx = deck.fx();
+        _param_cache[static_cast<size_t>(ParamId::Pos)][ref]           = deck.norm_start();
+        _param_cache[static_cast<size_t>(ParamId::GritMix)][ref]       = fx.grit_mix();
+        _param_cache[static_cast<size_t>(ParamId::GritIntensity)][ref] = fx.grit_intensity();
+        _param_cache[static_cast<size_t>(ParamId::FluxMix)][ref]       = fx.flux_mix();
+        _param_cache[static_cast<size_t>(ParamId::FluxIntensity)][ref] = fx.flux_intensity();
+        _param_cache[static_cast<size_t>(ParamId::FluxFb)][ref]        = fx.flux_fb();
+    }
+}
+
 // Mode-dependent dispatch ported from core.ui.cpp's apply pass (the granular "meaning").
 // The platform decides WHICH param a control drives; the engine decides what that param
 // does given the current deck mode. The deck arg is ignored for global params.

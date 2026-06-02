@@ -35,7 +35,7 @@ static constexpr std::array<float, 7> kSpeedSteps = {
 
 class CoreUI {
 public:
-    CoreUI(Hardware&, GranularEngine&, Settings&, Storage&);
+    CoreUI(Hardware&, IEngine&, Settings&, Storage&);
     ~CoreUI() = default;
 
     void init();
@@ -147,9 +147,7 @@ private:
     void _reset_changing_value_id();
 
     Hardware& _hw;
-    IEngine& _engine; // the platform drives the engine through IEngine (item 2)
-    Core& _core; // residual concrete hatch for Categories 2-3 (switch-config + deck readbacks),
-                 // bound to the ctor's GranularEngine& via engine.core(); awaits the item-3 toolkit
+    IEngine& _engine; // the platform drives the engine ONLY through IEngine (item 3 complete)
     Settings& _settings;
     Storage& _storage;
     Calibrator _calibrator;

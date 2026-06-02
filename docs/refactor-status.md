@@ -13,9 +13,17 @@ sub-rounds 2a-2d). All flash-verified.
 the working tree" warning is resolved. Note `8b1b435`'s message — "pause till later" — is vague for
 what is actually the bulk of the interface lift, so bisecting this range by message won't help.)
 
-**Next:** item 3 — the unified display round + 2nd engine (see roadmap below; scope is settled but
-write a fresh plan doc like `docs/item2-interface-lift-plan.md` *after* reading the code — the 2b pivot
-showed plans drift until you read `_draw_ring`). Concrete first steps on resume:
+**Item 3(a) CORE GOAL COMPLETE (2026-06-02, builds clean; flash-verify pending): `engine.core()` is
+DELETED.** Rounds 3a-0 (config channel), 3a-2 (MValue->ParamId array), 3a-3 (DeckLayout query
+replacing the apply-pass/pot-queue mode reads), 3a-3b (seeding via pre-seeded `param()`), 3a-4 (delete
+`core()`, ctor now `IEngine&`). The platform no longer touches `Core` — grep finds no `.core()`/`_core`
+in src/ui, src/memory, app.cpp. Full per-round detail in `docs/item3-plan.md`. **Remaining:** 3a-1
+`render(DisplayModel)` (deferred, OFF the critical path — LED queries already route through IEngine);
+then item 3(b) (promote `PassthroughEngine` to a real 2nd variant + the engine-select mechanism in
+`docs/architecture.md`). The "Still coupled / Categories 2-3" section below is now historical.
+
+**Historical resume notes (item 2 era, kept for context):**
+1. Item 2 is committed (verified 2026-06-02, see commit-state note above) — no action needed.
 1. Item 2 is committed (verified 2026-06-02, see commit-state note above) — no action needed.
 2. **SRAM lever is spent (verified 2026-06-02).** `-Os` was applied to `core.ui.midi.cpp` and
    reclaimed only **16 B** (424 -> 440 B free) — MIDI parsing isn't a meaningful size contributor, so
@@ -88,7 +96,12 @@ behavior-preserving and flash-verified.
   `audio_capacity_bytes`/`audio_apply_loaded`/`audio_is_empty`). The tape/slot state machine,
   preload, and SD `Card` I/O stay platform.
 
-### Still coupled — the `engine.core()` escape hatch (only Categories 2-3 remain)
+### Still coupled — the `engine.core()` escape hatch [RESOLVED 2026-06-02 — section now historical]
+
+> **UPDATE: `engine.core()` is DELETED (item 3a, builds clean, flash-verify pending).** Categories 2-3
+> below were absorbed by the item-3 rounds: Category 2 by the `set_config`/`tempo_to_fit`/
+> `toggle_grit_mode` config channel (3a-0); Category 3 by the `DeckLayout`/`size_sets_tempo` queries
+> (3a-3) and the pre-seeded `param()` seeding (3a-3b). The text below describes the pre-item-3 state.
 
 A call-site audit (2026-06-02) found the hatch carried three coupling categories, not the "transport
 actions only" earlier claimed. **Category 1 (transport) is migrated (item 1); items 2a-2d lifted the

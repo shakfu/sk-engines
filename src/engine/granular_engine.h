@@ -25,7 +25,7 @@ public:
     GranularEngine() = default;
     ~GranularEngine() override = default;
 
-    void init(const EngineContext& ctx) override { _core.init(ctx); _speed_map.init(); }
+    void init(const EngineContext& ctx) override;  // pre-seeds the param cache (impl in .cpp, -Os)
     void prepare() override { _core.prepare(); }
     void process(const float* const* in, float** out, size_t size) override {
         _core.process(in, out, size);
@@ -146,17 +146,6 @@ public:
     // the default (mode) color + 0.5 brightness; this draws the empty/recording/playing segment +
     // heads on that baseline and returns the geometry the platform's pos/size/overdub overlays use.
     RingGeometry render_ring(LEDRing& ring, Deck::Ref, float breathe_brightness) override;
-
-    // Escape hatch: direct access to the granular Core. LED rendering and transport (item 1) are
-    // off it now; the remaining users are the two non-transport coupling categories the platform
-    // still reaches through core() for (see docs/refactor-status.md "Still coupled"):
-    //   - Category 2: switch-config writes in _process_switches (set_route, mod type, deck mode,
-    //     size/pos mod flags, grit mode).
-    //   - Category 3: deck-state readbacks in the apply pass / pot queue (deck.mode(), is_empty(),
-    //     norm_start()/fx state for MValue seeding, tempo_to_fit()).
-    // Both are slated to fold into the item-3 MValue->ParamId toolkit (engine-declared bindings)
-    // rather than be hand-wrapped here; once they migrate, core() can be removed.
-    Core& core() { return _core; }
 
 private:
     NOCOPY(GranularEngine)

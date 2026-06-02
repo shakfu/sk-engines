@@ -179,12 +179,20 @@ The two pieces are separable; sequence to fund SRAM and de-risk:
   instead of `deck.mode()`; layouts hoisted once per function (mode is constant within a call).
   **core.ui.cpp now has ONE residual `_core.` site: `_init_values` seeding (:64).** SRAM +168 B
   (free 400 -> 232 B). Faithful behavior-preserving port (each mode branch maps 1:1, incl. None->none).
-- **3a-3b — seeding migration (NEXT).** Migrate `_init_values` (:64) off `_core`: it reads
-  `deck.norm_start()` + `fx.grit_*`/`flux_*` to seed MValue pickup. Needs the engine to expose those
-  initial values (resolve the `_param_cache` seed-authority open question: pre-seed at init so
-  `param()` is authoritative, or a dedicated readback). The other defaults are platform literals and
-  stay. After this, core.ui.cpp is fully `_core`-free.
-- **3a-4 — delete core() + the GranularEngine& ctor.** `CoreUI`/`app.cpp` hold only `IEngine`.
+- **3a-3b — seeding migration. DONE 2026-06-02 (builds clean; flash-verify pending).** Resolved the
+  seed-authority question with the **pre-seed approach, scoped**: `GranularEngine::init` now pre-seeds
+  `_param_cache` for the 6 engine-derived seeds (Pos<-norm_start, GritMix/GritIntensity/FluxMix/
+  FluxIntensity/FluxFb<-fx), and `_init_values` reads those via `engine.param(...)`. The platform
+  keeps its UI-default literals for the rest (Size/Speed/Mix/... and the globals Tempo/Pan/etc.) -
+  moving those into the engine is a deeper change not needed to delete core(), deferred. `init` moved
+  to the .cpp tagged `optimize("Os")` (the inline header version overflowed SRAM_EXEC by 40 B). After
+  this, **core.ui.cpp is fully `_core`-free**. SRAM net +96 B (free 232 -> 136 B).
+- **3a-4 — delete core() + the GranularEngine& ctor. DONE 2026-06-02 (builds clean; flash-verify
+  pending).** `CoreUI`'s ctor takes `IEngine&` (was `GranularEngine&`); the `Core& _core` member +
+  its `engine.core()` binding are gone; `GranularEngine::core()` is deleted. Verified: no `.core()` or
+  `_core` anywhere in src/ui, src/memory, or app.cpp. **The platform is fully decoupled from Core; it
+  drives the engine only through IEngine.** SRAM net-zero on SRAM_EXEC (the removed reference member
+  is regular SRAM; the inline core() emitted no code). **Item 3(a) core goal COMPLETE.**
 
 After 3a-4: `engine.core()` and `core.ui.h:24`'s `_core` member are gone; `CoreUI` is engine-agnostic.
 

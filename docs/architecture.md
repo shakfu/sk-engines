@@ -168,10 +168,11 @@ engine never touches `Hardware`.
 
 ### Known residual coupling (closes during the remaining refactor items)
 
-- **Switch-config writes + deck-state readbacks** (refactor "Categories 2-3") still reach
-  `Core` via `engine.core()` and a `CoreUI(GranularEngine&)` ctor. Removed by item 3(a) (the
-  config channel + `MValue`->`ParamId` toolkit + engine `bindings()`); see
-  [item3-plan.md](item3-plan.md).
+- ~~**Switch-config writes + deck-state readbacks** reach `Core` via `engine.core()`~~ **RESOLVED
+  by item 3(a) (2026-06-02): `engine.core()` is deleted; `CoreUI`'s ctor takes `IEngine&`.** The
+  former Categories 2-3 are now the `set_config`/`tempo_to_fit`/`toggle_grit_mode` config channel
+  and the `DeckLayout`/`size_sets_tempo` knob-layout queries; seeding reads the engine's pre-seeded
+  `param()`. The platform no longer touches `Core`. See [item3-plan.md](item3-plan.md).
 - **`Driver`/transport** lives inside `Core` and is forwarded through `transport_*`.
   Conceptually platform; relocation to a platform transport service is deferred and will likely
   be forced by a second engine's `CapTransport`.
@@ -194,14 +195,15 @@ factory. That is deliberate; a runtime `IEngine*` factory would buy nothing (one
 image) and cost a heap allocation the real-time design forbids. There are **no** per-feature
 `#ifdef`s in the platform - `CoreUI`/`Storage`/`app` speak only `IEngine`.
 
-### Today (before item 3 completes)
+### Today (item 3(a) complete; engine-select mechanism not yet built)
 
-Engine choice is **hardcoded**: `app.cpp` declares `GranularEngine _engine;` and `CoreUI`'s
-ctor still takes a `GranularEngine&` (the residual Categories 2-3 coupling, via
-`engine.core()`). To swap engines today you would edit `app.cpp` and the `CoreUI` ctor
-signature - there is no clean swap yet. The current `Makefile` also compiles
-`$(wildcard src/engine/*.cpp)` and relies on `--gc-sections` to strip the unselected engine
-from the binary.
+Engine choice is **hardcoded** in `app.cpp` (`GranularEngine _engine;`), but the coupling that
+blocked a clean swap is gone: `CoreUI`/`Storage` hold only `IEngine` (the `GranularEngine&` ctor
+and `engine.core()` were removed by item 3(a), 2026-06-02). To swap engines today you still edit
+`app.cpp`'s member declaration, but nothing else in the platform names the concrete engine. The
+remaining step to a one-line swap is the `ENGINE`-variable + `engine_select.h` mechanism below
+(item 3(b)). The current `Makefile` compiles `$(wildcard src/engine/*.cpp)` and relies on
+`--gc-sections` to strip the unselected engine from the binary.
 
 ### Target (after item 3(a) deletes `core()` and the `GranularEngine&` ctor)
 

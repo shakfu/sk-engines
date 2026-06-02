@@ -18,10 +18,9 @@ static float snapped_speed(const float speed)
     return kSpeedSteps[idx];
 }
 
-CoreUI::CoreUI(Hardware& hw, GranularEngine& engine, Settings& settings, Storage& storage):
+CoreUI::CoreUI(Hardware& hw, IEngine& engine, Settings& settings, Storage& storage):
 _hw                 { hw },
 _engine             { engine },
-_core               { engine.core() },
 _settings           { settings },
 _storage            { storage },
 _calibrator         { Calibrator(hw, settings) },
@@ -61,8 +60,9 @@ void CoreUI::_init_values()
 {
     for (auto ref: { Deck::A, Deck::B }) {
         
-        auto& deck = _core.deck(ref);
-        mv(ParamId::Pos)[ref].set(deck.norm_start());
+        // Engine-derived seeds (start position + fx state) come from the engine's pre-seeded
+        // param cache; the rest are the platform's UI-default pickup starting points.
+        mv(ParamId::Pos)[ref].set(_engine.param(ParamId::Pos, ref));
         mv(ParamId::Size)[ref].set(1.f);
         mv(ParamId::Speed)[ref].set(.5f);
         mv(ParamId::Mix)[ref].set(.5f);
@@ -77,12 +77,11 @@ void CoreUI::_init_values()
 
         _hold_clear[ref].init();
 
-        auto& fx = deck.fx();
-        mv(ParamId::GritMix)[ref].set(fx.grit_mix());
-        mv(ParamId::GritIntensity)[ref].set(fx.grit_intensity());
-        mv(ParamId::FluxMix)[ref].set(fx.flux_mix());
-        mv(ParamId::FluxIntensity)[ref].set(fx.flux_intensity());
-        mv(ParamId::FluxFb)[ref].set(fx.flux_fb());
+        mv(ParamId::GritMix)[ref].set(_engine.param(ParamId::GritMix, ref));
+        mv(ParamId::GritIntensity)[ref].set(_engine.param(ParamId::GritIntensity, ref));
+        mv(ParamId::FluxMix)[ref].set(_engine.param(ParamId::FluxMix, ref));
+        mv(ParamId::FluxIntensity)[ref].set(_engine.param(ParamId::FluxIntensity, ref));
+        mv(ParamId::FluxFb)[ref].set(_engine.param(ParamId::FluxFb, ref));
     }
 
     mv(ParamId::PanRange)[Deck::A].set(.6f);
