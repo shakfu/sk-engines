@@ -59,6 +59,57 @@ float GranularEngine::param(const ParamId id, const Deck::Ref ref) const
     return _param_cache[static_cast<size_t>(id)][_safe_ref(ref)];
 }
 
+// Categorical config (item 3a-0), ported verbatim from core.ui.cpp's _process_switches. The
+// platform passes a selector int read from the panel switch bits; the engine maps it to its enums
+// and owns the side effects the platform should not know about (panner inference on mode change,
+// the deck-specific LFO palette). Cold path - size-optimised so it costs little in this -O2 TU.
+__attribute__((optimize("Os")))
+bool GranularEngine::set_config(const ConfigId id, const Deck::Ref ref, const int v)
+{
+    const auto deck_ref = _safe_ref(ref);
+    switch (id) {
+        case ConfigId::Route:
+            _core.set_route(v == 2 ? Route::GenerativeStereo
+                          : v == 1 ? Route::DoubleMono
+                                   : Route::Stereo);
+            return false;
+        case ConfigId::ModType:
+            _core.mod(deck_ref).set_type(v ? Modulator::Type::Follow : Modulator::Type::LFO);
+            return false;
+        case ConfigId::LfoShape: {
+            // Per-deck LFO palette, faithful to the old UI: deck A square/random, deck B saw/sine.
+            const LFO::Type t = deck_ref == Deck::A ? (v ? LFO::Type::square : LFO::Type::random)
+                                                    : (v ? LFO::Type::saw    : LFO::Type::sine);
+            _core.mod(deck_ref).set_lfo_type(t);
+            return false;
+        }
+        case ConfigId::Mode: {
+            auto& deck = _core.deck(deck_ref);
+            const Mode nm = v == 2 ? Mode::Drift : v == 1 ? Mode::Reel : Mode::Slice;
+            if (nm == deck.mode()) return false;
+            deck.set_mode(nm);
+            _core.infer_panner_mode();
+            return true;
+        }
+        case ConfigId::StartModOn: _core.deck(deck_ref).set_start_mod_on(v != 0); return false;
+        case ConfigId::SizeModOn:  _core.deck(deck_ref).set_size_mod_on(v != 0);  return false;
+        case ConfigId::Count: break;
+    }
+    return false;
+}
+
+float GranularEngine::tempo_to_fit(const Deck::Ref ref, const float fraction)
+{
+    return _core.deck(_safe_ref(ref)).tempo_to_fit(fraction);
+}
+
+GritReseed GranularEngine::toggle_grit_mode(const Deck::Ref ref)
+{
+    auto& fx = _core.deck(_safe_ref(ref)).fx();
+    fx.switch_grit_mode();
+    return { fx.grit_intensity(), fx.grit_mix() };
+}
+
 Capabilities GranularEngine::capabilities() const
 {
     return CapRecording | CapTapeStorage | CapStepSequencer

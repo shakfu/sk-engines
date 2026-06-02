@@ -131,9 +131,21 @@ it reclaimed 16 B, not the hoped-for headroom).
 
 The two pieces are separable; sequence to fund SRAM and de-risk:
 
-- **3a-0 — config channel (Category 2 first).** Add `set_config(ConfigId,int)` +
-  `tempo_to_fit`/`wants_tempo_fit` to IEngine; repoint `_process_switches` and `_set_tempo_by_size`
-  off `_core`. Small, isolated, removes 26 of 44 sites. No MValue churn yet.
+- **3a-0 — config channel (Category 2 first). DONE 2026-06-02 (builds clean, fits; flash-verify
+  pending).** Added `set_config(ConfigId, Deck::Ref, int)->bool` (returns changed; only Mode uses
+  it, to re-apply size), `tempo_to_fit(deck, fraction)`, and `toggle_grit_mode(deck)->GritReseed`
+  to IEngine; `GranularEngine` overrides them (set_config is `optimize("Os")`-tagged in the -O2 TU).
+  `_process_switches` is now fully `_core`-free (route/mod-type/lfo-shape/mode/start-size-mod/grit
+  all go through the engine; the platform passes raw switch-bit selectors and the engine owns the
+  enum mapping + panner inference + the per-deck LFO palette). `_set_tempo_by_size` routes through
+  `engine.tempo_to_fit`. **Deviations from the original plan:** (1) did NOT add the `config()`
+  readback — 3a-0 doesn't use it (grit reseed comes via `toggle_grit_mode`'s return; seeding
+  migration is 3a-2/3a-3), so it would be dead vtable surface on tight SRAM; add it when first
+  needed. (2) did NOT add `wants_tempo_fit` / touch the `is_empty()` gate at core.ui.cpp:380/457 —
+  that lives in the pot-queue mode dispatch and belongs with 3a-3 (avoids entangling 3a-0 with the
+  mode-fanout code). **SRAM: +336 B (free 440 -> 104 B).** Expected additive seam cost; reclaimed by
+  3a-2. The 5 residual `_core.` sites (seeding :64, apply pass :117-118, pot queue :346-347) are
+  exactly the ones deferred to 3a-2/3a-3.
 - **3a-1 — render(DisplayModel).** Do the LED half next: it's independent of the param toolkit and
   is the SRAM-funding step (measure it). Deletes the query methods.
 - **3a-2 — ParamId-keyed MValue array.** Mechanical: named members -> `_mv[ParamId::Count][2]`.
@@ -172,9 +184,15 @@ the gating risk it was at the start of item 3.
    not the static const table.")
 3. **3a-2 — SPIKE FIRST:** measure SRAM_EXEC on a throwaway spike before committing the sequence.
 
+### Sub-round order — RESOLVED by the 3a-0 SRAM result
+
+3a-0 left only **104 B free**. Doing 3a-1 (render, ~neutral) next risks overflow, so the order is
+now **3a-0 (done) -> 3a-2 (the ~320 B reclaim) -> 3a-1 (render) -> 3a-3 (bindings) -> 3a-4 (delete
+core())**. Pull the MValue-array reclaim forward to restore headroom before adding any more surface.
+3a-2 is safe to do now: it's a pure platform refactor (named members -> `_mv[ParamId][2]`), needs
+no engine change, and the spike already proved it builds and reclaims.
+
 ### Still open
 
-- Sub-round order within 3a: plan leads with config-first (3a-0) then render (3a-1, the SRAM-
-  funding step). Could swap to render-first if the 3a-2 spike shows headroom is the gating risk.
 - Whether to pre-seed `GranularEngine::_param_cache` at init so `param()` is the seed authority
-  for `_init_values` (vs. a separate `param_default(id)`). Resolve when writing 3a-2.
+  for `_init_values` (vs. a separate `param_default(id)`). Resolve when writing 3a-2/3a-3.

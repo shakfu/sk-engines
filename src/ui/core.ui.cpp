@@ -527,74 +527,50 @@ void CoreUI::_process_ui_queue()
 }
 
 // Switchess ////////////////////////////////
-void CoreUI::_process_switches() 
+void CoreUI::_process_switches()
 {
-    auto& deck_a = _core.deck(Deck::A);
-    auto& deck_b = _core.deck(Deck::B);
-
     // construct into 8-bit set from inverted bitmask state
     // (all inputs are inverted due to pullups)
     std::bitset<8> sr1 = ~_hw.GetShiftRegState(0);
     std::bitset<8> sr2 = ~_hw.GetShiftRegState(1);
 
-    // Mode A/B/C switch (mutex)
-    if(sr1.test(2)) _core.set_route(Route::GenerativeStereo);
-    else if(sr1.test(3)) _core.set_route(Route::DoubleMono);
-    else _core.set_route(Route::Stereo);
+    // The platform reads the switch bits (hardware) and writes them as categorical config; the
+    // engine maps each selector to its enums and owns the side effects (item 3a-0).
+
+    // Mode A/B/C switch (mutex) -> route (global; deck arg ignored)
+    _engine.set_config(ConfigId::Route, Deck::A, sr1.test(2) ? 2 : sr1.test(3) ? 1 : 0);
 
     // Mod A Type switch
-    auto& mod_a = _core.mod(Deck::A);
-    if(sr1.test(1)) {
-        mod_a.set_type(Modulator::Type::Follow);
-    }
+    if (sr1.test(1)) _engine.set_config(ConfigId::ModType, Deck::A, 1);
     else {
-        mod_a.set_type(Modulator::Type::LFO);
-        if(sr1.test(0)) mod_a.set_lfo_type(LFO::Type::square);
-        else mod_a.set_lfo_type(LFO::Type::random);
+        _engine.set_config(ConfigId::ModType, Deck::A, 0);
+        _engine.set_config(ConfigId::LfoShape, Deck::A, sr1.test(0) ? 1 : 0);
     }
 
-    // Mode A switch
-    Mode ma = deck_a.mode();
-    Mode nma = ma;
-    if(sr1.test(6))      nma = Mode::Drift;
-    else if(sr1.test(7)) nma = Mode::Reel;
-    else                 nma = Mode::Slice;
-    if (nma != ma) {
-        deck_a.set_mode(nma);
-        _core.infer_panner_mode();
+    // Mode A switch (engine reports whether it changed, so we re-apply size for the new mode)
+    if (_engine.set_config(ConfigId::Mode, Deck::A, sr1.test(6) ? 2 : sr1.test(7) ? 1 : 0)) {
         _apply.set(Hardware::CTRL_SIZE_A);
     }
 
     // Size/Pos A switch
-    deck_a.set_start_mod_on(sr1.test(5) || !sr1.test(4));
-    deck_a.set_size_mod_on(sr1.test(4) || !sr1.test(5));
+    _engine.set_config(ConfigId::StartModOn, Deck::A, (sr1.test(5) || !sr1.test(4)) ? 1 : 0);
+    _engine.set_config(ConfigId::SizeModOn,  Deck::A, (sr1.test(4) || !sr1.test(5)) ? 1 : 0);
 
     // Mod B Type switch
-    auto& mod_b = _core.mod(Deck::B);
-    if(sr2.test(5)) {
-        mod_b.set_type(Modulator::Type::Follow);
-    }
+    if (sr2.test(5)) _engine.set_config(ConfigId::ModType, Deck::B, 1);
     else {
-        mod_b.set_type(Modulator::Type::LFO);
-        if(sr2.test(4)) mod_b.set_lfo_type(LFO::Type::saw);
-        else mod_b.set_lfo_type(LFO::Type::sine);
+        _engine.set_config(ConfigId::ModType, Deck::B, 0);
+        _engine.set_config(ConfigId::LfoShape, Deck::B, sr2.test(4) ? 1 : 0);
     }
 
     // Mode B switch
-    Mode mb = deck_b.mode();
-    Mode nmb = mb;
-    if(sr2.test(2))      nmb = Mode::Drift;
-    else if(sr2.test(3)) nmb = Mode::Reel;
-    else                 nmb = Mode::Slice;
-    if (nmb != mb) {
-        deck_b.set_mode(nmb);
-        _core.infer_panner_mode();
+    if (_engine.set_config(ConfigId::Mode, Deck::B, sr2.test(2) ? 2 : sr2.test(3) ? 1 : 0)) {
         _apply.set(Hardware::CTRL_SIZE_B);
     }
 
     // Size/Pos B switch
-    deck_b.set_start_mod_on(sr2.test(1) || !sr2.test(0));
-    deck_b.set_size_mod_on(sr2.test(0) || !sr2.test(1));
+    _engine.set_config(ConfigId::StartModOn, Deck::B, (sr2.test(1) || !sr2.test(0)) ? 1 : 0);
+    _engine.set_config(ConfigId::SizeModOn,  Deck::B, (sr2.test(0) || !sr2.test(1)) ? 1 : 0);
 
     // Manual tempo tap switch
     // Update no faster than 500Hz
@@ -616,14 +592,14 @@ void CoreUI::_process_switches()
             _value_display_timeout.start();
         }
         else if (_touched.test(GritA)) {
-            deck_a.fx().switch_grit_mode();
-            _grit_intens[Deck::A].set(deck_a.fx().grit_intensity());
-            _grit_mix[Deck::A].set(deck_a.fx().grit_mix());
-        } 
+            auto rs = _engine.toggle_grit_mode(Deck::A);
+            _grit_intens[Deck::A].set(rs.intensity);
+            _grit_mix[Deck::A].set(rs.mix);
+        }
         else if (_touched.test(GritB)) {
-            deck_b.fx().switch_grit_mode();
-            _grit_intens[Deck::B].set(deck_b.fx().grit_intensity());
-            _grit_mix[Deck::B].set(deck_b.fx().grit_mix());
+            auto rs = _engine.toggle_grit_mode(Deck::B);
+            _grit_intens[Deck::B].set(rs.intensity);
+            _grit_mix[Deck::B].set(rs.mix);
         }
         else {
             if (!_engine.transport_is_external_sync()) {
@@ -667,7 +643,7 @@ void CoreUI::_reset_changing_value_id()
 
 void CoreUI::_set_tempo_by_size(const Deck::Ref ref, const float fraction)
 {
-    auto bpm = _core.deck(ref).tempo_to_fit(fraction);
+    auto bpm = _engine.tempo_to_fit(ref, fraction);
     auto norm = Tempo::abs_to_norm(bpm); 
     _tempo.set(norm);
     _engine.transport_set_tempo_norm(norm);

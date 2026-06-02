@@ -55,6 +55,16 @@ public:
     virtual float param(ParamId, Deck::Ref) const { return 0.f; }
     virtual void  set_mod_speed(Deck::Ref, float value, bool sync) {}
 
+    // --- Categorical config (item 3a-0): switch-position writes the platform used to make
+    //     directly on Core. The engine maps the selector int to its enums and owns side effects.
+    //     set_config returns true iff the value CHANGED (only Mode uses this, so the platform can
+    //     re-apply size for the new mode). tempo_to_fit gives the BPM that fits `fraction` of the
+    //     deck's loop (the Slice tap-hold gesture). toggle_grit_mode cycles the grit sub-effect and
+    //     returns the now-active intensity/mix for the platform's MValue reseed. ---
+    virtual bool       set_config(ConfigId, Deck::Ref, int) { return false; }
+    virtual float      tempo_to_fit(Deck::Ref, float fraction) { return 0.f; }
+    virtual GritReseed toggle_grit_mode(Deck::Ref) { return {}; }
+
     // --- MIDI meaning ------------------------------------------------------------------------
     virtual Deck::Ref handle_midi_note(uint8_t channel, uint8_t note) { return Deck::Count; }
     virtual void      handle_midi_transport(bool start) {}
