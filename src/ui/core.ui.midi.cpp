@@ -9,15 +9,14 @@ using namespace daisy;
 static bool clock_state = false;
 void CoreUI::tick()
 {
-    auto&d = _core.driver();
     auto new_state = false;
     auto midi_state = _process_midi();
-    switch (d.source()) {
+    switch (_engine.transport_source()) {
         case Driver::Source::ts4: new_state = _hw.GetClockInputState(); break;
         case Driver::Source::midi: new_state = midi_state; break;
         default: break;
     }
-    d.tick(new_state && !clock_state);
+    _engine.transport_tick(new_state && !clock_state);
     clock_state = new_state;
 
     // Modified libDaisy MIDI handlers require explicit call to transmit

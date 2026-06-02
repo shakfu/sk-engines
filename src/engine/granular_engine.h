@@ -117,6 +117,22 @@ public:
     size_t audio_capacity_bytes(Deck::Ref);
     void   audio_apply_loaded(Deck::Ref, size_t frames);
 
+    // Transport (item 1). Thin forwards to the engine's Driver so the platform drives transport
+    // through the engine instead of reaching through core().driver(). Per the faithful stopgap
+    // (B1), the platform still owns clock-source selection + edge detection in tick(); these only
+    // forward. The Driver still lives in Core today (see the core() note below) - relocating it to
+    // a platform transport service is item 2's decision. Inline so they cost nothing (no LTO here).
+    void  transport_set_on_quarter(std::function<void(const bool)> cb) { _core.driver().set_on_quarter(cb); }
+    void  transport_set_on_clock_out(std::function<void()> cb)         { _core.driver().set_on_clock_out(cb); }
+    Driver::Source transport_source()      { return _core.driver().source(); }
+    void  transport_tick(const bool external_tick) { _core.driver().tick(external_tick); }
+    bool  transport_is_external_sync()     { return _core.driver().is_external_sync(); }
+    void  transport_reset()                { _core.driver().reset(); }
+    void  transport_toggle_source()        { _core.driver().toggle_source(); }
+    void  transport_tap_tempo()            { _core.driver().tap_tempo(); }
+    float transport_tempo()                { return _core.driver().tempo(); }
+    void  transport_set_tempo_norm(const float norm) { _core.driver().set_tempo_norm(norm); }
+
     // LED indicator state (LED migration Round 2). The platform reads these to render the
     // flux/grit, play/rev, and alt indicators; it keeps the colors + blink/timer/storage logic.
     FxLeds   fx_leds(Deck::Ref);
@@ -134,12 +150,15 @@ public:
     // heads on that baseline and returns the geometry the platform's pos/size/overdub overlays use.
     RingGeometry render_ring(LEDRing& ring, Deck::Ref, float breathe_brightness);
 
-    // Escape hatch: direct access to the granular Core for the ONE remaining coupling - LED
-    // rendering (input, CV, gate, and storage are all on the engine API above). A second,
-    // non-granular engine cannot render its own UI until this is migrated:
-    //   LED rendering (core.ui.leds.cpp) - reads deck/buffer/generator/fx state to draw rings +
-    //   indicators; needs IEngine::render(DisplayModel&) + the MValue value-display moved into a
-    //   platform toolkit. The hard redesign - see docs/refactor-status.md for the resume plan.
+    // Escape hatch: direct access to the granular Core. LED rendering and transport (item 1) are
+    // off it now; the remaining users are the two non-transport coupling categories the platform
+    // still reaches through core() for (see docs/refactor-status.md "Still coupled"):
+    //   - Category 2: switch-config writes in _process_switches (set_route, mod type, deck mode,
+    //     size/pos mod flags, grit mode).
+    //   - Category 3: deck-state readbacks in the apply pass / pot queue (deck.mode(), is_empty(),
+    //     norm_start()/fx state for MValue seeding, tempo_to_fit()).
+    // Both are slated to fold into the item-3 MValue->ParamId toolkit (engine-declared bindings)
+    // rather than be hand-wrapped here; once they migrate, core() can be removed.
     Core& core() { return _core; }
 
 private:

@@ -8,14 +8,16 @@ Turn this firmware into a **fixed hardware/UI platform** that hosts a swappable 
 the parameters and DSP. (Organelle/Axoloti/plugin-host model on fixed hardware.) The granular
 looper is the first/reference engine.
 
-## Where it stands — LED migration complete
+## Where it stands — LED + transport migration complete
 
-The **input side, CV/gate/storage, and now all LED rendering are on the engine**. `core.ui.leds.cpp`
-no longer touches `Core` (`grep _core.` returns nothing). What remains is not a granular-coupling
-problem but the platform-ization tail: the `engine.core()` hatch still survives. A call-site audit
-(2026-06-02) found it carries **three** coupling categories, not the "transport actions only" this
-doc previously claimed — transport/`Driver`, switch-config writes, and deck-state readbacks (see
-"Still coupled" below for the full inventory). Everything builds, flashes, and runs; every step was
+The **input side, CV/gate/storage, all LED rendering, and now transport are on the engine**.
+`core.ui.leds.cpp` no longer touches `Core`, and `core.ui.midi.cpp` is now entirely `_core`-free
+too. What remains is not a granular-coupling problem but the platform-ization tail: the
+`engine.core()` hatch still survives. A call-site audit (2026-06-02) found it carried **three**
+coupling categories, not the "transport actions only" this doc previously claimed. Item 1 migrated
+the first (transport/`Driver`, via inline `transport_*` forwards on `GranularEngine` — flash-verified
+2026-06-02); the two that still hold `core()` are switch-config writes and deck-state readbacks (see
+"Still coupled" below). Everything builds, flashes, and runs; every step was
 behavior-preserving and flash-verified.
 
 ### Layers today
@@ -58,20 +60,23 @@ behavior-preserving and flash-verified.
   `audio_capacity_bytes`/`audio_apply_loaded`/`audio_is_empty`). The tape/slot state machine,
   preload, and SD `Card` I/O stay platform.
 
-### Still coupled — the `engine.core()` escape hatch (three categories)
+### Still coupled — the `engine.core()` escape hatch (two categories remain)
 
-LED rendering is fully migrated, but a call-site audit (2026-06-02) corrected an earlier claim:
-the hatch is **not** "transport actions only." Removing `engine.core()` requires absorbing three
-distinct categories, and cutting only transport will **not** let `engine.core()` be deleted.
+A call-site audit (2026-06-02) corrected an earlier claim: the hatch was **not** "transport actions
+only" — it carried three distinct coupling categories. **Category 1 (transport) is now migrated
+(item 1, done);** removing `engine.core()` requires absorbing the two below.
 
-- **Category 1 — transport / `Driver`** (the round the roadmap calls item 1). Distinct methods the
-  platform calls: `set_on_quarter`/`set_on_clock_out` (init wiring, `core.ui.cpp:52,55`), `source`/
-  `tick` (clock tick, `core.ui.midi.cpp:12,15,20`), `is_external_sync`/`reset` (SeqA gesture,
-  `core.ui.pads.cpp:68-69`), `toggle_source` (alt clock gesture, `core.ui.pads.cpp:206` /
-  `core.ui.cpp:614`), `is_external_sync`/`tap_tempo`/`tempo` (tap tempo, `core.ui.cpp:629-633`),
-  `set_tempo_norm` (set-tempo-by-size, `core.ui.cpp:674`). That is **10 methods, not the 3
-  (`tick`/`toggle_play`/`reset`) previously listed** — and `toggle_play` does not appear in the UI
-  at all (it is already engine-internal, `granular_engine.cpp:108`).
+- **Category 1 — transport / `Driver` — DONE (item 1, flash-verified 2026-06-02).** The 10 distinct
+  `Driver` methods the platform used (`set_on_quarter`/`set_on_clock_out`/`source`/`tick`/
+  `is_external_sync`/`reset`/`toggle_source`/`tap_tempo`/`tempo`/`set_tempo_norm`) are now inline
+  `transport_*` forwards on `GranularEngine`; the 8 call sites in `core.ui.cpp`/`pads`/`midi` route
+  through `_engine.transport_*` instead of `_core.driver()`. `core.ui.midi.cpp` became fully
+  `_core`-free as a result. Faithful stopgap (B1): the platform still owns clock-source selection +
+  edge detection in `tick()`; only `source()`/`tick()` route through the engine. The `Driver` itself
+  still lives in `Core` — relocating it to a platform transport service is deferred to item 2. (For
+  the record, the pre-migration estimate of 3 methods `tick`/`toggle_play`/`reset` was wrong on both
+  ends: it was 10 methods, and `toggle_play` never appeared in the UI — it is engine-internal,
+  `granular_engine.cpp:108`.)
 - **Category 2 — switch-config writes** (`_process_switches`, `core.ui.cpp:541-626`), NOT transport:
   `set_route(...)`, `mod(ref).set_type()/set_lfo_type()`, `deck.set_mode()` + `infer_panner_mode()`,
   `deck.set_start_mod_on()/set_size_mod_on()`, `deck.fx().switch_grit_mode()` + grit readback. These
@@ -81,11 +86,10 @@ distinct categories, and cutting only transport will **not** let `engine.core()`
   (`380,457`), `deck.norm_start()`/`deck.fx().grit_*`/`flux_*` for initial `MValue` seeding (`64-85`),
   `deck.tempo_to_fit()` (`671`).
 
-The `Driver`/transport lives in `Core` (engine) today but is conceptually platform. Categories 2-3
-are exactly what roadmap item 3's `MValue` → `ParamId` toolkit is meant to generalize (engine declares
-its modes/configs; platform stops reading `deck.mode()`), so absorbing them now as bespoke wrappers
-builds throwaway scaffolding — the same trap noted for the UI A/B consolidation. See the re-scoped
-roadmap item 1.
+Categories 2-3 are exactly what roadmap item 3's `MValue` → `ParamId` toolkit is meant to generalize
+(engine declares its modes/configs; platform stops reading `deck.mode()`), so absorbing them now as
+bespoke wrappers would build throwaway scaffolding — the same trap noted for the UI A/B consolidation.
+They stay on `core()` until then; once they migrate, `core()` can be removed.
 
 ### LED migration progress (committed, flash-verified)
 
@@ -161,36 +165,31 @@ exercise the pot/pad/LED/MIDI hardware paths — those changes are verified by f
 ## Memory budget
 
 The app boots from SRAM (`BOOT_SRAM`, `alt_sram.lds`); code lives in the **186 KB SRAM_EXEC**
-region, currently ~99.5% full (~912 B free). ITCMRAM relocation was rejected (under BOOT_SRAM
+region, currently **99.31% full (189152 B used, ~1312 B free)** as of 2026-06-02 — up from the
+~912 B baseline. Trajectory this round: baseline ~912 B -> +~448 B (hardware init table, #2) ->
++~56 B (storage AudioData dedup, #5) = ~1416 B, then item 1 (transport forwards) spent ~104 B back
+to ~1312 B. All three flash-verified. ITCMRAM relocation was rejected (under BOOT_SRAM
 the load image can't cleanly leave SRAM_EXEC without relying on unverifiable bootloader load
 behavior). The three non-RT UI TUs `core.ui.leds.cpp`, `core.ui.pads.cpp`, and `core.ui.cpp` are
 compiled `-Os` (`#pragma GCC optimize`), and `GranularEngine::render_ring` is `optimize("Os")`-tagged;
 the audio DSP stays `-O2 -funroll-loops`. The `-Os`-on-`core.ui.cpp` lever has been spent. The next
-rounds (transport ownership, interface lift) will want headroom — the remaining lever is `-Os` on
-`core.ui.midi.cpp`, then `core.ui.midi`/other non-RT TUs.
+round (interface lift) will want headroom — the remaining lever is `-Os` on `core.ui.midi.cpp`,
+then other non-RT TUs.
 
 ## Resume roadmap — remaining tasks
 
 The input side, CV/gate/storage, and all LED rendering are decoupled. What remains is the
 platform-ization tail. Each item is its own behavior-preserving, flash-verified round.
 
-1. **Transport off `core()` — Category 1 only (NEXT).** Re-scoped after the 2026-06-02 call-site
-   audit: this round absorbs **only the transport/`Driver` category** (the 10 methods listed under
-   "Still coupled" Category 1) behind engine methods, using the same query/action pattern as `*_leds`.
-   It does **not** remove `engine.core()` — Categories 2 (switch-config writes) and 3 (deck-state
-   readbacks) still hold it, so the milestone is "transport off `core()`", paralleling "LEDs off
-   `core()`", not "hatch removed". Categories 2-3 are deferred to item 2/3 on purpose: they are
-   enum/config dispatch and mode readback that the `MValue` → `ParamId` toolkit (item 3) regenerates
-   as engine-declared bindings, so hand-wrapping them now would be throwaway scaffolding.
-
-   Within Category 1 there is still the architectural fork: does `Driver`/transport stay inside `Core`
-   (engine) or move out to a **platform-owned transport service**? `Driver` is conceptually platform
-   (clock/transport) but lives in `Core` and fans ticks to both decks, so relocation is non-trivial.
-   Recommended now: the **stopgap** — expose the 10 transport methods on the engine without relocating
-   `Driver` — and defer the relocation to item 2 (interface lift) / engine #2, when a second consumer
-   exists to validate the shared-transport boundary. Plan it before coding; it lands entirely in the
-   three `-Os`-maxed UI TUs, so bank the SRAM-positive mechanical wins first (see watch-item).
-2. **Lift the shared `IEngine` interface.** `CoreUI` holds a `GranularEngine&` and `Storage` a
+1. **Transport off `core()` — Category 1 only — DONE (flash-verified 2026-06-02).** Absorbed the
+   transport/`Driver` category (the 10 methods under "Still coupled" Category 1) behind inline
+   `transport_*` forwards on `GranularEngine`, repointing the 8 call sites in `core.ui.cpp`/`pads`/
+   `midi` from `_core.driver()`; `core.ui.midi.cpp` is now fully `_core`-free. Faithful stopgap (A2 +
+   B1): wrapped methods (matching the `*_leds` idiom), and the platform kept clock-source selection +
+   edge detection in `tick()`. As planned, this did **not** remove `engine.core()` — Categories 2-3
+   still hold it. The architectural fork (keep `Driver` in `Core` vs. move it to a platform transport
+   service) was **deferred to item 2** per the stopgap recommendation; `Driver` still lives in `Core`.
+2. **Lift the shared `IEngine` interface (NEXT).** `CoreUI` holds a `GranularEngine&` and `Storage` a
    `GranularEngine*`; the whole granular surface (`set_param`/`param`, `handle_midi_*`, `set_fx`/
    `on_*_pad`, `cv_*`/`on_gate_*`, `audio_*`, `*_leds`, `render_ring`, plus item 1's transport
    methods) lives on the **concrete** `GranularEngine`, not the abstract `IEngine`. A 2nd engine
@@ -210,9 +209,10 @@ platform-ization tail. Each item is its own behavior-preserving, flash-verified 
    engine separate include roots. *Optional:* template `Buffer` on sample format to retire the
    `LOFI_INT16` switch; make the remaining `config.h` sample-rate constants functions of `sample_rate`.
 
-**Standing watch-item — SRAM_EXEC.** ~912 B free and the migration has been net-additive. Items 1-2
-add more surface. Next reclaim lever: `-Os` on `core.ui.midi.cpp`, then other non-RT TUs. ITCMRAM
-stays rejected (BOOT_SRAM single-blob load).
+**Standing watch-item — SRAM_EXEC.** **~1312 B free** (2026-06-02, after #2/#5 wins and item 1's
+~104 B transport forwards) and the migration has been net-additive. The remaining items (interface
+lift, 2nd engine) add more surface, so this headroom is the budget. Next reclaim levers: `-Os` on
+`core.ui.midi.cpp`, then other non-RT TUs. ITCMRAM stays rejected (BOOT_SRAM single-blob load).
 
 Detailed per-round notes (the contracts, the byte-faithful porting constraints, the geometry struct,
 etc.) live in the planning doc the maintainer keeps outside the repo (`elegant-baking-panda.md`).

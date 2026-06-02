@@ -49,10 +49,10 @@ void CoreUI::init() {
     _hw.SetOnRelease(on_release);
 
     auto on_quarter = std::bind(&CoreUI::_on_quarter, this, _1);
-    _core.driver().set_on_quarter(on_quarter);
+    _engine.transport_set_on_quarter(on_quarter);
 
     auto on_clock_out = std::bind(&CoreUI::_process_clock_out, this);
-    _core.driver().set_on_clock_out(on_clock_out);
+    _engine.transport_set_on_clock_out(on_clock_out);
 
     for (int i = 0; i < Hardware::LED_LAST; i++) _led[i].init(i);
 };
@@ -611,10 +611,10 @@ void CoreUI::_process_switches()
         _tap_was_tapped = true;
         
         if (_touched.test(Alt)) {
-            _core.driver().toggle_source();
+            _engine.transport_toggle_source();
             _clock_source_changed = true;
             _value_display_timeout.start();
-        } 
+        }
         else if (_touched.test(GritA)) {
             deck_a.fx().switch_grit_mode();
             _grit_intens[Deck::A].set(deck_a.fx().grit_intensity());
@@ -626,10 +626,9 @@ void CoreUI::_process_switches()
             _grit_mix[Deck::B].set(deck_b.fx().grit_mix());
         }
         else {
-            auto& d = _core.driver();
-            if (!d.is_external_sync()) {
-                d.tap_tempo();
-                _tempo.set(Tempo::abs_to_norm(d.tempo()));
+            if (!_engine.transport_is_external_sync()) {
+                _engine.transport_tap_tempo();
+                _tempo.set(Tempo::abs_to_norm(_engine.transport_tempo()));
             }
             if (!_tap_hold.is_holding()) {
                 _tap_hold.begin();
@@ -671,5 +670,5 @@ void CoreUI::_set_tempo_by_size(const Deck::Ref ref, const float fraction)
     auto bpm = _core.deck(ref).tempo_to_fit(fraction);
     auto norm = Tempo::abs_to_norm(bpm); 
     _tempo.set(norm);
-    _core.driver().set_tempo_norm(norm);
+    _engine.transport_set_tempo_norm(norm);
 }
