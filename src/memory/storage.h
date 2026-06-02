@@ -10,7 +10,7 @@
 
 namespace spotykach {
 
-class GranularEngine; // platform's audio storage port (deck buffer save/load)
+class IEngine; // platform's audio storage port (deck buffer save/load), via IEngine::audio_*
 
 static const std::string kConfig = "SK/config.txt";
 static const std::string kMemory = "SK/MEM";
@@ -40,7 +40,7 @@ public:
     DeckStorage();
     ~DeckStorage() = default;
 
-    void init(Card*, GranularEngine*, Deck::Ref);
+    void init(Card*, IEngine*, Deck::Ref);
 
     bool is_idle() const { return _state == State::idle; }
     bool is_selecting() const { return _state == State::selecting; }
@@ -91,7 +91,7 @@ private:
     static constexpr uint8_t kNone = 0xff;
 
     Card* _card;
-    GranularEngine* _engine;
+    IEngine* _engine;
     Deck::Ref _ref;
     State _state;
 
@@ -121,7 +121,7 @@ class Storage {
         {};
         ~Storage() = default;
 
-        void init(GranularEngine& engine)
+        void init(IEngine& engine)
         {
             _card.init(SDRAMBuffer::pool().card_buffer());
 

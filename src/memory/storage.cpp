@@ -2,7 +2,7 @@
 #include <string.h>
 #include "../hw/buffer.sdram.h"
 #include "storage.h"
-#include "engine/granular_engine.h"
+#include "engine/iengine.h"
 #include "wav.h"
 
 using namespace spotykach;
@@ -47,7 +47,7 @@ _recent_tape_idx { kNone },
 _recent_slot_idx { kNone }
 {}
 
-void DeckStorage::init(Card* card, GranularEngine* engine, Deck::Ref ref)
+void DeckStorage::init(Card* card, IEngine* engine, Deck::Ref ref)
 {
     _card = card;
     _engine = engine;

@@ -9,6 +9,7 @@
 #include "config.h"
 #include "engine_context.h"
 
+#include "mode.h"     // Mode + Route (Route moved here from core.h)
 #include "driver.h"
 #include "modulator.h"
 #include "xfade.h"
@@ -16,12 +17,6 @@
 #include "smooth.h"
 
 namespace spotykach {
-
-enum class Route: uint8_t {
-  DoubleMono = 1,
-  Stereo,
-  GenerativeStereo
-};
 
 enum class ModType: uint8_t {
   Follow,

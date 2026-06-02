@@ -51,11 +51,11 @@ public:
         _peak = peak;
     }
 
-    Capabilities capabilities() const { return CapTransport; }
+    Capabilities capabilities() const override { return CapTransport; }
 
     // A non-granular display: a symmetric level meter on both rings + lit play indicators.
     // Drawn with LEDRing's primitives (Option A) - exactly how a granular render() will reuse them.
-    void render(DisplayModel& m) const {
+    void render(DisplayModel& m) override {
         m.clear();
         const float level = _peak > 1.f ? 1.f : _peak;
         for (int r = 0; r < 2; r++) {

@@ -41,11 +41,18 @@ class AppImpl {
 
     void Init();
     void Loop();
-    void mod_src(float& out0, float& out1) {
-        _engine.core().mod(Deck::A).process(out0);
-        _engine.core().mod(Deck::B).process(out1);
-
-        _ui.set_lfo(out0, out1);
+    // DAC modulation outputs. One block-rate engine call (no per-sample virtual on the ISR), then
+    // convert float CV to the DAC's 12-bit range. set_lfo caches the block's last sample for the
+    // cycle LED (read asynchronously at 62 Hz, so last-of-block is equivalent to the old per-sample).
+    void process_cv(uint16_t** out, size_t size) {
+        float cv0[kDacBufSize];
+        float cv1[kDacBufSize];
+        _engine.process_cv(cv0, cv1, size);
+        for (size_t i = 0; i < size; i++) {
+            out[0][i] = __USAT(cv0[i] * (1 << 12), 12);
+            out[1][i] = __USAT(cv1[i] * (1 << 12), 12);
+        }
+        _ui.set_lfo(cv0[size - 1], cv1[size - 1]);
     }
     CoreUI& ui() { return _ui; }
 
@@ -100,18 +107,9 @@ void StartT5Callback(TimerHandle::PeriodElapsedCallback cb, uint32_t call_freq_h
     tim5_handle.Start();
 };
 
-void DACCallback(uint16_t **out, size_t size) 
+void DACCallback(uint16_t **out, size_t size)
 {
-    for (size_t i = 0; i < size; i++) {
-        float out_a = 0;
-        float out_b = 0;
-        impl.mod_src(out_a, out_b);
-        uint16_t a = __USAT(out_a * (1 << 12), 12);
-        uint16_t b = __USAT(out_b * (1 << 12), 12);
-
-        out[0][i] = a;
-        out[1][i] = b;
-    }
+    impl.process_cv(out, size);
 };
 
 static void AudioCallback(AudioHandle::InputBuffer  in,
