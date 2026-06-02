@@ -65,6 +65,14 @@ public:
     virtual float      tempo_to_fit(Deck::Ref, float fraction) { return 0.f; }
     virtual GritReseed toggle_grit_mode(Deck::Ref) { return {}; }
 
+    // --- Knob layout (item 3a-3): lets the platform branch the SIZE/ENV pot handling and the apply
+    //     pass without reading Core's Mode. deck_layout describes how those knobs behave for this
+    //     deck; size_sets_tempo reports whether the SIZE tap-hold tempo-fit gesture is eligible
+    //     (granular: Slice && non-empty). Defaults suit a modeless engine. ---
+    // (non-const: the granular override forwards to the non-const Core, as transport_* does)
+    virtual DeckLayout deck_layout(Deck::Ref) { return DeckLayout::single; }
+    virtual bool       size_sets_tempo(Deck::Ref) { return false; }
+
     // --- MIDI meaning ------------------------------------------------------------------------
     virtual Deck::Ref handle_midi_note(uint8_t channel, uint8_t note) { return Deck::Count; }
     virtual void      handle_midi_transport(bool start) {}

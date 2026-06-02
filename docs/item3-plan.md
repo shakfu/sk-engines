@@ -131,8 +131,7 @@ it reclaimed 16 B, not the hoped-for headroom).
 
 The two pieces are separable; sequence to fund SRAM and de-risk:
 
-- **3a-0 — config channel (Category 2 first). DONE 2026-06-02 (builds clean, fits; flash-verify
-  pending).** Added `set_config(ConfigId, Deck::Ref, int)->bool` (returns changed; only Mode uses
+- **3a-0 — config channel (Category 2 first). DONE + FLASH-VERIFIED 2026-06-02.** Added `set_config(ConfigId, Deck::Ref, int)->bool` (returns changed; only Mode uses
   it, to re-apply size), `tempo_to_fit(deck, fraction)`, and `toggle_grit_mode(deck)->GritReseed`
   to IEngine; `GranularEngine` overrides them (set_config is `optimize("Os")`-tagged in the -O2 TU).
   `_process_switches` is now fully `_core`-free (route/mod-type/lfo-shape/mode/start-size-mod/grit
@@ -148,8 +147,7 @@ The two pieces are separable; sequence to fund SRAM and de-risk:
   exactly the ones deferred to 3a-2/3a-3.
 - **3a-1 — render(DisplayModel).** Do the LED half next: it's independent of the param toolkit and
   is the SRAM-funding step (measure it). Deletes the query methods.
-- **3a-2 — ParamId-keyed MValue array. DONE 2026-06-02 (builds clean, reclaims SRAM; flash-verify
-  pending).** Replaced the ~21 named members with
+- **3a-2 — ParamId-keyed MValue array. DONE + FLASH-VERIFIED 2026-06-02.** Replaced the ~21 named members with
   `std::array<std::array<MValue, Deck::Count>, ParamId::Count> _mv` + an inline `mv(ParamId)`
   accessor; `_size_quarters` kept named (not a ParamId). Mechanically renamed 152 sites
   (`_X[ref]` -> `mv(ParamId::X)[ref]`; globals -> `mv(ParamId::X)[Deck::A]`) across core.ui.cpp (109)
@@ -166,8 +164,26 @@ The two pieces are separable; sequence to fund SRAM and de-risk:
   *less* code (fewer distinct member-address computations / std::array operator[] wrappers). So
   **3a-2 is net-negative on SRAM and the sequence does not stall on headroom** — it funds itself
   (~320 B) before 3a-1's render migration even runs. Spike reverted; tree clean.
-- **3a-3 — engine bindings().** Move the mode fanout into the engine; delete the apply-pass and
-  pot-queue `deck.mode()`/`is_empty()` reads. Removes the last Category-3 sites.
+- **3a-3 — engine knob-layout query. DONE 2026-06-02 (builds clean; flash-verify pending).**
+  **Signature changed from the `bindings()->{ParamId,active}` sketch after reading the real code**
+  (as the plan said to). Why: the pot-queue's `active` flags are platform modifiers (`_touched`,
+  `_tap_hold`, `_storage`) the engine can't compute, and the SIZE fanout includes non-`ParamId`
+  gestures (`_size_quarters`, `_set_tempo_by_size`). A `{ParamId,active}` list can't capture that
+  without dragging the whole interaction grammar into the engine - the exact trap the docs warn of.
+  Instead used the **faithful-query-substitution** pattern item 2 used for LEDs: the engine answers
+  the few semantic questions the platform branches on. Added `DeckLayout{single,slice,chord,none}`
+  (engine-declared knob layout; granular maps Reel/Slice/Drift/None; modeless engine -> single) +
+  `deck_layout(Deck::Ref)` and `size_sets_tempo(Deck::Ref)` (folds the Slice `is_empty` gate) to
+  IEngine. Both non-const (forward to non-const Core, like `transport_*`). Rewrote the apply pass
+  (`is_chord`/Slice checks) and the pot-queue CTRL_SIZE/CTRL_ENV branches to switch on `DeckLayout`
+  instead of `deck.mode()`; layouts hoisted once per function (mode is constant within a call).
+  **core.ui.cpp now has ONE residual `_core.` site: `_init_values` seeding (:64).** SRAM +168 B
+  (free 400 -> 232 B). Faithful behavior-preserving port (each mode branch maps 1:1, incl. None->none).
+- **3a-3b — seeding migration (NEXT).** Migrate `_init_values` (:64) off `_core`: it reads
+  `deck.norm_start()` + `fx.grit_*`/`flux_*` to seed MValue pickup. Needs the engine to expose those
+  initial values (resolve the `_param_cache` seed-authority open question: pre-seed at init so
+  `param()` is authoritative, or a dedicated readback). The other defaults are platform literals and
+  stay. After this, core.ui.cpp is fully `_core`-free.
 - **3a-4 — delete core() + the GranularEngine& ctor.** `CoreUI`/`app.cpp` hold only `IEngine`.
 
 After 3a-4: `engine.core()` and `core.ui.h:24`'s `_core` member are gone; `CoreUI` is engine-agnostic.

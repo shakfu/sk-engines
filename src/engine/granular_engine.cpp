@@ -110,6 +110,23 @@ GritReseed GranularEngine::toggle_grit_mode(const Deck::Ref ref)
     return { fx.grit_intensity(), fx.grit_mix() };
 }
 
+DeckLayout GranularEngine::deck_layout(const Deck::Ref ref)
+{
+    switch (_core.deck(_safe_ref(ref)).mode()) {
+        case Mode::Reel:  return DeckLayout::single;
+        case Mode::Slice: return DeckLayout::slice;
+        case Mode::Drift: return DeckLayout::chord;
+        case Mode::None:  return DeckLayout::none;
+    }
+    return DeckLayout::single;
+}
+
+bool GranularEngine::size_sets_tempo(const Deck::Ref ref)
+{
+    auto& deck = _core.deck(_safe_ref(ref));
+    return deck.mode() == Mode::Slice && !deck.is_empty();
+}
+
 Capabilities GranularEngine::capabilities() const
 {
     return CapRecording | CapTapeStorage | CapStepSequencer

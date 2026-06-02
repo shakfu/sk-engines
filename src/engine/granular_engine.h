@@ -44,6 +44,11 @@ public:
     float      tempo_to_fit(Deck::Ref deck, float fraction) override;
     GritReseed toggle_grit_mode(Deck::Ref deck) override;
 
+    // Knob layout (item 3a-3): map the deck's granular Mode to the platform-facing DeckLayout, and
+    // report tempo-fit eligibility (Slice && non-empty), so the platform stops reading Core's Mode.
+    DeckLayout deck_layout(Deck::Ref deck) override;
+    bool       size_sets_tempo(Deck::Ref deck) override;
+
     Capabilities capabilities() const override;
 
     // MIDI meaning (Phase 3c). The platform parses MIDI and clocks transport; the engine

@@ -58,6 +58,18 @@ enum class ConfigId : uint8_t {
 // can reseed its MValue pickup to the values the live effect reports after the mode switch.
 struct GritReseed { float intensity; float mix; };
 
+// Engine-declared layout of the mode-dependent SIZE/ENV knobs (item 3a-3), so the platform stops
+// reading Core's Mode to branch the pot queue / apply pass. It describes how those knobs behave,
+// not the engine's DSP mode: the granular engine maps Reel->single, Slice->slice, Drift->chord,
+// None->none; a modeless engine returns single (SIZE just drives the size param). The platform
+// keeps the interaction grammar (modifiers, tap-hold, value display); only the mode read moves.
+enum class DeckLayout : uint8_t {
+    single,  // SIZE -> Size (always); ENV -> Env
+    slice,   // SIZE -> Size/PolySlice (alt) or the tap-hold tempo-fit gesture; ENV -> Env
+    chord,   // SIZE -> Size/Win (alt); ENV -> Env/EnvSize (alt); treated as "chord" in the apply pass
+    none     // no layout (uninitialised deck) -> SIZE/ENV do nothing
+};
+
 // Optional behaviours an engine opts into. The platform offers these as a toolkit; a
 // variant enables only the subset it needs (a non-looper omits Recording/TapeStorage/etc.).
 enum Capability : uint32_t {

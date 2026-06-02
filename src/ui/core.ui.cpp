@@ -114,10 +114,10 @@ void CoreUI::process()
 
     _tap_hold.process();
 
-    auto& deck_a = _core.deck(Deck::A);
-    auto& deck_b = _core.deck(Deck::B);
-    auto is_chord_a = deck_a.mode() == Mode::Drift;
-    auto is_chord_b = deck_b.mode() == Mode::Drift;
+    auto layout_a = _engine.deck_layout(Deck::A);
+    auto layout_b = _engine.deck_layout(Deck::B);
+    auto is_chord_a = layout_a == DeckLayout::chord;
+    auto is_chord_b = layout_b == DeckLayout::chord;
 
     auto blink = _arm_blink_timer.HasPassedMs(250);
     if (blink) _arm_blink_timer.Restart();
@@ -163,7 +163,7 @@ void CoreUI::process()
             _engine.set_param(ParamId::Win, Deck::A, mv(ParamId::Win)[Deck::A].value());
             _engine.set_param(ParamId::Size, Deck::A, mv(ParamId::Size)[Deck::A].value());
         }
-        else if (deck_a.mode() == Mode::Slice && _touched.test(Alt)) {
+        else if (layout_a == DeckLayout::slice && _touched.test(Alt)) {
             _engine.set_param(ParamId::PolySlice, Deck::A, mv(ParamId::PolySlice)[Deck::A].value());
         }
         else {
@@ -175,7 +175,7 @@ void CoreUI::process()
             _engine.set_param(ParamId::Win, Deck::B, mv(ParamId::Win)[Deck::B].value());
             _engine.set_param(ParamId::Size, Deck::B, mv(ParamId::Size)[Deck::B].value());
         }
-        else if (deck_b.mode() == Mode::Slice && _touched.test(Alt)) {
+        else if (layout_b == DeckLayout::slice && _touched.test(Alt)) {
             _engine.set_param(ParamId::PolySlice, Deck::B, mv(ParamId::PolySlice)[Deck::B].value());
         }
         else {
@@ -343,8 +343,8 @@ void CoreUI::_process_gate_out(const Deck::Ref ref)
 // Knobs ////////////////////////////////////
 void CoreUI::_process_ui_queue()
 {
-    auto& deck_a = _core.deck(Deck::A); 
-    auto& deck_b = _core.deck(Deck::B);
+    auto layout_a = _engine.deck_layout(Deck::A);
+    auto layout_b = _engine.deck_layout(Deck::B);
 
     auto is_alt_touched = _touched.test(Alt);
     auto fx_a_touched = _touched.test(FluxA) || _touched.test(GritA);
@@ -370,31 +370,31 @@ void CoreUI::_process_ui_queue()
                     break;
                 }
 
-                case Hardware::CTRL_SIZE_A: 
-                    switch (deck_a.mode()) {
-                        case Mode::Reel: {
-                            mv(ParamId::Size)[Deck::A].process(val, true, changing_id_a); 
+                case Hardware::CTRL_SIZE_A:
+                    switch (layout_a) {
+                        case DeckLayout::single: {
+                            mv(ParamId::Size)[Deck::A].process(val, true, changing_id_a);
                         }
                         break;
-                        case Mode::Slice: {
-                            if (_tap_hold.passed() && !deck_a.is_empty()) {
+                        case DeckLayout::slice: {
+                            if (_tap_hold.passed() && _engine.size_sets_tempo(Deck::A)) {
                                 _size_quarters[Deck::A].process(val, true, changing_id_a);
                                 _set_tempo_by_size(Deck::A, val);
                             }
                             else {
                                 mv(ParamId::Size)[Deck::A].process(val, !is_alt_touched, changing_id_a);
-                                mv(ParamId::PolySlice)[Deck::A].process(val, is_alt_touched, changing_id_a);    
+                                mv(ParamId::PolySlice)[Deck::A].process(val, is_alt_touched, changing_id_a);
                                 _size_quarters[Deck::A].set(val);
                             }
                         }
                         break;
-                        case Mode::Drift: {
+                        case DeckLayout::chord: {
                             mv(ParamId::Size)[Deck::A].process(val, !is_alt_touched, changing_id_a);
                             mv(ParamId::Win)[Deck::A].process(val, is_alt_touched, changing_id_a);
-                            
+
                         }
                         break;
-                        case Mode::None: break;
+                        case DeckLayout::none: break;
                     }
                     break;
 
@@ -403,8 +403,8 @@ void CoreUI::_process_ui_queue()
                     mv(ParamId::FluxFb)[Deck::A].process(val, _touched.test(FluxA), changing_id_a);
                     break;
 
-                case Hardware::CTRL_ENV_A: 
-                    if (deck_a.mode() == Mode::Drift) {
+                case Hardware::CTRL_ENV_A:
+                    if (layout_a == DeckLayout::chord) {
                         mv(ParamId::Env)[Deck::A].process(val, !is_alt_touched, changing_id_a);
                         mv(ParamId::EnvSize)[Deck::A].process(val, is_alt_touched, changing_id_a);
                     }
@@ -448,13 +448,13 @@ void CoreUI::_process_ui_queue()
                 }
 
                 case Hardware::CTRL_SIZE_B:
-                    switch (deck_b.mode()) {
-                        case Mode::Reel: {
+                    switch (layout_b) {
+                        case DeckLayout::single: {
                             mv(ParamId::Size)[Deck::B].process(val, true, changing_id_b);
                         }
                         break;
-                        case Mode::Slice: {
-                            if (_tap_hold.passed() && !deck_b.is_empty()) {
+                        case DeckLayout::slice: {
+                            if (_tap_hold.passed() && _engine.size_sets_tempo(Deck::B)) {
                                 _size_quarters[Deck::B].process(val, true, changing_id_b);
                                 _set_tempo_by_size(Deck::B, val);
                             }
@@ -465,12 +465,12 @@ void CoreUI::_process_ui_queue()
                             }
                         }
                         break;
-                        case Mode::Drift: {
+                        case DeckLayout::chord: {
                             mv(ParamId::Size)[Deck::B].process(val, !is_alt_touched, changing_id_b);
                             mv(ParamId::Win)[Deck::B].process(val, is_alt_touched, changing_id_b);
                         }
                         break;
-                        case Mode::None: break;
+                        case DeckLayout::none: break;
                     }
                     break;
 
@@ -479,8 +479,8 @@ void CoreUI::_process_ui_queue()
                     mv(ParamId::FluxFb)[Deck::B].process(val, _touched.test(FluxB), changing_id_b);
                     break;
 
-                case Hardware::CTRL_ENV_B: 
-                    if (deck_b.mode() == Mode::Drift) {
+                case Hardware::CTRL_ENV_B:
+                    if (layout_b == DeckLayout::chord) {
                         mv(ParamId::Env)[Deck::B].process(val, !is_alt_touched, changing_id_b);
                         mv(ParamId::EnvSize)[Deck::B].process(val, is_alt_touched, changing_id_b);
                     }
