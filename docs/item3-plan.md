@@ -148,9 +148,15 @@ The two pieces are separable; sequence to fund SRAM and de-risk:
   exactly the ones deferred to 3a-2/3a-3.
 - **3a-1 — render(DisplayModel).** Do the LED half next: it's independent of the param toolkit and
   is the SRAM-funding step (measure it). Deletes the query methods.
-- **3a-2 — ParamId-keyed MValue array.** Mechanical: named members -> `_mv[ParamId::Count][2]`.
-  Behavior-identical; no engine change (keeps the existing `deck.mode()` reads temporarily). Pure
-  platform refactor, large diff, high verify cost.
+- **3a-2 — ParamId-keyed MValue array. DONE 2026-06-02 (builds clean, reclaims SRAM; flash-verify
+  pending).** Replaced the ~21 named members with
+  `std::array<std::array<MValue, Deck::Count>, ParamId::Count> _mv` + an inline `mv(ParamId)`
+  accessor; `_size_quarters` kept named (not a ParamId). Mechanically renamed 152 sites
+  (`_X[ref]` -> `mv(ParamId::X)[ref]`; globals -> `mv(ParamId::X)[Deck::A]`) across core.ui.cpp (109)
+  and core.ui.leds.cpp (43). Behavior-identical by construction (pure storage rename, no logic/engine
+  change; keeps the existing `deck.mode()` reads). **SRAM: reclaimed 296 B (free 104 -> 400 B)** -
+  ~24 B less than the raw-cast spike's 320 B, the cost of the cleaner accessor/std::array form.
+  Net of 3a-0+3a-2 over the pre-3a-0 baseline: **+40 B** (the seam + array refactor are ~free).
   **SPIKE DONE (2026-06-02): the array form RECLAIMS ~320 B** — the opposite of the feared
   regression. Throwaway spike collapsed the ~21 named per-deck/global MValue members into
   `MValue _mv[ParamId::Count][Deck::Count]` (globals in slot [0], `_size_quarters` kept named),

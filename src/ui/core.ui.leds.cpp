@@ -356,7 +356,7 @@ void CoreUI::_draw_ring(const Deck::Ref ref)
     //     _error_blink_count[ref]--;
     //     return;
     // }
-    else if (_is_changing(_key_interval) && ref == Deck::A) {
+    else if (_is_changing(mv(ParamId::KeyInterval)[Deck::A]) && ref == Deck::A) {
         _show_key_intervals();
     }
     else if (_is_changing(_size_quarters[ref])) {
@@ -364,13 +364,13 @@ void CoreUI::_draw_ring(const Deck::Ref ref)
     }
     else if (_touched.test(ref == Deck::A ? GritA : GritB)) {
         auto fx_color = grit_color(_engine.fx_leds(ref).grit_mode);
-        _show_value(_grit_intens[ref], ring, fx_color, ValueDisplay::Always);
-        _show_value(_grit_mix[ref], ring, fx_color);
+        _show_value(mv(ParamId::GritIntensity)[ref], ring, fx_color, ValueDisplay::Always);
+        _show_value(mv(ParamId::GritMix)[ref], ring, fx_color);
     }
     else if (_touched.test(ref == Deck::A ? FluxA : FluxB)) {
-        _show_value(_flux_intens[ref], ring, kDelayColor, ValueDisplay::Always);
-        _show_value(_flux_mix[ref], ring, kDelayColor);
-        _show_value(_flux_fb[ref], ring, kDelayColor);
+        _show_value(mv(ParamId::FluxIntensity)[ref], ring, kDelayColor, ValueDisplay::Always);
+        _show_value(mv(ParamId::FluxMix)[ref], ring, kDelayColor);
+        _show_value(mv(ParamId::FluxFb)[ref], ring, kDelayColor);
     } 
     else {
         geo = _engine.render_ring(ring, ref, _led_breathe_brightness);
@@ -381,22 +381,22 @@ void CoreUI::_draw_ring(const Deck::Ref ref)
     // the same order (size overlay first, then the overdub head on top).
     if (geo.playing) {
         // POSITION & SIZE
-        _show_value(_pos[ref], ring, kWhite, ValueDisplay::OnMoveDiffOnly);
-        if (_is_changing(_size[ref]) && !_size[ref].is_tracking()) {
+        _show_value(mv(ParamId::Pos)[ref], ring, kWhite, ValueDisplay::OnMoveDiffOnly);
+        if (_is_changing(mv(ParamId::Size)[ref]) && !mv(ParamId::Size)[ref].is_tracking()) {
             if (geo.mode == Mode::Drift) {
                 // DRAW SPREAD
-                float red_value = std::max(_size[ref].in_value(), _size[ref].value()) * .95f;
+                float red_value = std::max(mv(ParamId::Size)[ref].in_value(), mv(ParamId::Size)[ref].value()) * .95f;
                 // RED
                 ring.set_brightness(.6f);
                 ring.set_hex_color(kRed);
                 auto seg_start = geo.start - red_value * .5f;
                 ring.set_segment(seg_start, seg_start + red_value, true);
-                if (_size[ref].in_value() > _size[ref].value()) {
+                if (mv(ParamId::Size)[ref].in_value() > mv(ParamId::Size)[ref].value()) {
                     ring.add_point(seg_start, .8f, true);
                     ring.add_point(seg_start + red_value, .8f, true);
                 }
                 // WHITE
-                float white_value = std::min(_size[ref].in_value(), _size[ref].value()) * .95f;
+                float white_value = std::min(mv(ParamId::Size)[ref].in_value(), mv(ParamId::Size)[ref].value()) * .95f;
                 ring.set_brightness(.8f);
                 ring.set_hex_color(kWhite);
                 seg_start = geo.start - white_value * .5f;
@@ -406,12 +406,12 @@ void CoreUI::_draw_ring(const Deck::Ref ref)
                 ring.set_brightness(.6f);
                 ring.set_hex_color(kRed);
                 auto current_val = geo.start + geo.size;
-                auto new_val = geo.start + _size[ref].in_value();
+                auto new_val = geo.start + mv(ParamId::Size)[ref].in_value();
                 auto start = std::min(current_val, new_val);
                 auto end = std::max(current_val, new_val);
                 while (end >= 1.f) end -= 1.f; //WORKAROUND. Needs to be fixed in LEDRing::set_segment().
                 ring.set_segment(start, end);
-                ring.add_point(geo.start + _size[ref].in_value(), .95f);
+                ring.add_point(geo.start + mv(ParamId::Size)[ref].in_value(), .95f);
             }
         }
 
@@ -423,41 +423,41 @@ void CoreUI::_draw_ring(const Deck::Ref ref)
     
     switch (ref) {
         case Deck::A: {
-            _show_value(_mod_amp[Deck::A], ring);
-            _show_value(_mod_speed[Deck::A], ring);
-            _show_value(_click_mix, ring);
-            _show_value(_tempo, ring);
+            _show_value(mv(ParamId::ModAmp)[Deck::A], ring);
+            _show_value(mv(ParamId::ModSpeed)[Deck::A], ring);
+            _show_value(mv(ParamId::ClickMix)[Deck::A], ring);
+            _show_value(mv(ParamId::Tempo)[Deck::A], ring);
         }
         break;
         case Deck::B: {
-            _show_value(_mod_amp[Deck::B], ring);
-            _show_value(_mod_speed[Deck::B], ring);
-            _show_value(_pan_speed, ring);
-            _show_value(_pan_range, ring);
+            _show_value(mv(ParamId::ModAmp)[Deck::B], ring);
+            _show_value(mv(ParamId::ModSpeed)[Deck::B], ring);
+            _show_value(mv(ParamId::PanSpeed)[Deck::A], ring);
+            _show_value(mv(ParamId::PanRange)[Deck::A], ring);
         }
         break;
         default:break;
     }
-    _show_value(_mix[ref], ring);
-    _show_value(_feedback[ref], ring);
-    _show_value(_win[ref], ring);
-    _show_value(_env[ref], ring);
-    _show_value(_env_size[ref], ring);
+    _show_value(mv(ParamId::Mix)[ref], ring);
+    _show_value(mv(ParamId::Feedback)[ref], ring);
+    _show_value(mv(ParamId::Win)[ref], ring);
+    _show_value(mv(ParamId::Env)[ref], ring);
+    _show_value(mv(ParamId::EnvSize)[ref], ring);
     _show_pitch(ref);
 
-    if (_is_changing(_poly_slice[ref])) 
+    if (_is_changing(mv(ParamId::PolySlice)[ref])) 
     {
         ring.clear();
         auto start = 0.f;
-        if (!_poly_slice[ref].is_tracking()) {
-            start = _poly_slice[ref].in_value() < .5f ? 0.f : .5f;    
+        if (!mv(ParamId::PolySlice)[ref].is_tracking()) {
+            start = mv(ParamId::PolySlice)[ref].in_value() < .5f ? 0.f : .5f;    
             ring.set_brightness(.6f);
             ring.set_hex_color(kRed);
             ring.set_segment(start, start + .495f);
         }
         ring.set_brightness(.6f);
         ring.set_hex_color(kWhite);
-        if (_poly_slice[ref].value() < .5f) {
+        if (mv(ParamId::PolySlice)[ref].value() < .5f) {
             ring.set_segment(.2f, .3f, true);
         }
         else {
@@ -494,7 +494,7 @@ void CoreUI::_show_value(const MValue& val, LEDRing& ring, const uint32_t def_co
 }
 void CoreUI::_show_pitch(const Deck::Ref ref)
 {
-    if (!_is_changing(_speed[ref])) return;
+    if (!_is_changing(mv(ParamId::Speed)[ref])) return;
     auto& ring = _display.ring[ref];
 
     ring.set_hex_color(kWhite);
@@ -505,7 +505,7 @@ void CoreUI::_show_pitch(const Deck::Ref ref)
         ring.set_brightness(.5f);
         
         auto steps = kSpeedSteps.size() - 1;
-        auto norm_step = std::round(steps * _speed[ref].value()) / steps;
+        auto norm_step = std::round(steps * mv(ParamId::Speed)[ref].value()) / steps;
         auto spread = 0.05f;
         if (norm_step == 0.f) ring.set_segment(0.f, 2.f * spread, true);
         else if (norm_step == 1.f) ring.set_segment(1.f - 2.f * spread, 1.f, true);
@@ -513,9 +513,9 @@ void CoreUI::_show_pitch(const Deck::Ref ref)
     }
     else {
         ring.set_point_hex_color(kWhite);
-        ring.add_point(_speed[ref].value(), 1.0f, true);
+        ring.add_point(mv(ParamId::Speed)[ref].value(), 1.0f, true);
     }
-    _show_value(_speed[ref], ring, kWhite, ValueDisplay::OnMoveDiffOnly);
+    _show_value(mv(ParamId::Speed)[ref], ring, kWhite, ValueDisplay::OnMoveDiffOnly);
 }
 void CoreUI::_show_slots(const Deck::Ref ref)
 {   
@@ -533,11 +533,11 @@ void CoreUI::_show_slots(const Deck::Ref ref)
 }
 void CoreUI::_show_key_intervals() 
 {
-    if (!_key_interval.is_tracking()) {
+    if (!mv(ParamId::KeyInterval)[Deck::A].is_tracking()) {
         _display.ring[Deck::A].set_brightness(_led_breathe_brightness * .6f); 
         _display.ring[Deck::A].set_hex_color(kRed);
-        auto start = std::min(_key_interval.value(), _key_interval.in_value());
-        auto end = std::max(_key_interval.value(), _key_interval.in_value());
+        auto start = std::min(mv(ParamId::KeyInterval)[Deck::A].value(), mv(ParamId::KeyInterval)[Deck::A].in_value());
+        auto end = std::max(mv(ParamId::KeyInterval)[Deck::A].value(), mv(ParamId::KeyInterval)[Deck::A].in_value());
         _display.ring[Deck::A].set_segment(start, end);
     }
 

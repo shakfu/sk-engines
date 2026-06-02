@@ -62,35 +62,35 @@ void CoreUI::_init_values()
     for (auto ref: { Deck::A, Deck::B }) {
         
         auto& deck = _core.deck(ref);
-        _pos[ref].set(deck.norm_start());
-        _size[ref].set(1.f);
-        _speed[ref].set(.5f);
-        _mix[ref].set(.5f);
-        _feedback[ref].set(kDefaultFeedback);
-        _env[ref].set(0.f);
-        _env_size[ref].set(1.f);
-        _win[ref].set(.2f);
-        _poly_slice[ref].set(.51f);
+        mv(ParamId::Pos)[ref].set(deck.norm_start());
+        mv(ParamId::Size)[ref].set(1.f);
+        mv(ParamId::Speed)[ref].set(.5f);
+        mv(ParamId::Mix)[ref].set(.5f);
+        mv(ParamId::Feedback)[ref].set(kDefaultFeedback);
+        mv(ParamId::Env)[ref].set(0.f);
+        mv(ParamId::EnvSize)[ref].set(1.f);
+        mv(ParamId::Win)[ref].set(.2f);
+        mv(ParamId::PolySlice)[ref].set(.51f);
 
-        _mod_speed[ref].set(.3f);
-        _mod_amp[ref].set(0.f);
+        mv(ParamId::ModSpeed)[ref].set(.3f);
+        mv(ParamId::ModAmp)[ref].set(0.f);
 
         _hold_clear[ref].init();
 
         auto& fx = deck.fx();
-        _grit_mix[ref].set(fx.grit_mix());
-        _grit_intens[ref].set(fx.grit_intensity());
-        _flux_mix[ref].set(fx.flux_mix());
-        _flux_intens[ref].set(fx.flux_intensity());
-        _flux_fb[ref].set(fx.flux_fb());
+        mv(ParamId::GritMix)[ref].set(fx.grit_mix());
+        mv(ParamId::GritIntensity)[ref].set(fx.grit_intensity());
+        mv(ParamId::FluxMix)[ref].set(fx.flux_mix());
+        mv(ParamId::FluxIntensity)[ref].set(fx.flux_intensity());
+        mv(ParamId::FluxFb)[ref].set(fx.flux_fb());
     }
 
-    _pan_range.set(.6f);
-    _pan_speed.set(1.f);
+    mv(ParamId::PanRange)[Deck::A].set(.6f);
+    mv(ParamId::PanSpeed)[Deck::A].set(1.f);
 
-    _click_mix.set(0.f);
-    _key_interval.set(.0588f); //Corresponds to 1/4th
-    _tempo.set(Tempo::abs_to_norm(120.f));
+    mv(ParamId::ClickMix)[Deck::A].set(0.f);
+    mv(ParamId::KeyInterval)[Deck::A].set(.0588f); //Corresponds to 1/4th
+    mv(ParamId::Tempo)[Deck::A].set(Tempo::abs_to_norm(120.f));
 }
 
 void CoreUI::process() 
@@ -136,61 +136,61 @@ void CoreUI::process()
 
     if (_apply.test(Hardware::CTRL_POS_A)) {
         if (_touched.test(FluxA)) {
-            _engine.set_param(ParamId::FluxFb, Deck::A, _flux_fb[Deck::A].value());
+            _engine.set_param(ParamId::FluxFb, Deck::A, mv(ParamId::FluxFb)[Deck::A].value());
         }
         else {
-            _engine.set_param(ParamId::Pos, Deck::A, _pos[Deck::A].value());
+            _engine.set_param(ParamId::Pos, Deck::A, mv(ParamId::Pos)[Deck::A].value());
         }
     }
     if (_apply.test(Hardware::CTRL_POS_B)) {
         if (_touched.test(FluxB)) {
-            _engine.set_param(ParamId::FluxFb, Deck::B, _flux_fb[Deck::B].value());
+            _engine.set_param(ParamId::FluxFb, Deck::B, mv(ParamId::FluxFb)[Deck::B].value());
         }
         else {
-            _engine.set_param(ParamId::Pos, Deck::B, _pos[Deck::B].value());
+            _engine.set_param(ParamId::Pos, Deck::B, mv(ParamId::Pos)[Deck::B].value());
         }
     }
     if (_apply.test(Hardware::CTRL_ENV_A)) {
-        if (is_chord_a) _engine.set_param(ParamId::EnvSize, Deck::A, _env_size[Deck::A].value());
-        _engine.set_param(ParamId::Env, Deck::A, _env[Deck::A].value());
+        if (is_chord_a) _engine.set_param(ParamId::EnvSize, Deck::A, mv(ParamId::EnvSize)[Deck::A].value());
+        _engine.set_param(ParamId::Env, Deck::A, mv(ParamId::Env)[Deck::A].value());
     }
     if (_apply.test(Hardware::CTRL_ENV_B)) {
-        if (is_chord_b) _engine.set_param(ParamId::EnvSize, Deck::B, _env_size[Deck::B].value());
-        _engine.set_param(ParamId::Env, Deck::B, _env[Deck::B].value());
+        if (is_chord_b) _engine.set_param(ParamId::EnvSize, Deck::B, mv(ParamId::EnvSize)[Deck::B].value());
+        _engine.set_param(ParamId::Env, Deck::B, mv(ParamId::Env)[Deck::B].value());
     }
     if (_apply.test(Hardware::CTRL_SIZE_A)) {
         if (is_chord_a) {
-            _engine.set_param(ParamId::Win, Deck::A, _win[Deck::A].value());
-            _engine.set_param(ParamId::Size, Deck::A, _size[Deck::A].value());
+            _engine.set_param(ParamId::Win, Deck::A, mv(ParamId::Win)[Deck::A].value());
+            _engine.set_param(ParamId::Size, Deck::A, mv(ParamId::Size)[Deck::A].value());
         }
         else if (deck_a.mode() == Mode::Slice && _touched.test(Alt)) {
-            _engine.set_param(ParamId::PolySlice, Deck::A, _poly_slice[Deck::A].value());
+            _engine.set_param(ParamId::PolySlice, Deck::A, mv(ParamId::PolySlice)[Deck::A].value());
         }
         else {
-            _engine.set_param(ParamId::Size, Deck::A, _size[Deck::A].value());
+            _engine.set_param(ParamId::Size, Deck::A, mv(ParamId::Size)[Deck::A].value());
         }
     }
     if (_apply.test(Hardware::CTRL_SIZE_B)) {
         if (is_chord_b) {
-            _engine.set_param(ParamId::Win, Deck::B, _win[Deck::B].value());
-            _engine.set_param(ParamId::Size, Deck::B, _size[Deck::B].value());
+            _engine.set_param(ParamId::Win, Deck::B, mv(ParamId::Win)[Deck::B].value());
+            _engine.set_param(ParamId::Size, Deck::B, mv(ParamId::Size)[Deck::B].value());
         }
         else if (deck_b.mode() == Mode::Slice && _touched.test(Alt)) {
-            _engine.set_param(ParamId::PolySlice, Deck::B, _poly_slice[Deck::B].value());
+            _engine.set_param(ParamId::PolySlice, Deck::B, mv(ParamId::PolySlice)[Deck::B].value());
         }
         else {
-            _engine.set_param(ParamId::Size, Deck::B, _size[Deck::B].value());
+            _engine.set_param(ParamId::Size, Deck::B, mv(ParamId::Size)[Deck::B].value());
         }
     }
     if (_apply.test(Hardware::CTRL_PITCH_A)) {
         if (_touched.test(FluxA)) {
-            _engine.set_param(ParamId::FluxIntensity, Deck::A, _flux_intens[Deck::A].value());
+            _engine.set_param(ParamId::FluxIntensity, Deck::A, mv(ParamId::FluxIntensity)[Deck::A].value());
         }
         else if (_touched.test(GritA)) {
-            _engine.set_param(ParamId::GritIntensity, Deck::A, _grit_intens[Deck::A].value());
+            _engine.set_param(ParamId::GritIntensity, Deck::A, mv(ParamId::GritIntensity)[Deck::A].value());
         }
         else {
-            auto speed_a = _speed[Deck::A].value();
+            auto speed_a = mv(ParamId::Speed)[Deck::A].value();
             if (_pitch_quantized.test(Deck::A)) {
                 speed_a = snapped_speed(speed_a);
             }
@@ -199,13 +199,13 @@ void CoreUI::process()
     }
     if (_apply.test(Hardware::CTRL_PITCH_B)) {
         if (_touched.test(FluxB)) {
-            _engine.set_param(ParamId::FluxIntensity, Deck::B, _flux_intens[Deck::B].value());
+            _engine.set_param(ParamId::FluxIntensity, Deck::B, mv(ParamId::FluxIntensity)[Deck::B].value());
         }
         else if (_touched.test(GritB)) {
-            _engine.set_param(ParamId::GritIntensity, Deck::B, _grit_intens[Deck::B].value());
+            _engine.set_param(ParamId::GritIntensity, Deck::B, mv(ParamId::GritIntensity)[Deck::B].value());
         }
         else {
-            auto speed_b = _speed[Deck::B].value();
+            auto speed_b = mv(ParamId::Speed)[Deck::B].value();
             if (_pitch_quantized.test(Deck::B)) {
                 speed_b = snapped_speed(speed_b);
             }
@@ -213,50 +213,50 @@ void CoreUI::process()
         }
     }
     if (_apply.test(Hardware::CTRL_MODFREQ_A)) {
-        if (_tap_hold.passed()) _engine.set_param(ParamId::Tempo, Deck::A, _tempo.value());
-        else _engine.set_mod_speed(Deck::A, _mod_speed[Deck::A].value(), _touched.test(Alt));
+        if (_tap_hold.passed()) _engine.set_param(ParamId::Tempo, Deck::A, mv(ParamId::Tempo)[Deck::A].value());
+        else _engine.set_mod_speed(Deck::A, mv(ParamId::ModSpeed)[Deck::A].value(), _touched.test(Alt));
     }
     if (_apply.test(Hardware::CTRL_MOD_AMT_A)) {
-        if (_tap_hold.passed()) _engine.set_param(ParamId::ClickMix, Deck::A, _click_mix.value());
-        else _engine.set_param(ParamId::ModAmp, Deck::A, _mod_amp[Deck::A].value());
+        if (_tap_hold.passed()) _engine.set_param(ParamId::ClickMix, Deck::A, mv(ParamId::ClickMix)[Deck::A].value());
+        else _engine.set_param(ParamId::ModAmp, Deck::A, mv(ParamId::ModAmp)[Deck::A].value());
     }
     if (_apply.test(Hardware::CTRL_MODFREQ_B)) {
-        if (_tap_hold.passed()) _engine.set_param(ParamId::PanSpeed, Deck::B, _pan_speed.value());
-        else _engine.set_mod_speed(Deck::B, _mod_speed[Deck::B].value(), _touched.test(Alt));
+        if (_tap_hold.passed()) _engine.set_param(ParamId::PanSpeed, Deck::B, mv(ParamId::PanSpeed)[Deck::A].value());
+        else _engine.set_mod_speed(Deck::B, mv(ParamId::ModSpeed)[Deck::B].value(), _touched.test(Alt));
     }
     if (_apply.test(Hardware::CTRL_MOD_AMT_B)) {
-        if (_tap_hold.passed()) _engine.set_param(ParamId::PanRange, Deck::B, _pan_range.value());
-        else _engine.set_param(ParamId::ModAmp, Deck::B, _mod_amp[Deck::B].value());
+        if (_tap_hold.passed()) _engine.set_param(ParamId::PanRange, Deck::B, mv(ParamId::PanRange)[Deck::A].value());
+        else _engine.set_param(ParamId::ModAmp, Deck::B, mv(ParamId::ModAmp)[Deck::B].value());
     }
     if (_apply.test(Hardware::CTRL_SOS_A)) {
         if (_tap_hold.passed()) {
-            _engine.set_param(ParamId::KeyInterval, Deck::A, _key_interval.value());
+            _engine.set_param(ParamId::KeyInterval, Deck::A, mv(ParamId::KeyInterval)[Deck::A].value());
         }
         else if (_touched.test(FluxA)) {
-            _engine.set_param(ParamId::FluxMix, Deck::A, _flux_mix[Deck::A].value());
+            _engine.set_param(ParamId::FluxMix, Deck::A, mv(ParamId::FluxMix)[Deck::A].value());
         }
         else if (_touched.test(GritA)) {
-            _engine.set_param(ParamId::GritMix, Deck::A, _grit_mix[Deck::A].value());
+            _engine.set_param(ParamId::GritMix, Deck::A, mv(ParamId::GritMix)[Deck::A].value());
         }
         else if (_touched.test(Alt)) {
-            _engine.set_param(ParamId::Feedback, Deck::A, _feedback[Deck::A].value());
+            _engine.set_param(ParamId::Feedback, Deck::A, mv(ParamId::Feedback)[Deck::A].value());
         }
         else {
-            _engine.set_param(ParamId::Mix, Deck::A, _mix[Deck::A].value());
+            _engine.set_param(ParamId::Mix, Deck::A, mv(ParamId::Mix)[Deck::A].value());
         }
     }
     if (_apply.test(Hardware::CTRL_SOS_B)) {
         if (_touched.test(FluxB)) {
-            _engine.set_param(ParamId::FluxMix, Deck::B, _flux_mix[Deck::B].value());
+            _engine.set_param(ParamId::FluxMix, Deck::B, mv(ParamId::FluxMix)[Deck::B].value());
         }
         else if (_touched.test(GritB)) {
-            _engine.set_param(ParamId::GritMix, Deck::B, _grit_mix[Deck::B].value());
+            _engine.set_param(ParamId::GritMix, Deck::B, mv(ParamId::GritMix)[Deck::B].value());
         }
         else if (_touched.test(Alt)) {
-            _engine.set_param(ParamId::Feedback, Deck::B, _feedback[Deck::B].value());
+            _engine.set_param(ParamId::Feedback, Deck::B, mv(ParamId::Feedback)[Deck::B].value());
         }
         else {
-            _engine.set_param(ParamId::Mix, Deck::B, _mix[Deck::B].value());
+            _engine.set_param(ParamId::Mix, Deck::B, mv(ParamId::Mix)[Deck::B].value());
         }
     }
 
@@ -362,18 +362,18 @@ void CoreUI::_process_ui_queue()
             switch (event.asPotMoved.id) {
                 // DECK A //////////////////////////////////////
                 case Hardware::CTRL_SOS_A: {
-                    _flux_mix[Deck::A].process(val, _touched.test(FluxA), changing_id_a);
-                    _grit_mix[Deck::A].process(val, _touched.test(GritA), changing_id_a);
-                    _key_interval.process(val, !fx_a_touched && !is_alt_touched && _tap_hold.is_holding(), changing_id_a);
-                    _mix[Deck::A].process(val, !fx_a_touched && !is_alt_touched && !_tap_hold.is_holding(), changing_id_a);
-                    _feedback[Deck::A].process(val, !fx_a_touched && is_alt_touched && !_tap_hold.is_holding(), changing_id_a);
+                    mv(ParamId::FluxMix)[Deck::A].process(val, _touched.test(FluxA), changing_id_a);
+                    mv(ParamId::GritMix)[Deck::A].process(val, _touched.test(GritA), changing_id_a);
+                    mv(ParamId::KeyInterval)[Deck::A].process(val, !fx_a_touched && !is_alt_touched && _tap_hold.is_holding(), changing_id_a);
+                    mv(ParamId::Mix)[Deck::A].process(val, !fx_a_touched && !is_alt_touched && !_tap_hold.is_holding(), changing_id_a);
+                    mv(ParamId::Feedback)[Deck::A].process(val, !fx_a_touched && is_alt_touched && !_tap_hold.is_holding(), changing_id_a);
                     break;
                 }
 
                 case Hardware::CTRL_SIZE_A: 
                     switch (deck_a.mode()) {
                         case Mode::Reel: {
-                            _size[Deck::A].process(val, true, changing_id_a); 
+                            mv(ParamId::Size)[Deck::A].process(val, true, changing_id_a); 
                         }
                         break;
                         case Mode::Slice: {
@@ -382,15 +382,15 @@ void CoreUI::_process_ui_queue()
                                 _set_tempo_by_size(Deck::A, val);
                             }
                             else {
-                                _size[Deck::A].process(val, !is_alt_touched, changing_id_a);
-                                _poly_slice[Deck::A].process(val, is_alt_touched, changing_id_a);    
+                                mv(ParamId::Size)[Deck::A].process(val, !is_alt_touched, changing_id_a);
+                                mv(ParamId::PolySlice)[Deck::A].process(val, is_alt_touched, changing_id_a);    
                                 _size_quarters[Deck::A].set(val);
                             }
                         }
                         break;
                         case Mode::Drift: {
-                            _size[Deck::A].process(val, !is_alt_touched, changing_id_a);
-                            _win[Deck::A].process(val, is_alt_touched, changing_id_a);
+                            mv(ParamId::Size)[Deck::A].process(val, !is_alt_touched, changing_id_a);
+                            mv(ParamId::Win)[Deck::A].process(val, is_alt_touched, changing_id_a);
                             
                         }
                         break;
@@ -399,17 +399,17 @@ void CoreUI::_process_ui_queue()
                     break;
 
                 case Hardware::CTRL_POS_A:
-                    _pos[Deck::A].process(val, !fx_a_touched, changing_id_a);
-                    _flux_fb[Deck::A].process(val, _touched.test(FluxA), changing_id_a);
+                    mv(ParamId::Pos)[Deck::A].process(val, !fx_a_touched, changing_id_a);
+                    mv(ParamId::FluxFb)[Deck::A].process(val, _touched.test(FluxA), changing_id_a);
                     break;
 
                 case Hardware::CTRL_ENV_A: 
                     if (deck_a.mode() == Mode::Drift) {
-                        _env[Deck::A].process(val, !is_alt_touched, changing_id_a);
-                        _env_size[Deck::A].process(val, is_alt_touched, changing_id_a);
+                        mv(ParamId::Env)[Deck::A].process(val, !is_alt_touched, changing_id_a);
+                        mv(ParamId::EnvSize)[Deck::A].process(val, is_alt_touched, changing_id_a);
                     }
                     else {
-                        _env[Deck::A].process(val, true, changing_id_a);
+                        mv(ParamId::Env)[Deck::A].process(val, true, changing_id_a);
                     }
                     break;
 
@@ -419,9 +419,9 @@ void CoreUI::_process_ui_queue()
                         break;
                     }
 
-                    _flux_intens[Deck::A].process(val, _touched.test(FluxA), changing_id_a);
-                    _grit_intens[Deck::A].process(val, _touched.test(GritA), changing_id_a);
-                    _speed[Deck::A].process(val, !fx_a_touched, changing_id_a);
+                    mv(ParamId::FluxIntensity)[Deck::A].process(val, _touched.test(FluxA), changing_id_a);
+                    mv(ParamId::GritIntensity)[Deck::A].process(val, _touched.test(GritA), changing_id_a);
+                    mv(ParamId::Speed)[Deck::A].process(val, !fx_a_touched, changing_id_a);
                     if (!fx_a_touched) {
                         _pitch_quantized.set(Deck::A, _touched.test(Alt));
                     }
@@ -429,28 +429,28 @@ void CoreUI::_process_ui_queue()
                 }
 
                 case Hardware::CTRL_MODFREQ_A: 
-                    _tempo.process(val, _tap_hold.passed(), changing_id_a);
-                    _mod_speed[Deck::A].process(val, !_tap_hold.passed(), changing_id_a);
+                    mv(ParamId::Tempo)[Deck::A].process(val, _tap_hold.passed(), changing_id_a);
+                    mv(ParamId::ModSpeed)[Deck::A].process(val, !_tap_hold.passed(), changing_id_a);
                     break;
 
                 case Hardware::CTRL_MOD_AMT_A: 
-                    _click_mix.process(val, _tap_hold.passed(), changing_id_a);
-                    _mod_amp[Deck::A].process(val, !_tap_hold.passed(), changing_id_a);
+                    mv(ParamId::ClickMix)[Deck::A].process(val, _tap_hold.passed(), changing_id_a);
+                    mv(ParamId::ModAmp)[Deck::A].process(val, !_tap_hold.passed(), changing_id_a);
                     break;
 
                 // DECK B //////////////////////////////////////
                 case Hardware::CTRL_SOS_B: {
-                    _flux_mix[Deck::B].process(val, _touched.test(FluxB), changing_id_b);
-                    _grit_mix[Deck::B].process(val, _touched.test(GritB), changing_id_b);
-                    _mix[Deck::B].process(val, !fx_b_touched && !is_alt_touched, changing_id_b);
-                    _feedback[Deck::B].process(val, !fx_b_touched && is_alt_touched, changing_id_b);
+                    mv(ParamId::FluxMix)[Deck::B].process(val, _touched.test(FluxB), changing_id_b);
+                    mv(ParamId::GritMix)[Deck::B].process(val, _touched.test(GritB), changing_id_b);
+                    mv(ParamId::Mix)[Deck::B].process(val, !fx_b_touched && !is_alt_touched, changing_id_b);
+                    mv(ParamId::Feedback)[Deck::B].process(val, !fx_b_touched && is_alt_touched, changing_id_b);
                     break;
                 }
 
                 case Hardware::CTRL_SIZE_B:
                     switch (deck_b.mode()) {
                         case Mode::Reel: {
-                            _size[Deck::B].process(val, true, changing_id_b);
+                            mv(ParamId::Size)[Deck::B].process(val, true, changing_id_b);
                         }
                         break;
                         case Mode::Slice: {
@@ -459,15 +459,15 @@ void CoreUI::_process_ui_queue()
                                 _set_tempo_by_size(Deck::B, val);
                             }
                             else {
-                                _size[Deck::B].process(val, !is_alt_touched, changing_id_b);
-                                _poly_slice[Deck::B].process(val, is_alt_touched, changing_id_b);
+                                mv(ParamId::Size)[Deck::B].process(val, !is_alt_touched, changing_id_b);
+                                mv(ParamId::PolySlice)[Deck::B].process(val, is_alt_touched, changing_id_b);
                                 _size_quarters[Deck::B].set(val);
                             }
                         }
                         break;
                         case Mode::Drift: {
-                            _size[Deck::B].process(val, !is_alt_touched, changing_id_b);
-                            _win[Deck::B].process(val, is_alt_touched, changing_id_b);
+                            mv(ParamId::Size)[Deck::B].process(val, !is_alt_touched, changing_id_b);
+                            mv(ParamId::Win)[Deck::B].process(val, is_alt_touched, changing_id_b);
                         }
                         break;
                         case Mode::None: break;
@@ -475,17 +475,17 @@ void CoreUI::_process_ui_queue()
                     break;
 
                 case Hardware::CTRL_POS_B:
-                    _pos[Deck::B].process(val, !fx_b_touched, changing_id_b);
-                    _flux_fb[Deck::B].process(val, _touched.test(FluxB), changing_id_b);
+                    mv(ParamId::Pos)[Deck::B].process(val, !fx_b_touched, changing_id_b);
+                    mv(ParamId::FluxFb)[Deck::B].process(val, _touched.test(FluxB), changing_id_b);
                     break;
 
                 case Hardware::CTRL_ENV_B: 
                     if (deck_b.mode() == Mode::Drift) {
-                        _env[Deck::B].process(val, !is_alt_touched, changing_id_b);
-                        _env_size[Deck::B].process(val, is_alt_touched, changing_id_b);
+                        mv(ParamId::Env)[Deck::B].process(val, !is_alt_touched, changing_id_b);
+                        mv(ParamId::EnvSize)[Deck::B].process(val, is_alt_touched, changing_id_b);
                     }
                     else {
-                        _env[Deck::B].process(val, true, changing_id_b);
+                        mv(ParamId::Env)[Deck::B].process(val, true, changing_id_b);
                     }
                     break;
                 
@@ -495,11 +495,11 @@ void CoreUI::_process_ui_queue()
                         break;
                     }
 
-                    _flux_intens[Deck::B].process(val, _touched.test(FluxB), changing_id_b);
-                    _grit_intens[Deck::B].process(val, _touched.test(GritB), changing_id_b);
+                    mv(ParamId::FluxIntensity)[Deck::B].process(val, _touched.test(FluxB), changing_id_b);
+                    mv(ParamId::GritIntensity)[Deck::B].process(val, _touched.test(GritB), changing_id_b);
 
                     auto no_fx_b_touched = !_touched.test(FluxB) && !_touched.test(GritB);
-                    _speed[Deck::B].process(val, no_fx_b_touched, changing_id_b);
+                    mv(ParamId::Speed)[Deck::B].process(val, no_fx_b_touched, changing_id_b);
                     if (no_fx_b_touched) {
                         _pitch_quantized.set(Deck::B, _touched.test(Alt));
                     }
@@ -507,13 +507,13 @@ void CoreUI::_process_ui_queue()
                 }
 
                 case Hardware::CTRL_MODFREQ_B: 
-                    _pan_speed.process(val, _tap_hold.passed(), changing_id_b);
-                    _mod_speed[Deck::B].process(val, !_tap_hold.passed(), changing_id_b);
+                    mv(ParamId::PanSpeed)[Deck::A].process(val, _tap_hold.passed(), changing_id_b);
+                    mv(ParamId::ModSpeed)[Deck::B].process(val, !_tap_hold.passed(), changing_id_b);
                     break;
 
                 case Hardware::CTRL_MOD_AMT_B:
-                    _pan_range.process(val, _tap_hold.passed(), changing_id_b);
-                    _mod_amp[Deck::B].process(val, !_tap_hold.passed(), changing_id_b);
+                    mv(ParamId::PanRange)[Deck::A].process(val, _tap_hold.passed(), changing_id_b);
+                    mv(ParamId::ModAmp)[Deck::B].process(val, !_tap_hold.passed(), changing_id_b);
                     break;
 
                 case Hardware::CTRL_CROSSFADE:
@@ -593,18 +593,18 @@ void CoreUI::_process_switches()
         }
         else if (_touched.test(GritA)) {
             auto rs = _engine.toggle_grit_mode(Deck::A);
-            _grit_intens[Deck::A].set(rs.intensity);
-            _grit_mix[Deck::A].set(rs.mix);
+            mv(ParamId::GritIntensity)[Deck::A].set(rs.intensity);
+            mv(ParamId::GritMix)[Deck::A].set(rs.mix);
         }
         else if (_touched.test(GritB)) {
             auto rs = _engine.toggle_grit_mode(Deck::B);
-            _grit_intens[Deck::B].set(rs.intensity);
-            _grit_mix[Deck::B].set(rs.mix);
+            mv(ParamId::GritIntensity)[Deck::B].set(rs.intensity);
+            mv(ParamId::GritMix)[Deck::B].set(rs.mix);
         }
         else {
             if (!_engine.transport_is_external_sync()) {
                 _engine.transport_tap_tempo();
-                _tempo.set(Tempo::abs_to_norm(_engine.transport_tempo()));
+                mv(ParamId::Tempo)[Deck::A].set(Tempo::abs_to_norm(_engine.transport_tempo()));
             }
             if (!_tap_hold.is_holding()) {
                 _tap_hold.begin();
@@ -645,6 +645,6 @@ void CoreUI::_set_tempo_by_size(const Deck::Ref ref, const float fraction)
 {
     auto bpm = _engine.tempo_to_fit(ref, fraction);
     auto norm = Tempo::abs_to_norm(bpm); 
-    _tempo.set(norm);
+    mv(ParamId::Tempo)[Deck::A].set(norm);
     _engine.transport_set_tempo_norm(norm);
 }

@@ -164,31 +164,15 @@ private:
     std::array<Hold<1500/*ms*/>, Deck::Count> _hold_clear;
     Hold<100/*ms*/> _tap_hold;
 
-    std::array<MValue, Deck::Count> _flux_mix;
-    std::array<MValue, Deck::Count> _grit_mix;
-    std::array<MValue, Deck::Count> _flux_intens;
-    std::array<MValue, Deck::Count> _grit_intens;
-    std::array<MValue, Deck::Count>_flux_fb;
-    
-    std::array<MValue, Deck::Count> _mix;
-    std::array<MValue, Deck::Count> _feedback;
-    std::array<MValue, Deck::Count> _speed;
-    std::array<MValue, Deck::Count> _pos;
-    std::array<MValue, Deck::Count> _size;
-    std::array<MValue, Deck::Count> _env;
-    std::array<MValue, Deck::Count> _env_size;
-    std::array<MValue, Deck::Count> _win;
-    std::array<MValue, Deck::Count> _poly_slice;
+    // Per-control pickup state, keyed by ParamId (item 3a-2): one MValue per (param, deck),
+    // replacing the ~21 former named members. The platform owns the pickup mechanics; mv(id)
+    // returns the param's per-deck row. Global params (Tempo/KeyInterval/ClickMix/Pan*) use the
+    // [Deck::A] slot. _size_quarters is a platform tempo-fit gesture, not a ParamId, so it stays
+    // named.
+    std::array<std::array<MValue, Deck::Count>, static_cast<size_t>(ParamId::Count)> _mv;
+    std::array<MValue, Deck::Count>& mv(ParamId id) { return _mv[static_cast<size_t>(id)]; }
+
     std::array<MValue, Deck::Count> _size_quarters;
-    std::array<MValue, Deck::Count> _mod_speed;
-    std::array<MValue, Deck::Count> _mod_amp;
-
-    MValue _click_mix;
-    MValue _tempo;
-    MValue _key_interval;
-
-    MValue _pan_speed;
-    MValue _pan_range;
 
     // The live LED display the platform renders into and blits. Its two ring canvases ARE the
     // per-deck rings (formerly a standalone std::array<LEDRing>); engine.render(DisplayModel&)
