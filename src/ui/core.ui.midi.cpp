@@ -2,6 +2,11 @@
 #include "config.h"
 #include "daisy.h"
 
+// Size-optimize this whole TU to reclaim SRAM_EXEC for item 3. MIDI parsing/clocking is
+// per-message control glue, not per-sample DSP, so -Os is perf-irrelevant here; the audio
+// DSP in core/*.cpp stays -O2 -funroll-loops. (Same idiom as core.ui.{cpp,leds,pads}.cpp.)
+#pragma GCC optimize("Os")
+
 using namespace spotykach;
 using namespace daisy;
 

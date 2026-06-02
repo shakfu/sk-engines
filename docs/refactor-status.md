@@ -5,17 +5,24 @@
 **Done:** pre-work (SRAM #2/#5), item 1 (transport off `core()`), item 2 (IEngine interface lifted,
 sub-rounds 2a-2d). All flash-verified.
 
-**Uncommitted-tree note:** earlier rounds are committed (`d1f7e7d` = #2/#5, `732e4b3` = item 1 + UI
-transport edits). **Item 2 lives only in the working tree** — 10 modified files + 2 new
-(`src/engine/engine_leds.h`, `docs/item2-interface-lift-plan.md`). Commit item 2 before doing anything
-that could dirty/lose the tree.
+**Commit state (verified 2026-06-02):** all rounds through item 2 are committed and pushed to
+`origin/main`; the working tree is clean. Item 2's surface landed across `732e4b3` (`granular_engine.h`
++ UI edits) and `8b1b435` (`iengine.h` interface lift, the `IEngine&`/`IEngine*` flip in
+`CoreUI`/`Storage`, the `Route` move `core.h`->`mode.h`, and the 2 new files
+`src/engine/engine_leds.h` + `docs/item2-interface-lift-plan.md`). (The earlier "item 2 lives only in
+the working tree" warning is resolved. Note `8b1b435`'s message — "pause till later" — is vague for
+what is actually the bulk of the interface lift, so bisecting this range by message won't help.)
 
 **Next:** item 3 — the unified display round + 2nd engine (see roadmap below; scope is settled but
 write a fresh plan doc like `docs/item2-interface-lift-plan.md` *after* reading the code — the 2b pivot
 showed plans drift until you read `_draw_ring`). Concrete first steps on resume:
-1. Confirm item 2 is committed.
-2. **Reclaim SRAM first** — ~416 B free is the binding constraint; apply `-Os` to `core.ui.midi.cpp`
-   (next lever) before adding item-3 surface.
+1. Item 2 is committed (verified 2026-06-02, see commit-state note above) — no action needed.
+2. **SRAM lever is spent (verified 2026-06-02).** `-Os` was applied to `core.ui.midi.cpp` and
+   reclaimed only **16 B** (424 -> 440 B free) — MIDI parsing isn't a meaningful size contributor, so
+   the doc's "remaining lever" is effectively exhausted. **TU-level `-Os` sweeps are no longer a viable
+   funding source.** Item 3 must instead be **net-neutral-or-negative on SRAM by deleting as it adds** —
+   the real headroom is the intrinsic reduction from removing the `*_leds`/`render_ring` query wrapper
+   bodies + the platform's color/blink interpretation once the engine fills `DisplayModel` directly.
 3. Scope item 3(a) (`render(DisplayModel)` + `MValue`->`ParamId` toolkit, which absorbs `core()`
    Categories 2-3) vs 3(b) (promote `PassthroughEngine`, forces `Driver` relocation) — decide order.
 
