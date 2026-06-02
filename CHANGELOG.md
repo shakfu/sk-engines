@@ -8,6 +8,8 @@ by the Git tag / release they ship in. The latest released baseline is 1.0.2.
 
 ## [Unreleased]
 
+## [0.1.3]
+
 ### Fixed
 
 - **Granular slice fade-out at high pitch/speed (V6).** `Vox::_set_decay_start()` assigned
