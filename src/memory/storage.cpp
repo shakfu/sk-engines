@@ -51,6 +51,7 @@ void DeckStorage::init(Card* card, IEngine* engine, Deck::Ref ref)
 {
     _card = card;
     _engine = engine;
+    _tape_storage = engine->capabilities() & CapTapeStorage;
     _ref = ref;
     _deck_dir = _ref == Deck::A ? A : B;
 }
@@ -111,6 +112,7 @@ void DeckStorage::_fill_audio_data(Card::AudioData& ad, char* name) const
 
 void DeckStorage::save()
 {
+    if (!_tape_storage) return;
     if (_engine->audio_is_empty(_ref)) return;
 
     Card::AudioData ad;
@@ -135,6 +137,7 @@ void DeckStorage::save()
 
 void DeckStorage::load()
 {
+    if (!_tape_storage) return;
     if (!can_load()) return;
 
     _recent_tape_idx = _tape_idx;
@@ -164,6 +167,7 @@ void DeckStorage::cancel()
 static constexpr size_t kMemSize = 4;
 void DeckStorage::preload()
 {
+    if (!_tape_storage) return;
     uint8_t tape, slot;
     if (!_read_preload_source(tape, slot)) return;
     char audio_path[12]; // /SK/G/1.WAV

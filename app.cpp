@@ -9,7 +9,7 @@
 #include "ui/core.ui.h"
 #include "core/core.h"
 #include "core/itimesource.h"
-#include "engine/granular_engine.h"
+#include "engine/engine_select.h"  // ActiveEngine (build-time engine selection, item 3b)
 #include "memory/storage.h"
 #include "expose.h"
 
@@ -70,7 +70,7 @@ class AppImpl {
     bool _log_enabled;
 
     DaisyTimeSource _time_source;
-    GranularEngine  _engine;
+    ActiveEngine    _engine;  // concrete engine chosen at build time; platform sees only IEngine
     CoreUI      _ui;
     Hardware    _hw;
     Settings    _settings;

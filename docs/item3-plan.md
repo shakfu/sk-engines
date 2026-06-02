@@ -145,8 +145,17 @@ The two pieces are separable; sequence to fund SRAM and de-risk:
   mode-fanout code). **SRAM: +336 B (free 440 -> 104 B).** Expected additive seam cost; reclaimed by
   3a-2. The 5 residual `_core.` sites (seeding :64, apply pass :117-118, pot queue :346-347) are
   exactly the ones deferred to 3a-2/3a-3.
-- **3a-1 — render(DisplayModel).** Do the LED half next: it's independent of the param toolkit and
-  is the SRAM-funding step (measure it). Deletes the query methods.
+- **3a-1 — render(DisplayModel). DEFERRED into item 3(b) (decision 2026-06-03, after reading
+  core.ui.leds.cpp).** A granular-engine render() migration is mostly wrong/low-value: the LED code
+  is dense PLATFORM grammar the engine can't own — `_draw_play` reads storage/tape state
+  (`storage.can_load`/`selected_tape_idx`/`kTapeColor`), `_draw_fx`/`_draw_alt` own palette+blink,
+  `_draw_ring` is the overlay priority chain. So render() can't delete the `*_leds` queries (the
+  claimed SRAM payoff) without pulling palette/blink/storage compositing into the engine — wrong
+  (storage is platform) and an overflow risk at 136 B free. render(DisplayModel) only pays off for a
+  NON-granular engine drawing its own panel (no granular storage/tape) — i.e. it's grounded by the
+  PassthroughEngine in item 3(b), which is exactly what the `display_model.h`/`passthrough_engine.h`
+  grounding sketch was built for. The granular engine keeps its query+interpret split (the legitimate
+  channel, per the 2b pivot). **So item 3(a)'s goal (delete core()) is COMPLETE without 3a-1.**
 - **3a-2 — ParamId-keyed MValue array. DONE + FLASH-VERIFIED 2026-06-02.** Replaced the ~21 named members with
   `std::array<std::array<MValue, Deck::Count>, ParamId::Count> _mv` + an inline `mv(ParamId)`
   accessor; `_size_quarters` kept named (not a ParamId). Mechanically renamed 152 sites

@@ -92,6 +92,7 @@ private:
 
     Card* _card;
     IEngine* _engine;
+    bool _tape_storage = false; // engine opts into tape save/load via CapTapeStorage (item 3b-1)
     Deck::Ref _ref;
     State _state;
 

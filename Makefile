@@ -10,6 +10,20 @@ ifeq ($(LOFI_INT16), 1)
 C_DEFS += -DLOFI_INT16=1
 endif
 
+# Swappable DSP engine selected at build time (item 3b). Default = the granular looper.
+# `make ENGINE=passthrough` builds the minimal passthrough variant. The define drives
+# src/engine/engine_select.h (-> ActiveEngine); ENGINE_SOURCES compiles only the chosen engine.
+ENGINE ?= granular
+ifeq ($(ENGINE), granular)
+C_DEFS += -DSPK_ENGINE_GRANULAR
+ENGINE_SOURCES = src/engine/granular_engine.cpp
+else ifeq ($(ENGINE), passthrough)
+C_DEFS += -DSPK_ENGINE_PASSTHROUGH
+ENGINE_SOURCES =
+else
+$(error Unknown ENGINE '$(ENGINE)' - use 'granular' or 'passthrough')
+endif
+
 USE_FATFS = 1
 
 # Project Name
@@ -34,7 +48,7 @@ CPP_SOURCES = \
 	main.cpp \
 	app.cpp \
 	$(wildcard src/core/*.cpp) \
-	$(wildcard src/engine/*.cpp) \
+	$(ENGINE_SOURCES) \
 	$(wildcard src/hw/*.cpp) \
 	$(wildcard src/ui/*.cpp) \
 	$(wildcard src/memory/*.cpp)
