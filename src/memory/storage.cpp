@@ -99,6 +99,16 @@ void DeckStorage::_read_slots()
     _slot_idx = _tape_idx == _recent_tape_idx ? _recent_slot_idx : kNone;
 }
 
+void DeckStorage::_fill_audio_data(Card::AudioData& ad, char* name) const
+{
+    ad.root_dir = (char *)kRootDir.c_str();
+    ad.deck_dir = (char *)_deck_dir.c_str();
+    ad.tape_dir = (char*)kTapeName[_tape_idx].c_str();
+
+    audio_file_name(_slot_idx, name);
+    ad.file_name = name;
+}
+
 void DeckStorage::save()
 {
     if (_engine->audio_is_empty(_ref)) return;
@@ -112,15 +122,10 @@ void DeckStorage::save()
     auto header = wav_header(body_size);
     ad.header = reinterpret_cast<uint8_t*>(&header);
     ad.header_size = sizeof(header);
-    
-    ad.root_dir = (char *)kRootDir.c_str();
-    ad.deck_dir = (char *)_deck_dir.c_str();
-    ad.tape_dir = (char*)kTapeName[_tape_idx].c_str();
 
     char name[6];
-    audio_file_name(_slot_idx, name);
-    ad.file_name = name;
-    
+    _fill_audio_data(ad, name);
+
     _card->init_write_audio(ad);
     _state = State::saving;
     
@@ -140,14 +145,9 @@ void DeckStorage::load()
     ad.body = _engine->audio_data(_ref);
     ad.body_size = _engine->audio_capacity_bytes(_ref);
 
-    ad.root_dir = (char *)kRootDir.c_str();
-    ad.deck_dir = (char *)_deck_dir.c_str();
-    ad.tape_dir = (char*)kTapeName[_tape_idx].c_str();
-    
     char name[6];
-    audio_file_name(_slot_idx, name);
-    ad.file_name = name;
-    
+    _fill_audio_data(ad, name);
+
     _card->init_read_audio(ad);
     _state = State::loading;
 }

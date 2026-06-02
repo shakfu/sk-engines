@@ -80,6 +80,10 @@ private:
     NOCOPY(DeckStorage)
 
     void _read_slots();
+    // Fills the dir fields + file_name common to save()/load() from the current
+    // tape/slot selection. `name` is a caller-owned buffer (>= 6 bytes) that must
+    // outlive the AudioData's use, since ad.file_name points into it.
+    void _fill_audio_data(Card::AudioData& ad, char* name) const;
     bool _read_preload_source(uint8_t& tape, uint8_t& slot);
     void _save_preload_source();
     void _clear_preload_source();

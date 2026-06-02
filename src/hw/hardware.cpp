@@ -123,41 +123,33 @@ void Hardware::Init(float sr, size_t blocksize)
     seed.adc.Init(adc_cfg, kNumAdcChannels, kAdcOvs);
 
     // --- Analog Controls ---
-    // Again this is verbose and clumsy - would normally do a loopable configuration mapping
+    // Each pot differs only by its (mux, channel); init from a table indexed by id.
     constexpr float kPotSmoothTime = 0.02f;
 
-    controls_[CTRL_SOS_A].Init(
-        seed.adc.GetMuxPtr(0, 0), kProcessRate, false, false, kPotSmoothTime);
-    controls_[CTRL_MODFREQ_A].Init(
-        seed.adc.GetMuxPtr(0, 1), kProcessRate, false, false, kPotSmoothTime);
-    controls_[CTRL_MOD_AMT_A].Init(
-        seed.adc.GetMuxPtr(0, 3), kProcessRate, false, false, kPotSmoothTime);
-    controls_[CTRL_SIZE_A].Init(
-        seed.adc.GetMuxPtr(0, 5), kProcessRate, false, false, kPotSmoothTime);
-    controls_[CTRL_PITCH_A].Init(
-        seed.adc.GetMuxPtr(0, 2), kProcessRate, false, false, kPotSmoothTime);
-    controls_[CTRL_POS_A].Init(
-        seed.adc.GetMuxPtr(0, 6), kProcessRate, false, false, kPotSmoothTime);
-    controls_[CTRL_ENV_A].Init(
-        seed.adc.GetMuxPtr(0, 4), kProcessRate, false, false, kPotSmoothTime);
-
-    controls_[CTRL_SOS_B].Init(
-        seed.adc.GetMuxPtr(1, 0), kProcessRate, false, false, kPotSmoothTime);
-    controls_[CTRL_MODFREQ_B].Init(
-        seed.adc.GetMuxPtr(1, 4), kProcessRate, false, false, kPotSmoothTime);
-    controls_[CTRL_MOD_AMT_B].Init(
-        seed.adc.GetMuxPtr(1, 6), kProcessRate, false, false, kPotSmoothTime);
-    controls_[CTRL_SIZE_B].Init(
-        seed.adc.GetMuxPtr(1, 3), kProcessRate, false, false, kPotSmoothTime);
-    controls_[CTRL_PITCH_B].Init(
-        seed.adc.GetMuxPtr(1, 2), kProcessRate, false, false, kPotSmoothTime);
-    controls_[CTRL_POS_B].Init(
-        seed.adc.GetMuxPtr(1, 1), kProcessRate, false, false, kPotSmoothTime);
-    controls_[CTRL_ENV_B].Init(
-        seed.adc.GetMuxPtr(1, 5), kProcessRate, false, false, kPotSmoothTime);
-
-    controls_[CTRL_CROSSFADE].Init(
-        seed.adc.GetMuxPtr(1, 7), kProcessRate, false, false, kPotSmoothTime);
+    struct MuxMap { AnalogControlId id; uint8_t mux; uint8_t chan; };
+    constexpr MuxMap kControlMap[] = {
+        { CTRL_SOS_A,     0, 0 },
+        { CTRL_MODFREQ_A, 0, 1 },
+        { CTRL_MOD_AMT_A, 0, 3 },
+        { CTRL_SIZE_A,    0, 5 },
+        { CTRL_PITCH_A,   0, 2 },
+        { CTRL_POS_A,     0, 6 },
+        { CTRL_ENV_A,     0, 4 },
+        { CTRL_SOS_B,     1, 0 },
+        { CTRL_MODFREQ_B, 1, 4 },
+        { CTRL_MOD_AMT_B, 1, 6 },
+        { CTRL_SIZE_B,    1, 3 },
+        { CTRL_PITCH_B,   1, 2 },
+        { CTRL_POS_B,     1, 1 },
+        { CTRL_ENV_B,     1, 5 },
+        { CTRL_CROSSFADE, 1, 7 },
+    };
+    static_assert(sizeof(kControlMap) / sizeof(kControlMap[0]) == kNumAnalogControls,
+                  "kControlMap must have exactly one entry per AnalogControlId");
+    for (const auto& m : kControlMap) {
+        controls_[m.id].Init(
+            seed.adc.GetMuxPtr(m.mux, m.chan), kProcessRate, false, false, kPotSmoothTime);
+    }
 
     // --- CV Inputs ---
 
@@ -167,13 +159,21 @@ void Hardware::Init(float sr, size_t blocksize)
     //
     // The V/Oct inputs will also require at least 2-point (1V and 3V) calibration
     // for linear fit to track V/Oct reasonably well
-    cvinputs_[CV_SIZE_POS_A].InitBipolarCv(seed.adc.GetPtr(2), kProcessRate);
-    cvinputs_[CV_V_OCT_A].InitBipolarCv(seed.adc.GetPtr(4), kProcessRate);
-    cvinputs_[CV_MIX_A].InitBipolarCv(seed.adc.GetPtr(3), kProcessRate);
-    cvinputs_[CV_CROSSFADE].InitBipolarCv(seed.adc.GetPtr(5), kProcessRate);
-    cvinputs_[CV_SIZE_POS_B].InitBipolarCv(seed.adc.GetPtr(6), kProcessRate);
-    cvinputs_[CV_V_OCT_B].InitBipolarCv(seed.adc.GetPtr(8), kProcessRate);
-    cvinputs_[CV_MIX_B].InitBipolarCv(seed.adc.GetPtr(7), kProcessRate);
+    struct CvMap { CvInputId id; uint8_t adc; };
+    constexpr CvMap kCvMap[] = {
+        { CV_SIZE_POS_A, 2 },
+        { CV_V_OCT_A,    4 },
+        { CV_MIX_A,      3 },
+        { CV_CROSSFADE,  5 },
+        { CV_SIZE_POS_B, 6 },
+        { CV_V_OCT_B,    8 },
+        { CV_MIX_B,      7 },
+    };
+    static_assert(sizeof(kCvMap) / sizeof(kCvMap[0]) == kNumCVInputs,
+                  "kCvMap must have exactly one entry per CvInputId");
+    for (const auto& m : kCvMap) {
+        cvinputs_[m.id].InitBipolarCv(seed.adc.GetPtr(m.adc), kProcessRate);
+    }
 
     // --- UART MIDI ---
     MidiUartHandler::Config midi_cfg;

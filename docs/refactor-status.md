@@ -12,9 +12,10 @@ looper is the first/reference engine.
 
 The **input side, CV/gate/storage, and now all LED rendering are on the engine**. `core.ui.leds.cpp`
 no longer touches `Core` (`grep _core.` returns nothing). What remains is not a granular-coupling
-problem but the platform-ization tail: the `engine.core()` hatch still survives because
-`core.ui.cpp`/`pads`/`midi` call `_core.driver()` for transport *actions* — cutting it is the
-transport-ownership round (see roadmap). Everything builds, flashes, and runs; every step was
+problem but the platform-ization tail: the `engine.core()` hatch still survives. A call-site audit
+(2026-06-02) found it carries **three** coupling categories, not the "transport actions only" this
+doc previously claimed — transport/`Driver`, switch-config writes, and deck-state readbacks (see
+"Still coupled" below for the full inventory). Everything builds, flashes, and runs; every step was
 behavior-preserving and flash-verified.
 
 ### Layers today
@@ -57,13 +58,34 @@ behavior-preserving and flash-verified.
   `audio_capacity_bytes`/`audio_apply_loaded`/`audio_is_empty`). The tape/slot state machine,
   preload, and SD `Card` I/O stay platform.
 
-### Still coupled — the `engine.core()` escape hatch (transport actions only)
+### Still coupled — the `engine.core()` escape hatch (three categories)
 
-LED rendering is fully migrated. The remaining `engine.core()` use is **transport actions**:
-`core.ui.cpp`/`pads`/`midi` call `_core.driver()` for `tick`/`toggle_play`/`reset`, kept by design.
-The `Driver`/transport lives in `Core` (engine) today but is conceptually platform; cutting the
-hatch is the transport-ownership round (see roadmap) — decide whether `Driver` stays in `Core` or
-becomes a platform service.
+LED rendering is fully migrated, but a call-site audit (2026-06-02) corrected an earlier claim:
+the hatch is **not** "transport actions only." Removing `engine.core()` requires absorbing three
+distinct categories, and cutting only transport will **not** let `engine.core()` be deleted.
+
+- **Category 1 — transport / `Driver`** (the round the roadmap calls item 1). Distinct methods the
+  platform calls: `set_on_quarter`/`set_on_clock_out` (init wiring, `core.ui.cpp:52,55`), `source`/
+  `tick` (clock tick, `core.ui.midi.cpp:12,15,20`), `is_external_sync`/`reset` (SeqA gesture,
+  `core.ui.pads.cpp:68-69`), `toggle_source` (alt clock gesture, `core.ui.pads.cpp:206` /
+  `core.ui.cpp:614`), `is_external_sync`/`tap_tempo`/`tempo` (tap tempo, `core.ui.cpp:629-633`),
+  `set_tempo_norm` (set-tempo-by-size, `core.ui.cpp:674`). That is **10 methods, not the 3
+  (`tick`/`toggle_play`/`reset`) previously listed** — and `toggle_play` does not appear in the UI
+  at all (it is already engine-internal, `granular_engine.cpp:108`).
+- **Category 2 — switch-config writes** (`_process_switches`, `core.ui.cpp:541-626`), NOT transport:
+  `set_route(...)`, `mod(ref).set_type()/set_lfo_type()`, `deck.set_mode()` + `infer_panner_mode()`,
+  `deck.set_start_mod_on()/set_size_mod_on()`, `deck.fx().switch_grit_mode()` + grit readback. These
+  are enum/topology configs the scalar `set_param(ParamId, …)` API never absorbed.
+- **Category 3 — deck-state readbacks** (apply pass + pot queue), NOT transport: `deck.mode()` for
+  `is_chord`/`Slice`/`Drift` dispatch (`core.ui.cpp:119-120,166,178,374,407,451,483`), `deck.is_empty()`
+  (`380,457`), `deck.norm_start()`/`deck.fx().grit_*`/`flux_*` for initial `MValue` seeding (`64-85`),
+  `deck.tempo_to_fit()` (`671`).
+
+The `Driver`/transport lives in `Core` (engine) today but is conceptually platform. Categories 2-3
+are exactly what roadmap item 3's `MValue` → `ParamId` toolkit is meant to generalize (engine declares
+its modes/configs; platform stops reading `deck.mode()`), so absorbing them now as bespoke wrappers
+builds throwaway scaffolding — the same trap noted for the UI A/B consolidation. See the re-scoped
+roadmap item 1.
 
 ### LED migration progress (committed, flash-verified)
 
@@ -87,8 +109,9 @@ becomes a platform service.
   `_core.` reader in `core.ui.leds.cpp`** — Round 3 (the ring steady-state) is cleanly isolated.
 
   Note: "LEDs off `core()`" is not the same as "the `core()` hatch is removed". `core.ui.cpp`/
-  `pads`/`midi` still call `_core.driver()` for transport *actions* (`tick`/`toggle_play`/`reset`),
-  kept by design pending the transport-ownership decision (see roadmap).
+  `pads`/`midi` still call `_core.` for transport, switch-config writes, and deck-state readbacks
+  (see the three categories under "Still coupled"), kept by design pending the transport-ownership
+  decision (see roadmap).
 - **Round 3 — the ring steady-state (completes the LED migration).** `GranularEngine` gained
   `render_ring(LEDRing&, ref, breathe_brightness) -> RingGeometry`, drawing the empty/recording/
   playing segment + playheads + heads and returning the geometry the platform's transient overlays
@@ -151,20 +174,31 @@ rounds (transport ownership, interface lift) will want headroom — the remainin
 The input side, CV/gate/storage, and all LED rendering are decoupled. What remains is the
 platform-ization tail. Each item is its own behavior-preserving, flash-verified round.
 
-1. **Transport ownership — cut the `engine.core()` hatch (NEXT).** The last `_core.` use is
-   transport *actions*: `core.ui.cpp`/`pads`/`midi` call `_core.driver()` for `tick`/`toggle_play`/
-   `reset` (and the SeqA clock-reset / alt clock-source gestures in `core.ui.pads.cpp`). Decide the
-   real architectural fork: does `Driver`/transport stay inside `Core` (engine) or move out to a
-   **platform-owned transport service**? `Driver` is conceptually platform (clock/transport), but it
-   lives in `Core` and fans ticks to both decks, so moving it is non-trivial. Stopgap option: expose
-   transport actions as engine methods (the same query/action pattern used for `*_leds`) to cut the
-   hatch without relocating `Driver`. This round is a genuine design fork — plan it before coding.
-   After it, `engine.core()` can be removed.
+1. **Transport off `core()` — Category 1 only (NEXT).** Re-scoped after the 2026-06-02 call-site
+   audit: this round absorbs **only the transport/`Driver` category** (the 10 methods listed under
+   "Still coupled" Category 1) behind engine methods, using the same query/action pattern as `*_leds`.
+   It does **not** remove `engine.core()` — Categories 2 (switch-config writes) and 3 (deck-state
+   readbacks) still hold it, so the milestone is "transport off `core()`", paralleling "LEDs off
+   `core()`", not "hatch removed". Categories 2-3 are deferred to item 2/3 on purpose: they are
+   enum/config dispatch and mode readback that the `MValue` → `ParamId` toolkit (item 3) regenerates
+   as engine-declared bindings, so hand-wrapping them now would be throwaway scaffolding.
+
+   Within Category 1 there is still the architectural fork: does `Driver`/transport stay inside `Core`
+   (engine) or move out to a **platform-owned transport service**? `Driver` is conceptually platform
+   (clock/transport) but lives in `Core` and fans ticks to both decks, so relocation is non-trivial.
+   Recommended now: the **stopgap** — expose the 10 transport methods on the engine without relocating
+   `Driver` — and defer the relocation to item 2 (interface lift) / engine #2, when a second consumer
+   exists to validate the shared-transport boundary. Plan it before coding; it lands entirely in the
+   three `-Os`-maxed UI TUs, so bank the SRAM-positive mechanical wins first (see watch-item).
 2. **Lift the shared `IEngine` interface.** `CoreUI` holds a `GranularEngine&` and `Storage` a
    `GranularEngine*`; the whole granular surface (`set_param`/`param`, `handle_midi_*`, `set_fx`/
-   `on_*_pad`, `cv_*`/`on_gate_*`, `audio_*`, `*_leds`, `render_ring`) lives on the **concrete**
-   `GranularEngine`, not the abstract `IEngine`. A 2nd engine needs this lifted to a shared interface
-   (or the platform dispatching per engine type). Prereq for item 3.
+   `on_*_pad`, `cv_*`/`on_gate_*`, `audio_*`, `*_leds`, `render_ring`, plus item 1's transport
+   methods) lives on the **concrete** `GranularEngine`, not the abstract `IEngine`. A 2nd engine
+   needs this lifted to a shared interface (or the platform dispatching per engine type). This round
+   also owns the deferred decisions from item 1: whether to relocate `Driver` to a platform-owned
+   transport service (now that a second consumer exists to validate it), and how to absorb the
+   remaining `engine.core()` Categories 2-3 — likely folded into the item-3 toolkit rather than
+   wrapped here. Prereq for item 3.
 3. **2nd engine (Phase 4).** Promote the `PassthroughEngine` sketch (or a simple delay) to a real
    firmware variant, `Capabilities = {Transport}` only. Flushes hidden coupling, validates capability
    opt-in. Likely forces the **`MValue` → engine-agnostic toolkit keyed by `ParamId`** generalization
