@@ -73,7 +73,7 @@ int main(int argc, char** argv) {
 
     // --- set up the core ---
     host::TimeSource time;
-    host::Buffers hb;
+    host::HostArena hb;
     auto ctx = host::make_context(hb, time);
 
     // Drive the audio lifecycle through the IEngine interface (proving the Phase 2 seam

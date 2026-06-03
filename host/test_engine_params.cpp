@@ -70,7 +70,7 @@ int mode_to_config(Mode m) {
 
 int main() {
     host::TimeSource time;
-    host::Buffers buffers;
+    host::HostArena buffers;
     auto ctx = host::make_context(buffers, time);
 
     GranularEngine engine;
@@ -128,7 +128,9 @@ int main() {
             // (5) storage audio port: byte view + apply-loaded round-trip.
             check(engine.audio_data(ref) != nullptr, "audio_data is non-null");
             check(engine.audio_capacity_bytes(ref) ==
-                      host::kSourceFrames * sizeof(Buffer::Frame), "audio_capacity_bytes matches buffer");
+                      static_cast<size_t>(kSourceMaxSeconds) * static_cast<size_t>(host::kSampleRate)
+                          * sizeof(Buffer::Frame),
+                  "audio_capacity_bytes matches the engine's source buffer");
             engine.audio_apply_loaded(ref, 100);
             check(!engine.audio_is_empty(ref), "audio not empty after apply_loaded(100)");
             check(engine.audio_recorded_bytes(ref) == 100 * sizeof(Buffer::Frame),

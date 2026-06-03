@@ -137,4 +137,13 @@ static constexpr float kDriftSizeKofL2      = .38f;
 // Slice points ..................................
 static constexpr uint8_t kMaxSlicePointCount = 32;
 
+// Loop buffer length, in seconds (the granular engine sizes its per-deck source buffer from this and
+// the sample rate). Moved here from the SDRAM pool so the engine owns its buffer sizing, not the HAL.
+// 16-bit storage halves bytes/frame, so the same SDRAM holds twice the seconds.
+#if LOFI_INT16
+static constexpr unsigned kSourceMaxSeconds = 84;
+#else
+static constexpr unsigned kSourceMaxSeconds = 42;
+#endif
+
 }

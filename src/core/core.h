@@ -62,6 +62,10 @@ private:
 
   std::array<Deck, DeckRef::Count> _decks;
   std::array<Modulator, DeckRef::Count> _mod;
+  // Per-deck float*[2] holders for the detector/delay buffers sub-allocated from the engine arena
+  // (Deck::Params wants float**); populated in init(). Item: EngineBuffers generalization (Stage 2).
+  float* _detect_buf[DeckRef::Count][2];
+  float* _delay_buf[DeckRef::Count][2];
   Driver  _driver;
   XFade   _xfade;
   Click   _click;

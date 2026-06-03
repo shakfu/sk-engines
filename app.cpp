@@ -125,26 +125,13 @@ void AppImpl::Init()
     auto block_size = 96;
     _hw.Init(sample_rate, block_size);
 
-    // Pull the large buffers from the SDRAM pool and inject them into the core. The
-    // hand-out order must match the core's previous direct pulls (decks A then B).
-    auto& pool = SDRAMBuffer::pool();
+    // Hand the engine the SDRAM arena + clock; the engine sub-allocates whatever buffers it needs
+    // (item: EngineBuffers generalization). The platform/HAL no longer knows any engine's layout.
     EngineContext ctx;
     ctx.sample_rate = sample_rate;
     ctx.block_size = block_size;
     ctx.time = &_time_source;
-    ctx.buffers.source_frames = pool.sourceBufferSize();
-    for (auto d = 0; d < DeckRef::Count; d++) {
-        ctx.buffers.source[d] = pool.sourceBuffer();
-        ctx.buffers.detect[d][0] = pool.detectorBuffer();
-        ctx.buffers.detect[d][1] = pool.detectorBuffer();
-        ctx.buffers.delay[d][0] = pool.delayBuffer();
-        ctx.buffers.delay[d][1] = pool.delayBuffer();
-    }
-    ctx.buffers.slices[DeckRef::A] = pool.slices_a();
-    ctx.buffers.slices[DeckRef::B] = pool.slices_b();
-    ctx.buffers.track[DeckRef::A] = pool.track_buffer_a();
-    ctx.buffers.track[DeckRef::B] = pool.track_buffer_b();
-    ctx.arena = pool.engineArena(); // opaque SDRAM for engines that sub-allocate (e.g. the delay)
+    ctx.arena = SDRAMBuffer::pool().engineArena();
     _engine.init(ctx);
 
     _ui.init();

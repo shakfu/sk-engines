@@ -1,8 +1,10 @@
 #include "core.h"
 #include "daisysp.h"
 #include <functional>
+#include <cstring>
 #include "mode.h"
 #include "expose.h"
+#include "engine/arena.h"
 
 using namespace spotykach;
 using namespace daisysp;
@@ -24,18 +26,31 @@ void Core::init(const EngineContext& ctx) {
     _click.init(sample_rate);
     _mix_smooth.init(sample_rate);
 
+    // Sub-allocate all granular buffers from the platform's opaque SDRAM arena (item: EngineBuffers
+    // generalization, Stage 2). Sizes, 32K alignment, and source zeroing are preserved exactly from
+    // the old SDRAM pool, so this is behaviour-identical - just a different backing layout.
+    Arena arena(ctx.arena);
+    const size_t source_frames = static_cast<size_t>(kSourceMaxSeconds) * static_cast<size_t>(sample_rate);
+
     for (auto d = 0; d < DeckRef::Count; d++) {
         auto ref = (DeckRef::Ref)d;
         deck(ref).ref = ref;
 
+        auto* src = arena.alloc<Buffer::Frame>(source_frames, 32768);
+        std::memset(src, 0, source_frames * sizeof(Buffer::Frame));
+        _detect_buf[d][0] = arena.alloc<float>(Detector::kWindow, 32768);
+        _detect_buf[d][1] = arena.alloc<float>(Detector::kWindow, 32768);
+        _delay_buf[d][0]  = arena.alloc<float>(Fx::kEchoDelayBufferLength, 32768);
+        _delay_buf[d][1]  = arena.alloc<float>(Fx::kEchoDelayBufferLength, 32768);
+
         Deck::Params p;
         p.sample_rate = sample_rate;
-        p.main_buf_size = ctx.buffers.source_frames;
-        p.main_buf = static_cast<Buffer::Frame*>(ctx.buffers.source[d]); // void* -> granular type (item 5b)
-        p.detect_buf = const_cast<float**>(ctx.buffers.detect[d]);
-        p.delay_buf = const_cast<float**>(ctx.buffers.delay[d]);
-        p.slice_buf = ctx.buffers.slices[d];
-        p.track_buf = static_cast<Event*>(ctx.buffers.track[d]);
+        p.main_buf_size = source_frames;
+        p.main_buf = src;
+        p.detect_buf = _detect_buf[d];
+        p.delay_buf = _delay_buf[d];
+        p.slice_buf = arena.alloc<size_t>(kMaxSlicePointCount, 32);
+        p.track_buf = arena.alloc<Event>(Track::kLength, 32);
         deck(ref).init(p);
 
         _mod[ref].init(sample_rate);

@@ -1,6 +1,7 @@
-// Shared host-side scaffolding for the desktop harness and tests: a monotonic time source
-// and heap-allocated EngineBuffers + EngineContext, mirroring what the SDRAM pool hands the
-// firmware. Keeps main_host.cpp and the tests from duplicating the boilerplate.
+// Shared host-side scaffolding for the desktop harness and tests: a monotonic time source and a
+// heap-allocated SDRAM arena + EngineContext, mirroring what the firmware's pool hands the engine.
+// Since item "EngineBuffers generalization" the engine sub-allocates its own buffers from the arena,
+// so the host no longer mirrors the granular buffer shape - it just provides a big enough block.
 #pragma once
 
 #include <chrono>
@@ -9,18 +10,14 @@
 
 #include "core/itimesource.h"
 #include "core/engine_context.h"
-#include "core/buffer.h"   // Buffer::Frame
-#include "core/event.h"    // Event
-#include "core/detector.h" // Detector::kWindow
-#include "core/fx.h"       // Fx::kEchoDelayBufferLength
-#include "core/track.h"    // Track::kLength
-#include "config.h"        // kMaxSlicePointCount
 
 namespace host {
 
 constexpr float  kSampleRate = 48000.f;
 constexpr size_t kBlock      = 96;
-constexpr size_t kSourceFrames = static_cast<size_t>(kSampleRate) * 15; // 15 s loop buffer
+// Big enough for the granular engine's buffers (~35 MB: 2x source + delay + detector + ...); matches
+// the firmware arena budget. On the desktop this is an ordinary heap allocation.
+constexpr size_t kArenaBytes = 48u * 1024u * 1024u;
 
 struct TimeSource : spotykach::ITimeSource {
     using clock = std::chrono::steady_clock;
@@ -35,50 +32,21 @@ struct TimeSource : spotykach::ITimeSource {
     }
 };
 
-// Owns the heap allocations the core borrows through EngineBuffers.
-struct Buffers {
-    std::vector<spotykach::Buffer::Frame> source[spotykach::DeckRef::Count];
-    std::vector<float>                    detect[spotykach::DeckRef::Count][2];
-    std::vector<float>                    delay[spotykach::DeckRef::Count][2];
-    std::vector<size_t>                   slices[spotykach::DeckRef::Count];
-    std::vector<spotykach::Event>         track[spotykach::DeckRef::Count];
-
-    void allocate() {
-        using namespace spotykach;
-        for (int d = 0; d < DeckRef::Count; d++) {
-            source[d].assign(kSourceFrames, Buffer::Frame{});
-            for (int c = 0; c < 2; c++) {
-                detect[d][c].assign(Detector::kWindow, 0.f);
-                delay[d][c].assign(Fx::kEchoDelayBufferLength, 0.f);
-            }
-            slices[d].assign(kMaxSlicePointCount, 0);
-            track[d].assign(Track::kLength, Event{});
-        }
-    }
-
-    void fill(spotykach::EngineBuffers& b) {
-        using namespace spotykach;
-        b.source_frames = kSourceFrames;
-        for (int d = 0; d < DeckRef::Count; d++) {
-            b.source[d] = source[d].data();
-            b.detect[d][0] = detect[d][0].data();
-            b.detect[d][1] = detect[d][1].data();
-            b.delay[d][0] = delay[d][0].data();
-            b.delay[d][1] = delay[d][1].data();
-            b.slices[d] = slices[d].data();
-            b.track[d] = track[d].data();
-        }
-    }
+// Owns the heap SDRAM-arena the engine sub-allocates from.
+struct HostArena {
+    std::vector<uint8_t> mem;
+    void allocate() { mem.assign(kArenaBytes, 0); }
+    spotykach::EngineArena view() { return { mem.data(), mem.size() }; }
 };
 
-// Allocates `buffers` and returns a ready EngineContext pointing into them and `time`.
-inline spotykach::EngineContext make_context(Buffers& buffers, TimeSource& time) {
-    buffers.allocate();
+// Allocates `arena` and returns a ready EngineContext pointing into it and `time`.
+inline spotykach::EngineContext make_context(HostArena& arena, TimeSource& time) {
+    arena.allocate();
     spotykach::EngineContext ctx;
     ctx.sample_rate = kSampleRate;
     ctx.block_size = static_cast<float>(kBlock);
     ctx.time = &time;
-    buffers.fill(ctx.buffers);
+    ctx.arena = arena.view();
     return ctx;
 }
 
