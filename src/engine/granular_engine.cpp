@@ -16,7 +16,7 @@ void GranularEngine::init(const EngineContext& ctx)
 {
     _core.init(ctx);
     _speed_map.init();
-    for (auto ref : { Deck::A, Deck::B }) {
+    for (auto ref : { DeckRef::A, DeckRef::B }) {
         auto& deck = _core.deck(ref);
         auto& fx = deck.fx();
         _param_cache[static_cast<size_t>(ParamId::Pos)][ref]           = deck.norm_start();
@@ -31,7 +31,7 @@ void GranularEngine::init(const EngineContext& ctx)
 // Mode-dependent dispatch ported from core.ui.cpp's apply pass (the granular "meaning").
 // The platform decides WHICH param a control drives; the engine decides what that param
 // does given the current deck mode. The deck arg is ignored for global params.
-void GranularEngine::set_param(const ParamId id, const Deck::Ref ref, const float v)
+void GranularEngine::set_param(const ParamId id, const DeckRef::Ref ref, const float v)
 {
     const auto deck_ref = _safe_ref(ref);
     _param_cache[static_cast<size_t>(id)][deck_ref] = v;
@@ -75,7 +75,7 @@ void GranularEngine::set_param(const ParamId id, const Deck::Ref ref, const floa
     }
 }
 
-float GranularEngine::param(const ParamId id, const Deck::Ref ref) const
+float GranularEngine::param(const ParamId id, const DeckRef::Ref ref) const
 {
     return _param_cache[static_cast<size_t>(id)][_safe_ref(ref)];
 }
@@ -85,7 +85,7 @@ float GranularEngine::param(const ParamId id, const Deck::Ref ref) const
 // and owns the side effects the platform should not know about (panner inference on mode change,
 // the deck-specific LFO palette). Cold path - size-optimised so it costs little in this -O2 TU.
 __attribute__((optimize("Os")))
-bool GranularEngine::set_config(const ConfigId id, const Deck::Ref ref, const int v)
+bool GranularEngine::set_config(const ConfigId id, const DeckRef::Ref ref, const int v)
 {
     const auto deck_ref = _safe_ref(ref);
     switch (id) {
@@ -99,7 +99,7 @@ bool GranularEngine::set_config(const ConfigId id, const Deck::Ref ref, const in
             return false;
         case ConfigId::LfoShape: {
             // Per-deck LFO palette, faithful to the old UI: deck A square/random, deck B saw/sine.
-            const LFO::Type t = deck_ref == Deck::A ? (v ? LFO::Type::square : LFO::Type::random)
+            const LFO::Type t = deck_ref == DeckRef::A ? (v ? LFO::Type::square : LFO::Type::random)
                                                     : (v ? LFO::Type::saw    : LFO::Type::sine);
             _core.mod(deck_ref).set_lfo_type(t);
             return false;
@@ -119,19 +119,19 @@ bool GranularEngine::set_config(const ConfigId id, const Deck::Ref ref, const in
     return false;
 }
 
-float GranularEngine::tempo_to_fit(const Deck::Ref ref, const float fraction)
+float GranularEngine::tempo_to_fit(const DeckRef::Ref ref, const float fraction)
 {
     return _core.deck(_safe_ref(ref)).tempo_to_fit(fraction);
 }
 
-GritReseed GranularEngine::toggle_grit_mode(const Deck::Ref ref)
+GritReseed GranularEngine::toggle_grit_mode(const DeckRef::Ref ref)
 {
     auto& fx = _core.deck(_safe_ref(ref)).fx();
     fx.switch_grit_mode();
     return { fx.grit_intensity(), fx.grit_mix() };
 }
 
-DeckLayout GranularEngine::deck_layout(const Deck::Ref ref)
+DeckLayout GranularEngine::deck_layout(const DeckRef::Ref ref)
 {
     switch (_core.deck(_safe_ref(ref)).mode()) {
         case Mode::Reel:  return DeckLayout::single;
@@ -142,7 +142,7 @@ DeckLayout GranularEngine::deck_layout(const Deck::Ref ref)
     return DeckLayout::single;
 }
 
-bool GranularEngine::size_sets_tempo(const Deck::Ref ref)
+bool GranularEngine::size_sets_tempo(const DeckRef::Ref ref)
 {
     auto& deck = _core.deck(_safe_ref(ref));
     return deck.mode() == Mode::Slice && !deck.is_empty();
@@ -154,13 +154,13 @@ Capabilities GranularEngine::capabilities() const
          | CapLaunchQuant | CapTransport | CapDualDeck;
 }
 
-Deck::Ref GranularEngine::handle_midi_note(const uint8_t channel, const uint8_t note)
+DeckRef::Ref GranularEngine::handle_midi_note(const uint8_t channel, const uint8_t note)
 {
     auto& c = Config::dynamic();
-    auto ref = Deck::Count;
-    if (channel == c.midi_channel_a()) ref = Deck::A;
-    else if (channel == c.midi_channel_b()) ref = Deck::B;
-    if (ref == Deck::Count) return Deck::Count;
+    auto ref = DeckRef::Count;
+    if (channel == c.midi_channel_a()) ref = DeckRef::A;
+    else if (channel == c.midi_channel_b()) ref = DeckRef::B;
+    if (ref == DeckRef::Count) return DeckRef::Count;
 
     auto e = make_event();
     e.discont = true; // MIDI note: discontinuous (not trailed by a V/Oct change)
@@ -170,25 +170,25 @@ Deck::Ref GranularEngine::handle_midi_note(const uint8_t channel, const uint8_t 
     return ref;
 }
 
-void GranularEngine::stop_if_generating(const Deck::Ref ref)
+void GranularEngine::stop_if_generating(const DeckRef::Ref ref)
 {
     auto& deck = _core.deck(_safe_ref(ref));
     if (deck.is_generating()) deck.stop();
 }
 
-void GranularEngine::clear_buffer(const Deck::Ref ref)
+void GranularEngine::clear_buffer(const DeckRef::Ref ref)
 {
     _core.deck(_safe_ref(ref)).buffer().clear();
 }
 
-void GranularEngine::on_record_pad(const Deck::Ref ref, const bool reverse)
+void GranularEngine::on_record_pad(const DeckRef::Ref ref, const bool reverse)
 {
     const auto src = reverse ? Deck::Source::internal : Deck::Source::external;
     _core.set_source(src, _safe_ref(ref));
     _core.deck(_safe_ref(ref)).toggle_recording();
 }
 
-bool GranularEngine::on_play_pad(const Deck::Ref ref, const bool reverse)
+bool GranularEngine::on_play_pad(const DeckRef::Ref ref, const bool reverse)
 {
     auto& deck = _core.deck(_safe_ref(ref));
     deck.disarm();
@@ -200,49 +200,49 @@ bool GranularEngine::on_play_pad(const Deck::Ref ref, const bool reverse)
     return empty;
 }
 
-void GranularEngine::on_seq_toggle_arm(const Deck::Ref ref)
+void GranularEngine::on_seq_toggle_arm(const DeckRef::Ref ref)
 {
     auto& t = _core.deck(_safe_ref(ref)).track();
     if (t.is_armed()) t.disarm();
     else              t.arm(!_core.driver().is_key_sub_quarter());
 }
 
-void GranularEngine::on_seq_trigger(const Deck::Ref ref)
+void GranularEngine::on_seq_trigger(const DeckRef::Ref ref)
 {
     auto e = make_event();
     _core.deck(_safe_ref(ref)).trigger(&e);
 }
 
-void GranularEngine::clear_sequence(const Deck::Ref ref)
+void GranularEngine::clear_sequence(const DeckRef::Ref ref)
 {
     _core.deck(_safe_ref(ref)).clear_sequence();
 }
 
-void GranularEngine::disarm_track(const Deck::Ref ref)
+void GranularEngine::disarm_track(const DeckRef::Ref ref)
 {
     auto& t = _core.deck(_safe_ref(ref)).track();
     if (t.is_armed()) t.disarm();
 }
 
-void GranularEngine::set_mod_speed(const Deck::Ref ref, const float value, const bool sync)
+void GranularEngine::set_mod_speed(const DeckRef::Ref ref, const float value, const bool sync)
 {
     _param_cache[static_cast<size_t>(ParamId::ModSpeed)][_safe_ref(ref)] = value;
     _core.mod(_safe_ref(ref)).set_speed_norm(value, sync);
 }
 
-void GranularEngine::cv_mix(const Deck::Ref ref, const float value)
+void GranularEngine::cv_mix(const DeckRef::Ref ref, const float value)
 {
     _core.deck(_safe_ref(ref)).inout_mix_mod_in(value);
 }
 
-void GranularEngine::cv_size_pos(const Deck::Ref ref, const float value)
+void GranularEngine::cv_size_pos(const DeckRef::Ref ref, const float value)
 {
     auto& deck = _core.deck(_safe_ref(ref));
     deck.size_mod_in(value);
     deck.start_mod_in(value);
 }
 
-void GranularEngine::cv_voct(const Deck::Ref ref, const float value)
+void GranularEngine::cv_voct(const DeckRef::Ref ref, const float value)
 {
     const auto deck_ref = _safe_ref(ref);
     const auto speed = _speed_map.bipolar_pitch2speed(value);
@@ -255,7 +255,7 @@ void GranularEngine::cv_crossfade(const float value)
     _core.mix_mod_in(value);
 }
 
-void GranularEngine::on_gate_trigger(const Deck::Ref ref)
+void GranularEngine::on_gate_trigger(const DeckRef::Ref ref)
 {
     const auto deck_ref = _safe_ref(ref);
     auto e = make_event();
@@ -264,45 +264,45 @@ void GranularEngine::on_gate_trigger(const Deck::Ref ref)
     _core.deck(deck_ref).trigger(&e);
 }
 
-bool GranularEngine::gate_out_triggered(const Deck::Ref ref)
+bool GranularEngine::gate_out_triggered(const DeckRef::Ref ref)
 {
     return _core.deck(_safe_ref(ref)).voxs().read_reset_is_triggered();
 }
 
-bool GranularEngine::audio_is_empty(const Deck::Ref ref)
+bool GranularEngine::audio_is_empty(const DeckRef::Ref ref)
 {
     return _core.deck(_safe_ref(ref)).is_empty();
 }
 
-uint8_t* GranularEngine::audio_data(const Deck::Ref ref)
+uint8_t* GranularEngine::audio_data(const DeckRef::Ref ref)
 {
     return reinterpret_cast<uint8_t*>(_core.deck(_safe_ref(ref)).buffer().raw());
 }
 
-size_t GranularEngine::audio_recorded_bytes(const Deck::Ref ref)
+size_t GranularEngine::audio_recorded_bytes(const DeckRef::Ref ref)
 {
     return _core.deck(_safe_ref(ref)).buffer().rec_size() * sizeof(Buffer::Frame);
 }
 
-size_t GranularEngine::audio_capacity_bytes(const Deck::Ref ref)
+size_t GranularEngine::audio_capacity_bytes(const DeckRef::Ref ref)
 {
     return _core.deck(_safe_ref(ref)).buffer().size() * sizeof(Buffer::Frame);
 }
 
-void GranularEngine::audio_apply_loaded(const Deck::Ref ref, const size_t frames)
+void GranularEngine::audio_apply_loaded(const DeckRef::Ref ref, const size_t frames)
 {
     auto& deck = _core.deck(_safe_ref(ref));
     deck.buffer().set_rec_size(frames);
     deck.apply_start_size();
 }
 
-FxLeds GranularEngine::fx_leds(const Deck::Ref ref)
+FxLeds GranularEngine::fx_leds(const DeckRef::Ref ref)
 {
     auto& fx = _core.deck(_safe_ref(ref)).fx();
     return { fx.grit_mode(), fx.is_grit_on(), fx.is_flux_on() };
 }
 
-PlayLeds GranularEngine::play_leds(const Deck::Ref ref)
+PlayLeds GranularEngine::play_leds(const DeckRef::Ref ref)
 {
     const auto r = _safe_ref(ref);
     auto& deck = _core.deck(r);
@@ -310,7 +310,7 @@ PlayLeds GranularEngine::play_leds(const Deck::Ref ref)
              deck.is_armed(), deck.is_recording(), _core.source(r) };
 }
 
-AltLeds GranularEngine::alt_leds(const Deck::Ref ref)
+AltLeds GranularEngine::alt_leds(const DeckRef::Ref ref)
 {
     auto& track = _core.deck(_safe_ref(ref)).track();
     return { track.is_armed(), track.is_recording() };
@@ -323,7 +323,7 @@ TransportLeds GranularEngine::transport_leds()
              d.is_external_sync(), d.key_interval() };
 }
 
-DeckLeds GranularEngine::deck_leds(const Deck::Ref ref)
+DeckLeds GranularEngine::deck_leds(const DeckRef::Ref ref)
 {
     const auto r = _safe_ref(ref);
     return { _core.deck(r).mode(), _core.mod(r).type(), _core.mod(r).is_synced() };
@@ -337,7 +337,7 @@ Route GranularEngine::route() const { return _core.route(); }
 // the empty/recording/playing branches draw on that baseline. Os-tagged: runs in the main-loop UI
 // tick (not audio RT), and moving it out of the -Os leds.cpp into this -O2 TU must not grow code.
 __attribute__((optimize("Os")))
-RingGeometry GranularEngine::render_ring(LEDRing& ring, const Deck::Ref ref_in, const float breathe_brightness)
+RingGeometry GranularEngine::render_ring(LEDRing& ring, const DeckRef::Ref ref_in, const float breathe_brightness)
 {
     auto& deck = _core.deck(_safe_ref(ref_in));
     const auto mode = deck.mode();
@@ -389,14 +389,14 @@ RingGeometry GranularEngine::render_ring(LEDRing& ring, const Deck::Ref ref_in, 
     return {}; // empty-but-armed: nothing drawn (matches the old else-if chain)
 }
 
-void GranularEngine::set_fx(const Deck::Ref ref, const FxKind kind, const bool on)
+void GranularEngine::set_fx(const DeckRef::Ref ref, const FxKind kind, const bool on)
 {
     auto& fx = _core.deck(_safe_ref(ref)).fx();
     if (kind == FxKind::Flux) fx.set_flux_on(on);
     else                      fx.set_grit_on(on);
 }
 
-void GranularEngine::toggle_fx_lock(const Deck::Ref ref, const FxKind kind)
+void GranularEngine::toggle_fx_lock(const DeckRef::Ref ref, const FxKind kind)
 {
     auto& fx = _core.deck(_safe_ref(ref)).fx();
     if (kind == FxKind::Flux) fx.toggle_flux_lock();
@@ -408,11 +408,11 @@ void GranularEngine::handle_midi_transport(const bool start)
     auto& c = Config::dynamic();
     if (start) {
         _core.driver().reset();
-        if (c.midi_play_stop_a() && !_core.deck(Deck::A).is_empty()) _core.deck(Deck::A).play();
-        if (c.midi_play_stop_b() && !_core.deck(Deck::B).is_empty()) _core.deck(Deck::B).play();
+        if (c.midi_play_stop_a() && !_core.deck(DeckRef::A).is_empty()) _core.deck(DeckRef::A).play();
+        if (c.midi_play_stop_b() && !_core.deck(DeckRef::B).is_empty()) _core.deck(DeckRef::B).play();
     }
     else {
-        if (c.midi_play_stop_a()) _core.deck(Deck::A).stop();
-        if (c.midi_play_stop_b()) _core.deck(Deck::B).stop();
+        if (c.midi_play_stop_a()) _core.deck(DeckRef::A).stop();
+        if (c.midi_play_stop_b()) _core.deck(DeckRef::B).stop();
     }
 }

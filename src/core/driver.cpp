@@ -68,8 +68,8 @@ void Driver::tick(const bool external_tick)
     _clock.SetTempo(_tempo.bpm());
 };
 
-void Driver::toggle_play(Deck::Ref deck) {    
-    (deck == Deck::A ? _deck_a : _deck_b).toggle_play();
+void Driver::toggle_play(DeckRef::Ref deck) {    
+    (deck == DeckRef::A ? _deck_a : _deck_b).toggle_play();
 };
 
 void Driver::_on_clock_tick(const bool external_tick) {
@@ -160,8 +160,8 @@ void Driver::_send_tick(const bool is_common_tick, const bool is_quarter, const 
     _deck_a.tick(is_common_tick, _is_key);
     _deck_b.tick(is_common_tick, _is_key);
     if (is_common_tick) {
-        (_mod+Deck::A)->tick(tempo, is_quarter);
-        (_mod+Deck::B)->tick(tempo, is_quarter);
+        (_mod+DeckRef::A)->tick(tempo, is_quarter);
+        (_mod+DeckRef::B)->tick(tempo, is_quarter);
     }
     if (is_quarter) _indicate_quarter();
 }

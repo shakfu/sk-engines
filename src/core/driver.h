@@ -69,7 +69,7 @@ public:
 
     void init(const float sample_rate, const float buffer_size, const ITimeSource* time);
 
-    void toggle_play(const Deck::Ref deck);
+    void toggle_play(const DeckRef::Ref deck);
     
     float tempo() { return _clock.Tempo(); }
     void set_tempo_norm(const float value) { _tempo.set_norm(value); }

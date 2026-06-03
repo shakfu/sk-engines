@@ -37,15 +37,15 @@ struct TimeSource : spotykach::ITimeSource {
 
 // Owns the heap allocations the core borrows through EngineBuffers.
 struct Buffers {
-    std::vector<spotykach::Buffer::Frame> source[spotykach::Deck::Count];
-    std::vector<float>                    detect[spotykach::Deck::Count][2];
-    std::vector<float>                    delay[spotykach::Deck::Count][2];
-    std::vector<size_t>                   slices[spotykach::Deck::Count];
-    std::vector<spotykach::Event>         track[spotykach::Deck::Count];
+    std::vector<spotykach::Buffer::Frame> source[spotykach::DeckRef::Count];
+    std::vector<float>                    detect[spotykach::DeckRef::Count][2];
+    std::vector<float>                    delay[spotykach::DeckRef::Count][2];
+    std::vector<size_t>                   slices[spotykach::DeckRef::Count];
+    std::vector<spotykach::Event>         track[spotykach::DeckRef::Count];
 
     void allocate() {
         using namespace spotykach;
-        for (int d = 0; d < Deck::Count; d++) {
+        for (int d = 0; d < DeckRef::Count; d++) {
             source[d].assign(kSourceFrames, Buffer::Frame{});
             for (int c = 0; c < 2; c++) {
                 detect[d][c].assign(Detector::kWindow, 0.f);
@@ -59,7 +59,7 @@ struct Buffers {
     void fill(spotykach::EngineBuffers& b) {
         using namespace spotykach;
         b.source_frames = kSourceFrames;
-        for (int d = 0; d < Deck::Count; d++) {
+        for (int d = 0; d < DeckRef::Count; d++) {
             b.source[d] = source[d].data();
             b.detect[d][0] = detect[d][0].data();
             b.detect[d][1] = detect[d][1].data();

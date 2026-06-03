@@ -13,83 +13,83 @@ void CoreUI::_on_pad_touch(Hardware::Pad pad)
 
     using P = Hardware::Pad;
     switch (pad) {
-        case P::PlayA: _on_play_touch(Deck::A, false); break;
+        case P::PlayA: _on_play_touch(DeckRef::A, false); break;
             
-        case P::RevA: _on_play_touch(Deck::A, true); break;
+        case P::RevA: _on_play_touch(DeckRef::A, true); break;
 
         case P::FluxA:
             _touched.set(FluxA);
             if (is_alt_touched) {
-                _engine.toggle_fx_lock(Deck::A, FxKind::Flux);
+                _engine.toggle_fx_lock(DeckRef::A, FxKind::Flux);
             } else {
-                _engine.set_fx(Deck::A, FxKind::Flux, true);
+                _engine.set_fx(DeckRef::A, FxKind::Flux, true);
             }
             break;
 
         case P::GritA:
             _touched.set(GritA);
             if (is_alt_touched) {
-                _engine.toggle_fx_lock(Deck::A, FxKind::Grit);
+                _engine.toggle_fx_lock(DeckRef::A, FxKind::Grit);
             }
             else {
-                _engine.set_fx(Deck::A, FxKind::Grit, true);
+                _engine.set_fx(DeckRef::A, FxKind::Grit, true);
             }
             break;
             
-        case P::PlayB: _on_play_touch(Deck::B, false); break;
+        case P::PlayB: _on_play_touch(DeckRef::B, false); break;
 
-        case P::RevB: _on_play_touch(Deck::B, true); break;
+        case P::RevB: _on_play_touch(DeckRef::B, true); break;
         
         case P::FluxB:
             _touched.set(FluxB);
             if (is_alt_touched) {
-                _engine.toggle_fx_lock(Deck::B, FxKind::Flux);
+                _engine.toggle_fx_lock(DeckRef::B, FxKind::Flux);
             } else {
-                _engine.set_fx(Deck::B, FxKind::Flux, true);
+                _engine.set_fx(DeckRef::B, FxKind::Flux, true);
             }
             break;
 
         case P::GritB:
             _touched.set(GritB);
             if (is_alt_touched) {
-                _engine.toggle_fx_lock(Deck::B, FxKind::Grit);
+                _engine.toggle_fx_lock(DeckRef::B, FxKind::Grit);
             }
             else {
-                _engine.set_fx(Deck::B, FxKind::Grit, true);
+                _engine.set_fx(DeckRef::B, FxKind::Grit, true);
             }
             break;
 
         case P::SeqA: {
-            if (_storage.of(Deck::A).is_selecting()) {
-                if (is_alt_touched) _storage.of(Deck::A).previous_tape();
-                else _storage.of(Deck::A).next_tape();
+            if (_storage.of(DeckRef::A).is_selecting()) {
+                if (is_alt_touched) _storage.of(DeckRef::A).previous_tape();
+                else _storage.of(DeckRef::A).next_tape();
             }
-            else if (_storage.of(Deck::A).is_idle()) {
+            else if (_storage.of(DeckRef::A).is_idle()) {
                 if (_tap_hold.passed() && _engine.transport_is_external_sync()) {
                     _engine.transport_reset();
                 }
                 else if (is_alt_touched) {
-                    _engine.on_seq_toggle_arm(Deck::A);
-                    _hold_clear[Deck::A].begin();
+                    _engine.on_seq_toggle_arm(DeckRef::A);
+                    _hold_clear[DeckRef::A].begin();
                 }
                 else {
-                    _engine.on_seq_trigger(Deck::A);
+                    _engine.on_seq_trigger(DeckRef::A);
                 }
             }
             break;
         }
         case P::SeqB: {
-            if (_storage.of(Deck::B).is_selecting()) {
-                if (is_alt_touched) _storage.of(Deck::B).previous_tape();
-                else _storage.of(Deck::B).next_tape();
+            if (_storage.of(DeckRef::B).is_selecting()) {
+                if (is_alt_touched) _storage.of(DeckRef::B).previous_tape();
+                else _storage.of(DeckRef::B).next_tape();
             }
-            else if (_storage.of(Deck::B).is_idle()) {
+            else if (_storage.of(DeckRef::B).is_idle()) {
                 if (is_alt_touched) {
-                    _engine.on_seq_toggle_arm(Deck::B);
-                    _hold_clear[Deck::B].begin();
+                    _engine.on_seq_toggle_arm(DeckRef::B);
+                    _hold_clear[DeckRef::B].begin();
                 }
                 else {
-                    _engine.on_seq_trigger(Deck::B);
+                    _engine.on_seq_trigger(DeckRef::B);
                 }
             }
             break;
@@ -113,35 +113,35 @@ void CoreUI::_on_pad_release(Hardware::Pad pad)
     using P = Hardware::Pad;
     switch (pad) {
         case P::SeqA: 
-            _hold_clear[Deck::A].end();
+            _hold_clear[DeckRef::A].end();
             break;
 
         case P::SeqB:
-            _hold_clear[Deck::B].end();
+            _hold_clear[DeckRef::B].end();
             break;
 
         case P::FluxA:
             _touched.reset(FluxA);
-            _engine.set_fx(Deck::A, FxKind::Flux, false);
-            _changing_value_id[Deck::A] = 0;
+            _engine.set_fx(DeckRef::A, FxKind::Flux, false);
+            _changing_value_id[DeckRef::A] = 0;
             break;
 
         case P::GritA:
             _touched.reset(GritA);
-            _engine.set_fx(Deck::A, FxKind::Grit, false);
-            _changing_value_id[Deck::A] = 0;
+            _engine.set_fx(DeckRef::A, FxKind::Grit, false);
+            _changing_value_id[DeckRef::A] = 0;
             break;
 
         case P::FluxB:
             _touched.reset(FluxB);
-            _engine.set_fx(Deck::B, FxKind::Flux, false);
-            _changing_value_id[Deck::B] = 0;
+            _engine.set_fx(DeckRef::B, FxKind::Flux, false);
+            _changing_value_id[DeckRef::B] = 0;
             break;
 
         case P::GritB:
             _touched.reset(GritB);
-            _engine.set_fx(Deck::B, FxKind::Grit, false);
-            _changing_value_id[Deck::B] = 0;
+            _engine.set_fx(DeckRef::B, FxKind::Grit, false);
+            _changing_value_id[DeckRef::B] = 0;
             break;
 
         case P::Alt: 
@@ -153,7 +153,7 @@ void CoreUI::_on_pad_release(Hardware::Pad pad)
     }
 };
 
-void CoreUI::_on_play_touch(const Deck::Ref ref, const bool reverse)
+void CoreUI::_on_play_touch(const DeckRef::Ref ref, const bool reverse)
 {
     if (_tap_hold.passed()) {
         _engine.stop_if_generating(ref);
@@ -194,13 +194,13 @@ void CoreUI::_on_alt_touch()
 {
     _touched.set(Alt);
     
-    _engine.disarm_track(Deck::A);
-    if (_touched.test(GritA)) _engine.toggle_fx_lock(Deck::A, FxKind::Grit);
-    if (_touched.test(FluxA)) _engine.toggle_fx_lock(Deck::A, FxKind::Flux);
+    _engine.disarm_track(DeckRef::A);
+    if (_touched.test(GritA)) _engine.toggle_fx_lock(DeckRef::A, FxKind::Grit);
+    if (_touched.test(FluxA)) _engine.toggle_fx_lock(DeckRef::A, FxKind::Flux);
 
-    _engine.disarm_track(Deck::B);
-    if (_touched.test(GritB)) _engine.toggle_fx_lock(Deck::B, FxKind::Grit);
-    if (_touched.test(FluxB)) _engine.toggle_fx_lock(Deck::B, FxKind::Flux);
+    _engine.disarm_track(DeckRef::B);
+    if (_touched.test(GritB)) _engine.toggle_fx_lock(DeckRef::B, FxKind::Grit);
+    if (_touched.test(FluxB)) _engine.toggle_fx_lock(DeckRef::B, FxKind::Flux);
 
     if (_tap_hold.passed()) {
         _engine.transport_toggle_source();

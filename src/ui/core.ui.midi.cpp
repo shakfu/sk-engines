@@ -47,7 +47,7 @@ bool CoreUI::_process_midi()
             case MidiMessageType::NoteOn: {
                 auto e = event.AsNoteOn();
                 auto ref = _engine.handle_midi_note(e.channel, e.note);
-                if (ref != Deck::Count) _show_gate_in(ref);
+                if (ref != DeckRef::Count) _show_gate_in(ref);
             }
             break;
 

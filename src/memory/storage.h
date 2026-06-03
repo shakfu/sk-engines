@@ -40,7 +40,7 @@ public:
     DeckStorage();
     ~DeckStorage() = default;
 
-    void init(Card*, IEngine*, Deck::Ref);
+    void init(Card*, IEngine*, DeckRef::Ref);
 
     bool is_idle() const { return _state == State::idle; }
     bool is_selecting() const { return _state == State::selecting; }
@@ -48,10 +48,10 @@ public:
     bool is_released() const { return !is_selecting() && !is_processing(); }
     bool is_preloading() const { return _is_preloading; }
     State state() const { return _state; }
-    Deck::Ref deck_ref() const { return _ref; }
+    DeckRef::Ref deck_ref() const { return _ref; }
     float progress() const { return _state != State::idle ? _card->progress() : 0; }
 
-    void set_on_save_audio(std::function<void(const Deck::Ref)>);
+    void set_on_save_audio(std::function<void(const DeckRef::Ref)>);
 
     void next_tape();
     void previous_tape();
@@ -93,7 +93,7 @@ private:
     Card* _card;
     IEngine* _engine;
     bool _tape_storage = false; // engine opts into tape save/load via CapTapeStorage (item 3b-1)
-    Deck::Ref _ref;
+    DeckRef::Ref _ref;
     State _state;
 
     std::string _deck_dir;
@@ -102,7 +102,7 @@ private:
     uint8_t _recent_tape_idx;
     uint8_t _recent_slot_idx;
     std::array<Slot, kStorageSlotCount> _slots;
-    std::function<void(const Deck::Ref)> _on_audio_saved;
+    std::function<void(const DeckRef::Ref)> _on_audio_saved;
     bool _is_preloading;
 };
 
@@ -118,7 +118,7 @@ class Storage {
         };
 
         Storage(): 
-        _opening_deck { Deck::None }
+        _opening_deck { DeckRef::None }
         {};
         ~Storage() = default;
 
@@ -126,17 +126,17 @@ class Storage {
         {
             _card.init(SDRAMBuffer::pool().card_buffer());
 
-            _deck_storage[Deck::A].init(&_card, &engine, Deck::A);
-            _deck_storage[Deck::B].init(&_card, &engine, Deck::B);
+            _deck_storage[DeckRef::A].init(&_card, &engine, DeckRef::A);
+            _deck_storage[DeckRef::B].init(&_card, &engine, DeckRef::B);
 
             using namespace std::placeholders;
             auto on_save = std::bind(&Storage::_on_audio_saved, this, _1);
-            _deck_storage[Deck::A].set_on_save_audio(on_save);
-            _deck_storage[Deck::B].set_on_save_audio(on_save);
+            _deck_storage[DeckRef::A].set_on_save_audio(on_save);
+            _deck_storage[DeckRef::B].set_on_save_audio(on_save);
 
             _timer.Init();
 
-            _deck_storage[Deck::B].preload();
+            _deck_storage[DeckRef::B].preload();
         }
 
         Card::State card_state() const
@@ -152,32 +152,32 @@ class Storage {
             _card.recognize();
         }
 
-        void activate(const Deck::Ref ref)
+        void activate(const DeckRef::Ref ref)
         {
-            if (_opening_deck != Deck::None) return;
+            if (_opening_deck != DeckRef::None) return;
             _opening_deck = ref;
             _counter = 0;
             _timer.Restart();            
         } 
 
-        void deactivate(const Deck::Ref ref) 
+        void deactivate(const DeckRef::Ref ref) 
         {
             _deck_storage[ref].deactivate();
         }
 
-        void load(const Deck::Ref ref) 
+        void load(const DeckRef::Ref ref) 
         {
             if (!of(ref).is_selecting() || card_state() != Card::State::idle) return;
             _deck_storage[ref].load();
         }
 
-        void save(const Deck::Ref ref) 
+        void save(const DeckRef::Ref ref) 
         {
             if (!of(ref).is_selecting() || card_state() != Card::State::idle) return;
             _deck_storage[ref].save();
         }
 
-        void cancel(const Deck::Ref ref) 
+        void cancel(const DeckRef::Ref ref) 
         {
             of(ref).cancel();
             if (_preload_step == PreloadStep::deck_a) {
@@ -208,33 +208,33 @@ class Storage {
                 }
 
                 case PreloadStep::init_deck_a: {
-                    of(Deck::A).preload();
+                    of(DeckRef::A).preload();
                     _preload_step = PreloadStep::deck_a;
                     break;
                 }
 
                 case PreloadStep::deck_a: {
-                    if (of(Deck::A).is_released()) {
+                    if (of(DeckRef::A).is_released()) {
                         _preload_step = PreloadStep::init_deck_b;
                     }
                     break;
                 }
 
                 case PreloadStep::init_deck_b: {
-                    of(Deck::B).preload();
+                    of(DeckRef::B).preload();
                     _preload_step = PreloadStep::deck_b;
                     break;
                 }
 
                 case PreloadStep::deck_b: {
-                    if (of(Deck::B).is_released()) {
+                    if (of(DeckRef::B).is_released()) {
                         _preload_step = PreloadStep::done;
                     }
                     break;
                 }
             }
 
-            if (_opening_deck != Deck::None && _timer.HasPassedMs(200)) {
+            if (_opening_deck != DeckRef::None && _timer.HasPassedMs(200)) {
                 if (_counter < 5) {
                     if (_counter % 2 == 0) {
                         _card.recognize();
@@ -242,7 +242,7 @@ class Storage {
                     else {
                         if (_card.mount()) { 
                             _deck_storage[_opening_deck].activate();
-                            _opening_deck = Deck::None;
+                            _opening_deck = DeckRef::None;
                             return;
                         }
                         _card.unmount();
@@ -250,17 +250,17 @@ class Storage {
                     _counter ++;
                 }
                 else {
-                    _opening_deck = Deck::None;
+                    _opening_deck = DeckRef::None;
                 }
                 return;
             }
 
-            _deck_storage[Deck::A].process();
-            _deck_storage[Deck::B].process();
+            _deck_storage[DeckRef::A].process();
+            _deck_storage[DeckRef::B].process();
             if (_can_unmount()) _card.unmount();
         }
 
-        DeckStorage& of(Deck::Ref ref) { return _deck_storage[ref]; }
+        DeckStorage& of(DeckRef::Ref ref) { return _deck_storage[ref]; }
 
     private:
         NOCOPY(Storage)
@@ -287,11 +287,11 @@ class Storage {
         {
             return _preload_step == PreloadStep::done
                     && (_card.state() == Card::State::idle || _card.state() == Card::State::failed)
-                    && _deck_storage[Deck::A].is_released()
-                    && _deck_storage[Deck::B].is_released();
+                    && _deck_storage[DeckRef::A].is_released()
+                    && _deck_storage[DeckRef::B].is_released();
         }
 
-        void _on_audio_saved(const Deck::Ref ref)
+        void _on_audio_saved(const DeckRef::Ref ref)
         {
             auto other_ref = 1 - ref;
             if (_deck_storage[other_ref].is_selecting()) {
@@ -300,10 +300,10 @@ class Storage {
         }
 
         Card _card;
-        std::array<DeckStorage, Deck::Ref::Count> _deck_storage;
+        std::array<DeckStorage, DeckRef::Ref::Count> _deck_storage;
         daisy::StopwatchTimer _timer;
         uint8_t _counter;
-        Deck::Ref _opening_deck;
+        DeckRef::Ref _opening_deck;
         PreloadStep _preload_step;
 };
 

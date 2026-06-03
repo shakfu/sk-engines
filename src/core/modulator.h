@@ -4,15 +4,13 @@
 #include "lfo.h"
 #include "follower.h"
 #include "nocopy.h"
+#include "engine/mode.h"
 
 namespace spotykach {
 
 class Modulator {
 public:
-    enum class Type: uint8_t {
-        Follow,
-        LFO
-    };
+    using Type = ModType; // moved to the contract (engine/mode.h) in item 5b
 
     Modulator() = default;
     ~Modulator() = default;

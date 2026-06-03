@@ -67,18 +67,18 @@ private:
 
     void _process_ui_queue();
     void _process_switches();
-    void _process_gate_out(const Deck::Ref);
+    void _process_gate_out(const DeckRef::Ref);
     bool _process_midi();
     bool _process_realtime(daisy::MidiEvent&);
 
     void _on_pad_touch(Hardware::Pad pad);
     void _on_pad_release(Hardware::Pad pad);
-    void _on_play_touch(const Deck::Ref, const bool reverse);
+    void _on_play_touch(const DeckRef::Ref, const bool reverse);
     void _on_alt_touch();
 
     void _process_clock_out();
     void _on_quarter(const bool /*is key quarter*/);
-    void _set_tempo_by_size(const Deck::Ref, const float fraction);
+    void _set_tempo_by_size(const DeckRef::Ref, const float fraction);
 
 
     // LEDs ////////////////////////////////////////
@@ -86,19 +86,19 @@ private:
     void _draw_launching();
     void _blit_display(); // blit an own-display engine's DisplayModel (rings + indicators) - 3b-2a
 
-    void _draw_fx(const Deck::Ref);
-    void _draw_play(const Deck::Ref, const bool blink);
-    void _draw_alt(const Deck::Ref);
+    void _draw_fx(const DeckRef::Ref);
+    void _draw_play(const DeckRef::Ref, const bool blink);
+    void _draw_alt(const DeckRef::Ref);
 
-    void _draw_ring(const Deck::Ref);
-    void _show_pitch(const Deck::Ref);
-    void _show_slots(const Deck::Ref);
+    void _draw_ring(const DeckRef::Ref);
+    void _show_pitch(const DeckRef::Ref);
+    void _show_slots(const DeckRef::Ref);
     void _show_key_intervals();
-    void _show_size_quarters(const Deck::Ref, const uint32_t color);
-    void _show_error(const Deck::Ref);
+    void _show_size_quarters(const DeckRef::Ref, const uint32_t color);
+    void _show_error(const DeckRef::Ref);
     
-    void _show_empty(const Deck::Ref);
-    void _show_gate_in(const Deck::Ref);
+    void _show_empty(const DeckRef::Ref);
+    void _show_gate_in(const DeckRef::Ref);
 
     void _breathe_led();
 
@@ -159,20 +159,20 @@ private:
     std::bitset<Hardware::CTRL_LAST> _init;
     std::bitset<Hardware::CTRL_LAST> _apply;
 
-    std::array<int, Deck::Count> _changing_value_id;
+    std::array<int, DeckRef::Count> _changing_value_id;
 
-    std::array<Hold<1500/*ms*/>, Deck::Count> _hold_clear;
+    std::array<Hold<1500/*ms*/>, DeckRef::Count> _hold_clear;
     Hold<100/*ms*/> _tap_hold;
 
     // Per-control pickup state, keyed by ParamId (item 3a-2): one MValue per (param, deck),
     // replacing the ~21 former named members. The platform owns the pickup mechanics; mv(id)
     // returns the param's per-deck row. Global params (Tempo/KeyInterval/ClickMix/Pan*) use the
-    // [Deck::A] slot. _size_quarters is a platform tempo-fit gesture, not a ParamId, so it stays
+    // [DeckRef::A] slot. _size_quarters is a platform tempo-fit gesture, not a ParamId, so it stays
     // named.
-    std::array<std::array<MValue, Deck::Count>, static_cast<size_t>(ParamId::Count)> _mv;
-    std::array<MValue, Deck::Count>& mv(ParamId id) { return _mv[static_cast<size_t>(id)]; }
+    std::array<std::array<MValue, DeckRef::Count>, static_cast<size_t>(ParamId::Count)> _mv;
+    std::array<MValue, DeckRef::Count>& mv(ParamId id) { return _mv[static_cast<size_t>(id)]; }
 
-    std::array<MValue, Deck::Count> _size_quarters;
+    std::array<MValue, DeckRef::Count> _size_quarters;
 
     // The live LED display the platform renders into and blits. Its two ring canvases ARE the
     // per-deck rings (formerly a standalone std::array<LEDRing>); engine.render(DisplayModel&)
@@ -190,10 +190,10 @@ private:
     daisy::StopwatchTimer _arm_blink_timer;
     daisy::StopwatchTimer _clock_switch_timer;
 
-    std::array<daisy::StopwatchTimer, Deck::Count> _gate_out_timer;
-    std::array<bool, Deck::Count> _gate_out_high;
-    std::array<int8_t, Deck::Count> _alt_blink_count;
-    std::array<int8_t, Deck::Count> _gate_in_led_cnt;
+    std::array<daisy::StopwatchTimer, DeckRef::Count> _gate_out_timer;
+    std::array<bool, DeckRef::Count> _gate_out_high;
+    std::array<int8_t, DeckRef::Count> _alt_blink_count;
+    std::array<int8_t, DeckRef::Count> _gate_in_led_cnt;
 
     bool _show_rec_a;
     bool _show_rec_b;
@@ -216,7 +216,7 @@ private:
         TouchedOptions
     };
     std::bitset<TouchedOptions> _touched;
-    std::bitset<Deck::Ref::Count> _pitch_quantized;
+    std::bitset<DeckRef::Ref::Count> _pitch_quantized;
 
     State _state;
     bool _show_key_quarter;

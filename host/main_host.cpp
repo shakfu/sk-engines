@@ -87,9 +87,9 @@ int main(int argc, char** argv) {
     eng.transport_set_on_clock_out([]() {});
 
     // Force a known route + mode via the public config API (item 3a-4 removed core()).
-    eng.set_config(ConfigId::Route, Deck::A, 0); // Stereo
-    eng.set_config(ConfigId::Route, Deck::A, 1); // DoubleMono (forces a change off the default)
-    for (auto ref : {Deck::A, Deck::B}) eng.set_config(ConfigId::Mode, ref, 1); // Reel (also infers panner)
+    eng.set_config(ConfigId::Route, DeckRef::A, 0); // Stereo
+    eng.set_config(ConfigId::Route, DeckRef::A, 1); // DoubleMono (forces a change off the default)
+    for (auto ref : {DeckRef::A, DeckRef::B}) eng.set_config(ConfigId::Mode, ref, 1); // Reel (also infers panner)
 
     // Tail to let any loop play out after the input ends.
     size_t tail_frames = do_record ? static_cast<size_t>(kSampleRate) * 2 : 0;
@@ -103,7 +103,7 @@ int main(int argc, char** argv) {
     out.l.resize(total_frames);
     out.r.resize(total_frames);
 
-    if (do_record) eng.on_record_pad(Deck::A, false); // arm record (set_source + toggle_recording); detector records on sound
+    if (do_record) eng.on_record_pad(DeckRef::A, false); // arm record (set_source + toggle_recording); detector records on sound
 
     float in_l[kBlock], in_r[kBlock];
     float out_l[kBlock], out_r[kBlock];
@@ -114,7 +114,7 @@ int main(int argc, char** argv) {
     for (size_t pos = 0; pos < total_frames; pos += kBlock) {
         // Once the input is consumed, optionally stop recording and start playback.
         if (do_record && !switched_to_play && pos >= in.frames()) {
-            eng.on_play_pad(Deck::A, false); // disarm + start playback (approximates the old disarm()+play())
+            eng.on_play_pad(DeckRef::A, false); // disarm + start playback (approximates the old disarm()+play())
             switched_to_play = true;
         }
 

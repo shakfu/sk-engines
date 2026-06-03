@@ -33,7 +33,7 @@ inline void audio_file_name(const uint8_t slot_idx, char* out_name)
 }
 
 // "/<root>/<tape>/<slot>.WAV", e.g. "/SK/G/1.WAV" (needs 12 bytes incl. null).
-inline void audio_file_path(const Deck::Ref deck, const uint8_t tape_idx, const uint8_t slot_idx, char* out_path)
+inline void audio_file_path(const DeckRef::Ref deck, const uint8_t tape_idx, const uint8_t slot_idx, char* out_path)
 {
     out_path[0] = '/';
     strcpy(out_path + 1, kRootDir.c_str());
@@ -51,16 +51,16 @@ _recent_tape_idx { kNone },
 _recent_slot_idx { kNone }
 {}
 
-void DeckStorage::init(Card* card, IEngine* engine, Deck::Ref ref)
+void DeckStorage::init(Card* card, IEngine* engine, DeckRef::Ref ref)
 {
     _card = card;
     _engine = engine;
     _tape_storage = engine->capabilities() & CapTapeStorage;
     _ref = ref;
-    _deck_dir = _ref == Deck::A ? A : B;
+    _deck_dir = _ref == DeckRef::A ? A : B;
 }
 
-void DeckStorage::set_on_save_audio(std::function<void(const Deck::Ref)> on_saved)
+void DeckStorage::set_on_save_audio(std::function<void(const DeckRef::Ref)> on_saved)
 {
     _on_audio_saved = on_saved;
 }
@@ -194,12 +194,12 @@ bool DeckStorage::_read_preload_source(uint8_t& tape, uint8_t& slot)
     */
     if (size < kMemSize) return false;
     switch (_ref) {
-        case Deck::A: {
+        case DeckRef::A: {
             tape = data[0] - '0';
             slot = data[1] - '0';
             break;
         }
-        case Deck::B: {
+        case DeckRef::B: {
             tape = data[2] - '0';
             slot = data[3] - '0';
             break;
@@ -212,7 +212,7 @@ bool DeckStorage::_read_preload_source(uint8_t& tape, uint8_t& slot)
     slot -= 1;
     return true;
 }
-static void write_preload_source(Card* card, const Deck::Ref deck, const uint8_t tape, const uint8_t slot)
+static void write_preload_source(Card* card, const DeckRef::Ref deck, const uint8_t tape, const uint8_t slot)
 {
     uint8_t* read_data = nullptr;
     size_t size;
@@ -225,12 +225,12 @@ static void write_preload_source(Card* card, const Deck::Ref deck, const uint8_t
     auto tape_char = (tape + 1) + '0';
     auto slot_char = (slot + 1) + '0';
     switch (deck) {
-        case Deck::A:
+        case DeckRef::A:
             data[0] = tape_char;
             data[1] = slot_char;
             break;
 
-        case Deck::B:
+        case DeckRef::B:
             data[2] = tape_char;
             data[3] = slot_char;
             break;

@@ -6,9 +6,9 @@
 #include <cstdint>
 #include <functional>
 
-#include "core/engine_context.h"  // EngineContext, Deck::Ref (via deck.h)
+#include "core/engine_context.h"  // EngineContext, DeckRef::Ref (via deck.h)
 #include "core/driver.h"          // Driver::Source - leaks here pending the transport relocation
-#include "core/mode.h"            // Route (for route())
+#include "engine/mode.h"          // Route (for route()) - contract-owned (item 5b)
 #include "engine/engine_params.h" // ParamId, FxKind, Capabilities
 #include "engine/display_model.h" // DisplayModel
 #include "engine/engine_leds.h"   // FxLeds/PlayLeds/AltLeds/TransportLeds/DeckLeds/RingGeometry
@@ -51,9 +51,9 @@ public:
     virtual Capabilities capabilities() const { return 0; }
 
     // --- Parameters (platform control -> logical ParamId; engine owns the mode-dep dispatch) -
-    virtual void  set_param(ParamId, Deck::Ref, float) {}
-    virtual float param(ParamId, Deck::Ref) const { return 0.f; }
-    virtual void  set_mod_speed(Deck::Ref, float value, bool sync) {}
+    virtual void  set_param(ParamId, DeckRef::Ref, float) {}
+    virtual float param(ParamId, DeckRef::Ref) const { return 0.f; }
+    virtual void  set_mod_speed(DeckRef::Ref, float value, bool sync) {}
 
     // --- Categorical config (item 3a-0): switch-position writes the platform used to make
     //     directly on Core. The engine maps the selector int to its enums and owns side effects.
@@ -61,54 +61,54 @@ public:
     //     re-apply size for the new mode). tempo_to_fit gives the BPM that fits `fraction` of the
     //     deck's loop (the Slice tap-hold gesture). toggle_grit_mode cycles the grit sub-effect and
     //     returns the now-active intensity/mix for the platform's MValue reseed. ---
-    virtual bool       set_config(ConfigId, Deck::Ref, int) { return false; }
-    virtual float      tempo_to_fit(Deck::Ref, float fraction) { return 0.f; }
-    virtual GritReseed toggle_grit_mode(Deck::Ref) { return {}; }
+    virtual bool       set_config(ConfigId, DeckRef::Ref, int) { return false; }
+    virtual float      tempo_to_fit(DeckRef::Ref, float fraction) { return 0.f; }
+    virtual GritReseed toggle_grit_mode(DeckRef::Ref) { return {}; }
 
     // --- Knob layout (item 3a-3): lets the platform branch the SIZE/ENV pot handling and the apply
     //     pass without reading Core's Mode. deck_layout describes how those knobs behave for this
     //     deck; size_sets_tempo reports whether the SIZE tap-hold tempo-fit gesture is eligible
     //     (granular: Slice && non-empty). Defaults suit a modeless engine. ---
     // (non-const: the granular override forwards to the non-const Core, as transport_* does)
-    virtual DeckLayout deck_layout(Deck::Ref) { return DeckLayout::single; }
-    virtual bool       size_sets_tempo(Deck::Ref) { return false; }
+    virtual DeckLayout deck_layout(DeckRef::Ref) { return DeckLayout::single; }
+    virtual bool       size_sets_tempo(DeckRef::Ref) { return false; }
 
     // --- MIDI meaning ------------------------------------------------------------------------
-    virtual Deck::Ref handle_midi_note(uint8_t channel, uint8_t note) { return Deck::Count; }
+    virtual DeckRef::Ref handle_midi_note(uint8_t channel, uint8_t note) { return DeckRef::Count; }
     virtual void      handle_midi_transport(bool start) {}
 
     // --- FX pads -----------------------------------------------------------------------------
-    virtual void set_fx(Deck::Ref, FxKind, bool on) {}
-    virtual void toggle_fx_lock(Deck::Ref, FxKind) {}
+    virtual void set_fx(DeckRef::Ref, FxKind, bool on) {}
+    virtual void toggle_fx_lock(DeckRef::Ref, FxKind) {}
 
     // --- Play/Rev pads (on_play_pad returns is_empty for the LED) -----------------------------
-    virtual void stop_if_generating(Deck::Ref) {}
-    virtual void clear_buffer(Deck::Ref) {}
-    virtual void on_record_pad(Deck::Ref, bool reverse) {}
-    virtual bool on_play_pad(Deck::Ref, bool reverse) { return true; }
+    virtual void stop_if_generating(DeckRef::Ref) {}
+    virtual void clear_buffer(DeckRef::Ref) {}
+    virtual void on_record_pad(DeckRef::Ref, bool reverse) {}
+    virtual bool on_play_pad(DeckRef::Ref, bool reverse) { return true; }
 
     // --- Seq pads ----------------------------------------------------------------------------
-    virtual void on_seq_toggle_arm(Deck::Ref) {}
-    virtual void on_seq_trigger(Deck::Ref) {}
-    virtual void clear_sequence(Deck::Ref) {}
-    virtual void disarm_track(Deck::Ref) {}
+    virtual void on_seq_toggle_arm(DeckRef::Ref) {}
+    virtual void on_seq_trigger(DeckRef::Ref) {}
+    virtual void clear_sequence(DeckRef::Ref) {}
+    virtual void disarm_track(DeckRef::Ref) {}
 
     // --- CV inputs ---------------------------------------------------------------------------
-    virtual void cv_mix(Deck::Ref, float value) {}
-    virtual void cv_size_pos(Deck::Ref, float value) {}
-    virtual void cv_voct(Deck::Ref, float value) {}
+    virtual void cv_mix(DeckRef::Ref, float value) {}
+    virtual void cv_size_pos(DeckRef::Ref, float value) {}
+    virtual void cv_voct(DeckRef::Ref, float value) {}
     virtual void cv_crossfade(float value) {}
 
     // --- Gate (gate_out_triggered reports a loop-reset for the platform's gate-out) ----------
-    virtual void on_gate_trigger(Deck::Ref) {}
-    virtual bool gate_out_triggered(Deck::Ref) { return false; }
+    virtual void on_gate_trigger(DeckRef::Ref) {}
+    virtual bool gate_out_triggered(DeckRef::Ref) { return false; }
 
     // --- Storage audio port (TapeStorage capability) -----------------------------------------
-    virtual bool     audio_is_empty(Deck::Ref) { return true; }
-    virtual uint8_t* audio_data(Deck::Ref) { return nullptr; }
-    virtual size_t   audio_recorded_bytes(Deck::Ref) { return 0; }
-    virtual size_t   audio_capacity_bytes(Deck::Ref) { return 0; }
-    virtual void     audio_apply_loaded(Deck::Ref, size_t frames) {}
+    virtual bool     audio_is_empty(DeckRef::Ref) { return true; }
+    virtual uint8_t* audio_data(DeckRef::Ref) { return nullptr; }
+    virtual size_t   audio_recorded_bytes(DeckRef::Ref) { return 0; }
+    virtual size_t   audio_capacity_bytes(DeckRef::Ref) { return 0; }
+    virtual void     audio_apply_loaded(DeckRef::Ref, size_t frames) {}
 
     // --- Transport (Transport capability; forwards to the engine's clock for now) ------------
     virtual void  transport_set_on_quarter(std::function<void(const bool)> cb) {}
@@ -127,14 +127,14 @@ public:
     //     Defaults are inert (a non-granular engine returns empty state and the granular-specific
     //     platform LED code reads nothing). These + render() below are transitional: item 3 unifies
     //     them into render(DisplayModel&) + the MValue->ParamId value-display toolkit. ---
-    virtual FxLeds   fx_leds(Deck::Ref) { return {}; }
-    virtual PlayLeds play_leds(Deck::Ref) { return {}; }
-    virtual AltLeds  alt_leds(Deck::Ref) { return {}; }
+    virtual FxLeds   fx_leds(DeckRef::Ref) { return {}; }
+    virtual PlayLeds play_leds(DeckRef::Ref) { return {}; }
+    virtual AltLeds  alt_leds(DeckRef::Ref) { return {}; }
     virtual TransportLeds transport_leds() { return {}; }
-    virtual DeckLeds      deck_leds(Deck::Ref) { return {}; }
+    virtual DeckLeds      deck_leds(DeckRef::Ref) { return {}; }
     virtual float mix() const { return 0.5f; }   // A/B crossfade (fader LEDs)
     virtual Route route() const { return Route::Stereo; } // channel topology (mode L/C/R LED)
-    virtual RingGeometry render_ring(LEDRing& ring, Deck::Ref, float breathe_brightness) { return {}; }
+    virtual RingGeometry render_ring(LEDRing& ring, DeckRef::Ref, float breathe_brightness) { return {}; }
 
     // --- CV outputs (DAC). The platform's DAC ISR calls this ONCE per block (not per sample),
     //     fills n samples of the two modulation/LFO CV channels, then converts to the DAC range.

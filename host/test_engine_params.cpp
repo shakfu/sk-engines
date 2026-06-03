@@ -36,7 +36,7 @@ void check(bool cond, const char* msg) {
 
 bool approx(float a, float b, float eps = 1e-4f) { return std::fabs(a - b) < eps; }
 
-// Every per-deck ParamId; globals are tested separately with Deck::A.
+// Every per-deck ParamId; globals are tested separately with DeckRef::A.
 constexpr ParamId kPerDeck[] = {
     ParamId::Pos, ParamId::FluxFb, ParamId::Env, ParamId::EnvSize, ParamId::Size,
     ParamId::Win, ParamId::PolySlice, ParamId::Speed, ParamId::FluxIntensity,
@@ -77,8 +77,8 @@ int main() {
     engine.init(ctx);
     engine.transport_set_on_quarter([](bool) {});
     engine.transport_set_on_clock_out([]() {});
-    engine.set_config(ConfigId::Route, Deck::A, 0); // Stereo
-    engine.set_config(ConfigId::Route, Deck::A, 1); // DoubleMono
+    engine.set_config(ConfigId::Route, DeckRef::A, 0); // Stereo
+    engine.set_config(ConfigId::Route, DeckRef::A, 1); // DoubleMono
 
     // (4) capabilities
     auto caps = engine.capabilities();
@@ -92,12 +92,12 @@ int main() {
 
     for (Mode mode : {Mode::Reel, Mode::Slice, Mode::Drift}) {
         std::printf("mode %s\n", mode_name(mode));
-        for (auto ref : {Deck::A, Deck::B}) engine.set_config(ConfigId::Mode, ref, mode_to_config(mode));
+        for (auto ref : {DeckRef::A, DeckRef::B}) engine.set_config(ConfigId::Mode, ref, mode_to_config(mode));
 
         // (1) per-deck param() round-trips set_param across a value sweep.
         int k = 0;
         for (ParamId id : kPerDeck) {
-            for (auto ref : {Deck::A, Deck::B}) {
+            for (auto ref : {DeckRef::A, DeckRef::B}) {
                 float v = 0.1f + 0.05f * static_cast<float>((k++) % 17); // varied [0.1, 0.9]
                 engine.set_param(id, ref, v);
                 check(approx(engine.param(id, ref), v), "per-deck param() round-trips set_param");
@@ -106,8 +106,8 @@ int main() {
         // globals
         for (ParamId id : kGlobal) {
             float v = 0.42f;
-            engine.set_param(id, Deck::A, v);
-            check(approx(engine.param(id, Deck::A), v), "global param() round-trips set_param");
+            engine.set_param(id, DeckRef::A, v);
+            check(approx(engine.param(id, DeckRef::A), v), "global param() round-trips set_param");
         }
 
         // (3) leaf spot-check removed: it read engine.core().deck().fx().flux_mix() to prove
@@ -116,7 +116,7 @@ int main() {
 
         // (4) CV + gate + mod-speed: the host CAN drive these directly (unlike pads/LEDs).
         // Exercise every handler across both decks; just assert no crash + cache where applicable.
-        for (auto ref : {Deck::A, Deck::B}) {
+        for (auto ref : {DeckRef::A, DeckRef::B}) {
             engine.cv_mix(ref, 0.2f);
             engine.cv_size_pos(ref, 0.3f);
             engine.cv_voct(ref, 0.0f);    // 0 semitones -> speed 1.0; caches _voct_speed for the gate

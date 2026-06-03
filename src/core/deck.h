@@ -12,22 +12,14 @@
 #include "fx.h"
 #include "smooth.h"
 #include "daisysp.h"
+#include "engine/deck_ref.h"
 
 namespace spotykach  {
 
 class Deck {
 public:
-    enum Ref: uint8_t {
-        A,
-        B,
-        Count,
-        None = 0xff
-    };
-
-    enum class Source: uint8_t {
-        external,
-        internal
-    };
+    using Ref = DeckRef::Ref;   // the A/B selector now lives in the contract (engine/deck_ref.h)
+    using Source = DeckSource;  // recording-input select, moved to the contract (engine/mode.h)
 
     Deck();
     ~Deck() {};

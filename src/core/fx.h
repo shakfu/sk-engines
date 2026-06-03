@@ -6,15 +6,13 @@
 #include "biquad.h"
 #include "echo.h"
 #include "softswitch.h"
+#include "engine/mode.h"
 
 namespace spotykach {
 
 class Fx {
 public:
-    enum class GritMode: uint8_t {
-        Drive,
-        Reduce
-    };
+    using GritMode = spotykach::GritMode; // moved to the contract (engine/mode.h) in item 5b
 
     struct Params {
         float sample_rate;

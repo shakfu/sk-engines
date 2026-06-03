@@ -133,17 +133,17 @@ void AppImpl::Init()
     ctx.block_size = block_size;
     ctx.time = &_time_source;
     ctx.buffers.source_frames = pool.sourceBufferSize();
-    for (auto d = 0; d < Deck::Count; d++) {
+    for (auto d = 0; d < DeckRef::Count; d++) {
         ctx.buffers.source[d] = pool.sourceBuffer();
         ctx.buffers.detect[d][0] = pool.detectorBuffer();
         ctx.buffers.detect[d][1] = pool.detectorBuffer();
         ctx.buffers.delay[d][0] = pool.delayBuffer();
         ctx.buffers.delay[d][1] = pool.delayBuffer();
     }
-    ctx.buffers.slices[Deck::A] = pool.slices_a();
-    ctx.buffers.slices[Deck::B] = pool.slices_b();
-    ctx.buffers.track[Deck::A] = pool.track_buffer_a();
-    ctx.buffers.track[Deck::B] = pool.track_buffer_b();
+    ctx.buffers.slices[DeckRef::A] = pool.slices_a();
+    ctx.buffers.slices[DeckRef::B] = pool.slices_b();
+    ctx.buffers.track[DeckRef::A] = pool.track_buffer_a();
+    ctx.buffers.track[DeckRef::B] = pool.track_buffer_b();
     _engine.init(ctx);
 
     _ui.init();

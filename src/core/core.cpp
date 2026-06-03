@@ -8,7 +8,7 @@ using namespace spotykach;
 using namespace daisysp;
 
 Core::Core():
-_driver { Driver(_decks[Deck::A], _decks[Deck::B], _click, _panner, _mod.data()) }
+_driver { Driver(_decks[DeckRef::A], _decks[DeckRef::B], _click, _panner, _mod.data()) }
 {
     _source.fill(Deck::Source::external);
     _reverb_in.fill(0);
@@ -24,18 +24,18 @@ void Core::init(const EngineContext& ctx) {
     _click.init(sample_rate);
     _mix_smooth.init(sample_rate);
 
-    for (auto d = 0; d < Deck::Count; d++) {
-        auto ref = (Deck::Ref)d;
+    for (auto d = 0; d < DeckRef::Count; d++) {
+        auto ref = (DeckRef::Ref)d;
         deck(ref).ref = ref;
 
         Deck::Params p;
         p.sample_rate = sample_rate;
         p.main_buf_size = ctx.buffers.source_frames;
-        p.main_buf = ctx.buffers.source[d];
+        p.main_buf = static_cast<Buffer::Frame*>(ctx.buffers.source[d]); // void* -> granular type (item 5b)
         p.detect_buf = const_cast<float**>(ctx.buffers.detect[d]);
         p.delay_buf = const_cast<float**>(ctx.buffers.delay[d]);
         p.slice_buf = ctx.buffers.slices[d];
-        p.track_buf = ctx.buffers.track[d];
+        p.track_buf = static_cast<Event*>(ctx.buffers.track[d]);
         deck(ref).init(p);
 
         _mod[ref].init(sample_rate);
@@ -59,7 +59,7 @@ void Core::set_route(const Route val)
 }
 void Core::infer_panner_mode()
 {
-    for (auto ref: { Deck::A, Deck::B }) {
+    for (auto ref: { DeckRef::A, DeckRef::B }) {
         auto& deck = _decks[ref];
         auto pan_mode = Panner::Mode::off;
         auto wide = false;
@@ -83,8 +83,8 @@ void Core::process(const float* const* in, float** out, size_t size)
     float in_b[2] = { 0, 0 };
     float out_a[2] = { 0, 0 };
     float out_b[2] = { 0, 0 };
-    auto& deck_a = deck(Deck::A);
-    auto& deck_b = deck(Deck::B);
+    auto& deck_a = deck(DeckRef::A);
+    auto& deck_b = deck(DeckRef::B);
 
     auto stereo = _route != Route::DoubleMono;
 
@@ -101,18 +101,18 @@ void Core::process(const float* const* in, float** out, size_t size)
         deck_a.process_out(in_a[0], in_a[1], out_a[0], out_a[1]);
         deck_b.process_out(in_b[0], in_b[1], out_b[0], out_b[1]);
 
-        switch (_source[Deck::A]) {
+        switch (_source[DeckRef::A]) {
             case Deck::Source::internal: deck_a.process_in(out_b[0], out_b[1]); break;
             case Deck::Source::external: deck_a.process_in(in_a[0], in_a[1]); break;
         }
         
-        switch (_source[Deck::B]) {
+        switch (_source[DeckRef::B]) {
             case Deck::Source::internal: deck_b.process_in(out_a[0], out_a[1]); break;
             case Deck::Source::external: deck_b.process_in(in_b[0], in_b[1]); break;
         }
 
-        _mod[Deck::A].follow(out_a[0]);
-        _mod[Deck::B].follow(out_b[0]);
+        _mod[DeckRef::A].follow(out_a[0]);
+        _mod[DeckRef::B].follow(out_b[0]);
 
         float* d_out[2] = { out_a, out_b };
         _panner.process(d_out, d_out);

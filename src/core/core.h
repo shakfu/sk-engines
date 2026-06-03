@@ -18,10 +18,8 @@
 
 namespace spotykach {
 
-enum class ModType: uint8_t {
-  Follow,
-  LFO
-};
+// ModType now lives in the contract (engine/mode.h, via the mode.h include above); item 5b.
+// It previously had a duplicate definition here - removing it unifies the two.
 
 class Core {
 public:
@@ -32,11 +30,11 @@ public:
 
   Driver& driver() { return _driver; }
   Panner& panner() { return _panner; }
-  Deck& deck(const Deck::Ref ref) { return _decks[ref]; }
-  Modulator& mod(const Deck::Ref ref) { return _mod[ref]; }
+  Deck& deck(const DeckRef::Ref ref) { return _decks[ref]; }
+  Modulator& mod(const DeckRef::Ref ref) { return _mod[ref]; }
 
-  Deck::Source source(const Deck::Ref deck) const { return _source[deck]; }
-  void set_source(const Deck::Source source, const Deck::Ref deck) { _source[deck] = source; }
+  Deck::Source source(const DeckRef::Ref deck) const { return _source[deck]; }
+  void set_source(const Deck::Source source, const DeckRef::Ref deck) { _source[deck] = source; }
   void infer_panner_mode();
 
   float mix() const { return _xfade.Stage(); }
@@ -62,16 +60,16 @@ private:
   static constexpr uint8_t kNotesCount = 7;
   static constexpr uint8_t kVoxCount = 4;
 
-  std::array<Deck, Deck::Count> _decks;
-  std::array<Modulator, Deck::Count> _mod;
+  std::array<Deck, DeckRef::Count> _decks;
+  std::array<Modulator, DeckRef::Count> _mod;
   Driver  _driver;
   XFade   _xfade;
   Click   _click;
   Panner  _panner;
   OnePoleSmoother _mix_smooth;
 
-  std::array<float, Deck::Count> _pos_mod_amnt;
-  std::array<Deck::Source, Deck::Count> _source;
+  std::array<float, DeckRef::Count> _pos_mod_amnt;
+  std::array<Deck::Source, DeckRef::Count> _source;
 
   Route _route;
 
