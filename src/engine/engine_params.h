@@ -79,6 +79,8 @@ enum Capability : uint32_t {
     CapLaunchQuant   = 1u << 3,
     CapTransport     = 1u << 4,
     CapDualDeck      = 1u << 5,
+    CapOwnDisplay    = 1u << 6,  // engine fills DisplayModel in render(); platform blits it directly
+                                 // (bypasses the granular *_leds/render_ring query path) - item 3b-2a
 };
 using Capabilities = uint32_t;
 

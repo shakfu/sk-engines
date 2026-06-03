@@ -24,6 +24,9 @@
 #include "color.h"
 #include <algorithm>
 
+// Size-optimize: color conversion helpers feed only the 62 Hz LED render, never the audio path.
+#pragma GCC optimize("Os")
+
 using namespace infrasonic;
 
 Color Color::FromHSV(uint8_t h, uint8_t s, uint8_t v)

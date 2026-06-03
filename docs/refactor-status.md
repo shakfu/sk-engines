@@ -33,15 +33,24 @@ bytes. AVOID `hardware.cpp`/`ws2812.cpp` (audio-callback analog reads / timing-s
 TU `-Os` is the only lever now (midi.cpp earlier gave just 16 B); the audio DSP in `src/core/*.cpp`
 stays `-O2 -funroll-loops`.
 
+**3b-2a DONE + FLASH-VERIFIED (2026-06-03):** `render(DisplayModel)`
+wired via a `CapOwnDisplay` capability. Passthrough confirmed on hardware: play LEDs lit + rings show a
+live input level meter (render->blit works end-to-end; a non-granular engine draws its own panel). Own-display engines have `process()` call `engine.render(_display)`
+and the LED ISR blit it (`_blit_display`); granular keeps its query+interpret path (behaviour unchanged).
+The passthrough now draws its level meter instead of blank rings. SRAM: net +248 B (the render path is
+~744 B in the granular build, funded by `-Os` on `led.ring`/`color`/`calibrator`); **granular now 304 B
+free**, and the cheap TU-`-Os` levers are largely spent. Detail in `docs/item3b-plan.md`.
+
 **Next — pick a direction (paused here, no decision made):**
-1. **Reclaim SRAM — DONE (552 B free).** Further levers listed above if a later round needs them.
-2. **Build a real second engine** (the payoff): a useful non-granular engine (delay / synth / sampler).
-   Its own build has ample SRAM, so granular's 88 B doesn't block it.
-3. **3b-2 — finish engine #2:** wire `render(DisplayModel)` so the passthrough shows its level meter
-   (grounds the display contract for future engines) + relocate `Driver` to a platform transport service
-   only when an engine wants `CapTransport`. Touches shared platform -> reclaim SRAM first.
-4. **Phase 5 — build boundaries + DSP libs:** split into static libs (`libgranular`/`libtransport`/...),
+1. **Build a real second engine** (the payoff): a useful non-granular engine (delay / synth / sampler) -
+   now fully enabled (params + render path both work); its own build has ample SRAM.
+2. **3b-2b — `Driver` relocation:** move transport out of `Core` to a platform service, only when a
+   non-granular engine wants `CapTransport`. Heavy, isolated; deferred until needed.
+3. **Phase 5 — build boundaries + DSP libs:** split into static libs (`libgranular`/`libtransport`/...),
    drop the blanket `-Isrc/`, give platform and engine separate include roots to enforce the layering.
+
+**SRAM note:** granular at 304 B free; TU-`-Os` reclaim largely exhausted (storage/card/led.ring/color/
+calibrator + the 4 UI TUs all `-Os`). Further headroom needs real code reduction, not optimisation flags.
 
 **Optional tidy:** exclude `src/core/*.cpp` from the passthrough source set (currently still compiled,
 so granular static-init runs at boot — harmless but wasteful) for a provably granular-free variant.

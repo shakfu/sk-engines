@@ -54,6 +54,8 @@ void CoreUI::init() {
     _engine.transport_set_on_clock_out(on_clock_out);
 
     for (int i = 0; i < Hardware::LED_LAST; i++) _led[i].init(i);
+
+    _engine_owns_display = _engine.capabilities() & CapOwnDisplay;
 };
 
 void CoreUI::_init_values()
@@ -127,11 +129,13 @@ void CoreUI::process()
             _engine.clear_sequence(ref);
         }
         // LEDs /////////
+        if (_engine_owns_display) continue; // own-display engines fill DisplayModel via render() below
         _draw_ring(ref);
         _draw_fx(ref);
-        _draw_alt(ref);    
+        _draw_alt(ref);
         _draw_play(ref, blink);
     }
+    if (_engine_owns_display) _engine.render(_display);
 
     if (_apply.test(Hardware::CTRL_POS_A)) {
         if (_touched.test(FluxA)) {

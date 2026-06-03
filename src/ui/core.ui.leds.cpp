@@ -114,6 +114,11 @@ void CoreUI::_draw_leds()
         return;
     }
 
+    if (_engine_owns_display) {
+        _blit_display();
+        return;
+    }
+
     _breathe_led();
 
     auto da = _engine.deck_leds(Deck::A);
@@ -228,6 +233,30 @@ void CoreUI::_draw_launching()
 
     _led_breathe_phase = phase;
     _state = State::init_values;
+}
+
+// Blit an own-display engine's DisplayModel straight to hardware (item 3b-2a). The engine filled
+// _display in render() (main loop); here in the LED ISR we just push it out - rings via the canvas
+// blit, named indicators mapped to their LedId. No granular palette/blink/query interpretation.
+void CoreUI::_blit_display()
+{
+    _display.ring[Deck::A].apply([&](uint8_t i, uint32_t hex, float b){ set_led(_hw, Hardware::LED_RING_A, i, hex, b); });
+    _display.ring[Deck::B].apply([&](uint8_t i, uint32_t hex, float b){ set_led(_hw, Hardware::LED_RING_B, i, hex, b); });
+
+    auto put = [&](Hardware::LedId id, const DisplayModel::Indicator& in){ _hw.leds.Set(id, in.rgb, in.brightness); };
+    put(Hardware::LED_PLAY_A, _display.play[Deck::A]);       put(Hardware::LED_PLAY_B, _display.play[Deck::B]);
+    put(Hardware::LED_REV_A,  _display.rev[Deck::A]);        put(Hardware::LED_REV_B,  _display.rev[Deck::B]);
+    put(Hardware::LED_GRIT_A, _display.grit[Deck::A]);       put(Hardware::LED_GRIT_B, _display.grit[Deck::B]);
+    put(Hardware::LED_FLUX_A, _display.flux[Deck::A]);       put(Hardware::LED_FLUX_B, _display.flux[Deck::B]);
+    put(Hardware::LED_GATE_IN_A, _display.gate_in[Deck::A]); put(Hardware::LED_GATE_IN_B, _display.gate_in[Deck::B]);
+    put(Hardware::LED_CYCLE_A, _display.cycle[Deck::A]);     put(Hardware::LED_CYCLE_B, _display.cycle[Deck::B]);
+    put(Hardware::LED_ALT_A,  _display.alt[Deck::A]);        put(Hardware::LED_ALT_B,  _display.alt[Deck::B]);
+    put(Hardware::LED_FADER_A, _display.fader[Deck::A]);     put(Hardware::LED_FADER_B, _display.fader[Deck::B]);
+    put(Hardware::LED_MODE_LEFT,   _display.mode_left);
+    put(Hardware::LED_MODE_CENTER, _display.mode_center);
+    put(Hardware::LED_MODE_RIGHT,  _display.mode_right);
+    put(Hardware::LED_CLOCK_IN,    _display.clock_in);
+    put(Hardware::LED_SPOTY_PAD,   _display.spot);
 }
 
 // Called from main /////////////////////

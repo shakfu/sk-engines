@@ -1,6 +1,9 @@
 #include "calibrator.h"
 #include "expose.h"
 
+// Size-optimize: control calibration runs only at startup, never the audio path.
+#pragma GCC optimize("Os")
+
 using namespace spotykach;
 using namespace daisy;
 using namespace infrasonic;

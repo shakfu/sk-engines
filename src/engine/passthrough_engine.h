@@ -15,13 +15,12 @@ namespace spotykach {
 // deliberately-different, non-granular engine - stereo passthrough - that exercises the
 // platform<->engine seam with something that is not the granular looper.
 //
-// It declares NO capabilities (capabilities() == 0): no recording, tape, sequencer, transport.
-// Everything on IEngine beyond the audio lifecycle is left as the Strategy-A no-op default, so the
-// platform drives it harmlessly (knobs/pads/MIDI/CV do nothing; Storage skips tape ops because it
-// now gates on CapTapeStorage). render(DisplayModel&) below is implemented but NOT yet called by
-// the platform (the LED path still uses the *_leds/render_ring queries), so this variant's rings
-// are blank until the render(DisplayModel) wiring lands in 3b-2 - acceptable; it proves the audio
-// swap. See docs/item3b-plan.md.
+// It declares only CapOwnDisplay: no recording, tape, sequencer, transport. Everything on IEngine
+// beyond the audio lifecycle + render() is left as the Strategy-A no-op default, so the platform
+// drives it harmlessly (knobs/pads/MIDI/CV do nothing; Storage skips tape ops because it gates on
+// CapTapeStorage). CapOwnDisplay routes the platform's LED render to render(DisplayModel&) below
+// (item 3b-2a), so this variant draws its own level meter instead of blank rings. See
+// docs/item3b-plan.md.
 class PassthroughEngine : public IEngine {
 public:
     PassthroughEngine() = default;
@@ -40,7 +39,7 @@ public:
         _peak = peak;
     }
 
-    Capabilities capabilities() const override { return 0; }
+    Capabilities capabilities() const override { return CapOwnDisplay; }
 
     // A non-granular display: a symmetric level meter on both rings + lit play indicators.
     // Drawn with LEDRing's primitives (Option A) - exactly how a granular render() will reuse them.

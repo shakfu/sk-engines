@@ -84,6 +84,7 @@ private:
     // LEDs ////////////////////////////////////////
     void _draw_leds();
     void _draw_launching();
+    void _blit_display(); // blit an own-display engine's DisplayModel (rings + indicators) - 3b-2a
 
     void _draw_fx(const Deck::Ref);
     void _draw_play(const Deck::Ref, const bool blink);
@@ -148,6 +149,7 @@ private:
 
     Hardware& _hw;
     IEngine& _engine; // the platform drives the engine ONLY through IEngine (item 3 complete)
+    bool _engine_owns_display = false; // engine fills DisplayModel via render(); platform blits it (3b-2a)
     Settings& _settings;
     Storage& _storage;
     Calibrator _calibrator;
