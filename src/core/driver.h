@@ -6,6 +6,7 @@
 
 #include "nocopy.h"
 #include "itimesource.h"
+#include "engine/mode.h"   // ClockSource (Driver::Source alias target, item 5c)
 #include "synclock.h"
 #include "divider.h"
 #include "deck.h"
@@ -58,11 +59,7 @@ static const std::array<kKeyInterval, 17> kKeyIntervals = {
 
 class Driver {
 public:
-    enum Source: uint8_t {
-        internal    = 1,
-        ts4         = 4,
-        midi        = 24
-    };
+    using Source = ClockSource::Source; // moved to the contract (engine/mode.h) in item 5c
     
     Driver(Deck&, Deck&, Click&, Panner&, Modulator*);
     ~Driver() {};

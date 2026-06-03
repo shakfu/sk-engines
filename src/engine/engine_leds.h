@@ -4,8 +4,7 @@
 
 #include <cstdint>
 
-#include "engine/mode.h"     // Mode, Route, ModType, GritMode, DeckSource (contract-owned, item 5b)
-#include "core/driver.h"     // Driver::Source - last granular leak here, removed in item 5c (R2)
+#include "engine/mode.h"     // Mode, Route, ModType, GritMode, DeckSource, ClockSource (item 5b/5c)
 #include "engine/display_model.h" // LEDRing (render_ring target)
 
 namespace spotykach {
@@ -20,7 +19,7 @@ struct PlayLeds { Mode mode; bool playing; bool play_queued; bool reverse; bool 
 struct AltLeds  { bool track_armed; bool track_recording; };
 
 // Transport + topology indicator state for the ISR LED render (_draw_leds) and launch-quant display.
-struct TransportLeds { Driver::Source source; bool key_at_quarter; bool key_sub_quarter; bool external_sync; uint8_t key_interval; };
+struct TransportLeds { ClockSource::Source source; bool key_at_quarter; bool key_sub_quarter; bool external_sync; uint8_t key_interval; };
 struct DeckLeds      { Mode mode; ModType mod_type; bool mod_synced; };
 
 // Geometry of the steady-state ring the engine drew, for the platform's transient overlays

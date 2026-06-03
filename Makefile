@@ -50,6 +50,8 @@ CPP_SOURCES = \
 	main.cpp \
 	app.cpp \
 	$(ENGINE_SOURCES) \
+	src/engine/color.cpp \
+	src/engine/led.ring.cpp \
 	$(wildcard src/hw/*.cpp) \
 	$(wildcard src/ui/*.cpp) \
 	$(wildcard src/memory/*.cpp)
@@ -69,6 +71,19 @@ build/.engine-stamp: FORCE
 	@echo '$(ENGINE)' | cmp -s - $@ 2>/dev/null || echo '$(ENGINE)' > $@
 .PHONY: FORCE
 FORCE:
+
+# One-shot variant flash: clean -> build -> flash over DFU. Put the device in DFU mode first
+# (hold Reset ~3s until the bottom pad LEDs breathe white), then `make granular` / `make passthrough`.
+.PHONY: granular passthrough
+granular:
+	$(MAKE) clean
+	$(MAKE) -j8 ENGINE=granular
+	$(MAKE) ENGINE=granular program-dfu
+
+passthrough:
+	$(MAKE) clean
+	$(MAKE) -j8 ENGINE=passthrough
+	$(MAKE) ENGINE=passthrough program-dfu
 
 libs:
 	cd $(LIBDAISY_DIR) && $(MAKE)

@@ -36,12 +36,12 @@ static constexpr std::array<uint32_t, kStorageTapeCount> kTapeColor = {
     kTurq,    //T urquoise
     0xffDE21  //Y ellow
 };
-static uint32_t clock_source_color(Driver::Source source)
+static uint32_t clock_source_color(ClockSource::Source source)
 {
     switch (source) {
-        case Driver::Source::internal: return kGreen;
-        case Driver::Source::ts4: return kPink;
-        case Driver::Source::midi: return kTurq;
+        case ClockSource::internal: return kGreen;
+        case ClockSource::ts4: return kPink;
+        case ClockSource::midi: return kTurq;
         default: return kWhite;
     }
 }

@@ -18,13 +18,11 @@ INCLUDES  = -Ishim -I$(ROOT)/src -I. -I$(DAISYSP) $(DAISYSP_INC)
 CXXFLAGS  = -std=c++17 -O2 -Wall -Wno-unused-variable -Wno-unused-but-set-variable $(INCLUDES)
 
 CORE_SRC    = $(wildcard $(ROOT)/src/core/*.cpp)
+# src/engine/*.cpp now includes the hardware-free LEDRing + Color impls (moved out of src/ui/ in
+# Phase 5 R2), which the DisplayModel needs; the rest of src/ui/ stays out (it needs the HAL).
 ENGINE_SRC  = $(wildcard $(ROOT)/src/engine/*.cpp)
-# The DisplayModel (engine/display_model.h) now holds hardware-free LEDRing canvases, so the
-# host needs the ring + color implementations. These two UI TUs are hardware-free (color.h /
-# expose.h only pull common.h via the shim); the rest of src/ui/ stays out (it needs the HAL).
-UI_SRC      = $(ROOT)/src/ui/led.ring.cpp $(ROOT)/src/ui/color.cpp
 DAISYSP_SRC = $(wildcard $(DAISYSP)/*/*.cpp)
-LIB_SRC     = $(CORE_SRC) $(ENGINE_SRC) $(UI_SRC) $(DAISYSP_SRC)
+LIB_SRC     = $(CORE_SRC) $(ENGINE_SRC) $(DAISYSP_SRC)
 
 SRC        = main_host.cpp $(LIB_SRC)
 TEST       = $(BUILD)/test_engine_params

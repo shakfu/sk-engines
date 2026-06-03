@@ -109,7 +109,7 @@ public:
     // a platform transport service is item 2's decision. Inline so they cost nothing (no LTO here).
     void  transport_set_on_quarter(std::function<void(const bool)> cb) override { _core.driver().set_on_quarter(cb); }
     void  transport_set_on_clock_out(std::function<void()> cb) override         { _core.driver().set_on_clock_out(cb); }
-    Driver::Source transport_source() override      { return _core.driver().source(); }
+    ClockSource::Source transport_source() override { return _core.driver().source(); }
     void  transport_tick(const bool external_tick) override { _core.driver().tick(external_tick); }
     bool  transport_is_external_sync() override     { return _core.driver().is_external_sync(); }
     void  transport_reset() override                { _core.driver().reset(); }

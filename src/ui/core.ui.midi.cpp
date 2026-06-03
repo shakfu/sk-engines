@@ -17,8 +17,8 @@ void CoreUI::tick()
     auto new_state = false;
     auto midi_state = _process_midi();
     switch (_engine.transport_source()) {
-        case Driver::Source::ts4: new_state = _hw.GetClockInputState(); break;
-        case Driver::Source::midi: new_state = midi_state; break;
+        case ClockSource::ts4: new_state = _hw.GetClockInputState(); break;
+        case ClockSource::midi: new_state = midi_state; break;
         default: break;
     }
     _engine.transport_tick(new_state && !clock_state);

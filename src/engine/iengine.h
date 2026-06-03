@@ -6,9 +6,8 @@
 #include <cstdint>
 #include <functional>
 
-#include "core/engine_context.h"  // EngineContext, DeckRef::Ref (via deck.h)
-#include "core/driver.h"          // Driver::Source - leaks here pending the transport relocation
-#include "engine/mode.h"          // Route (for route()) - contract-owned (item 5b)
+#include "core/engine_context.h"  // EngineContext (contract; type-clean since item 5b)
+#include "engine/mode.h"          // Route, ClockSource (contract-owned, items 5b/5c)
 #include "engine/engine_params.h" // ParamId, FxKind, Capabilities
 #include "engine/display_model.h" // DisplayModel
 #include "engine/engine_leds.h"   // FxLeds/PlayLeds/AltLeds/TransportLeds/DeckLeds/RingGeometry
@@ -26,15 +25,12 @@ namespace spotykach {
 // advertises which optional regions are live. CoreUI/Storage drive the engine through this
 // interface instead of a concrete GranularEngine.
 //
-// Deliberately NOT on IEngine yet (see docs/item2-interface-lift-plan.md):
-//   - The LED query methods (*_leds / render_ring on GranularEngine) are retired by
-//     render(DisplayModel&) in sub-round 2b; until then they stay concrete.
-//   - process_cv (the DAC modulation outputs) lands in sub-round 2c, once its block-rate
-//     mechanism is designed (no per-sample virtual on the DAC ISR).
-//   - Switch-config writes + deck-state readbacks (Categories 2-3) await the item-3 toolkit and
-//     stay concrete on GranularEngine via core().
-// The transport_* group forwards to the engine's Driver today (Driver::Source leaks above);
-// relocating Driver to a platform service is deferred and will likely remove these from IEngine.
+// The whole platform-driven surface now lives on IEngine (items 2-3 complete): params/config,
+// MIDI, pads, CV/gate, storage, transport, the LED queries, and render(DisplayModel). `core()` is
+// gone; CoreUI/Storage hold only IEngine. The contract carries no granular types (Phase 5 R1/R2):
+// DeckRef/Mode/Route/ModType/GritMode/DeckSource/ClockSource are contract-owned (engine/...). The
+// transport_* group still forwards to the granular Driver (which stays in granular); relocating the
+// Driver class to a platform transport service is deferred to a transport-capable 2nd engine.
 class IEngine {
 public:
     virtual ~IEngine() = default;
@@ -113,7 +109,7 @@ public:
     // --- Transport (Transport capability; forwards to the engine's clock for now) ------------
     virtual void  transport_set_on_quarter(std::function<void(const bool)> cb) {}
     virtual void  transport_set_on_clock_out(std::function<void()> cb) {}
-    virtual Driver::Source transport_source() { return Driver::Source::internal; }
+    virtual ClockSource::Source transport_source() { return ClockSource::internal; }
     virtual void  transport_tick(const bool external_tick) {}
     virtual bool  transport_is_external_sync() { return false; }
     virtual void  transport_reset() {}

@@ -43,4 +43,16 @@ enum class DeckSource: uint8_t { // was Deck::Source (recording input select)
     internal
 };
 
+// The transport clock source (was Driver::Source), exposed via transport_source() + TransportLeds.
+// UNSCOPED (struct-nested like DeckRef) because the values ARE the external PPQN and are used as
+// ints (Driver::SetPPQNIn). Item 5c (R2): the last granular type-leak out of the contract; the
+// Driver *class* stays in granular (relocating it is deferred to a transport-capable 2nd engine).
+struct ClockSource {
+    enum Source : uint8_t {
+        internal = 1,
+        ts4      = 4,
+        midi     = 24
+    };
+};
+
 };

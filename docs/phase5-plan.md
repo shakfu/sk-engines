@@ -72,12 +72,21 @@ files are touched once, not twice.
   the `Driver::Source` leak (Round 2) and the `LEDRing` leak (handle here or Round 2).
 - Verify: granular + passthrough build; host test; flash granular (behavior-preserving rename).
 
-### Round 2 — transport relocation (`5c`, = the deferred 3b-2b)
-- Move `Driver` out of `Core` to a platform transport service; remove `Driver::Source` from the
-  contract (replace with a contract-owned transport-source enum). This is the heavy, isolated round
-  the earlier items deferred. Also lift `LEDRing`'s drawing half so `display_model.h` stops including
-  `ui/led.ring.h` if not done in Round 1.
-- Verify: both variants build; flash granular (transport behavior is hardware-only) + passthrough.
+### Round 2 — RESCOPED to "R2-lite" + DONE 2026-06-03 (all 4 targets build; flash-verify pending)
+**Reframed:** the full Driver-class relocation is NOT needed for the boundary goal (the only
+contract->Driver leak is the `Driver::Source` enum; the platform drives transport via the
+`transport_*` virtuals, never including `driver.h`). So R2-lite did just the boundary-relevant part;
+the Driver-class move to a platform transport service is deferred to a transport-capable 2nd engine.
+- `Driver::Source` -> contract `ClockSource` (`struct ClockSource { enum Source ... }`, unscoped -
+  values are PPQN used as ints); `Driver` aliases it. Removed `core/driver.h` from `iengine.h` +
+  `engine_leds.h` -> **`engine_leds.h` fully `core/`-free**.
+- Lifted `LEDRing` + `Color` (`led.ring.{h,cpp}` + `color.{h,cpp}`) `src/ui/` -> `src/engine/`
+  (they're contract components the engine draws into via render()); `display_model.h` now includes
+  `engine/led.ring.h`, no `ui/` dep. Makefile: added them as explicit shared `CPP_SOURCES`; host
+  Makefile drops its `UI_SRC` (the `src/engine/*.cpp` wildcard now covers them).
+- **Contract is now type-clean AND ui-clean.** Only residual: `iengine.h` includes the (type-clean)
+  `core/engine_context.h` by path - its physical move to `engine/` happens in R3. Granular 190048,
+  passthrough 149988, host main + test green. **=> ROUND 2 COMPLETE.**
 
 ### Round 3 — relocate the granular DSP (`5a`)
 - `git mv src/core/*` -> `src/engine/granular/` (minus the contract headers already moved out);
