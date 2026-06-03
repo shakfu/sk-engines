@@ -22,8 +22,11 @@ else ifeq ($(ENGINE), passthrough)
 C_DEFS += -DSPK_ENGINE_PASSTHROUGH
 # Passthrough engine is header-only (src/engine/passthrough/); no engine .cpp to compile.
 ENGINE_SOURCES =
+else ifeq ($(ENGINE), delay)
+C_DEFS += -DSPK_ENGINE_DELAY
+ENGINE_SOURCES = src/engine/delay/delay_engine.cpp
 else
-$(error Unknown ENGINE '$(ENGINE)' - use 'granular' or 'passthrough')
+$(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', or 'delay')
 endif
 
 USE_FATFS = 1
@@ -74,16 +77,21 @@ FORCE:
 
 # One-shot variant flash: clean -> build -> flash over DFU. Put the device in DFU mode first
 # (hold Reset ~3s until the bottom pad LEDs breathe white), then `make granular` / `make passthrough`.
-.PHONY: granular passthrough
-granular:
+.PHONY: engine-granular engine-passthrough engine-delay
+engine-granular:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=granular
 	$(MAKE) ENGINE=granular program-dfu
 
-passthrough:
+engine-passthrough:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=passthrough
 	$(MAKE) ENGINE=passthrough program-dfu
+
+engine-delay:
+	$(MAKE) clean
+	$(MAKE) -j8 ENGINE=delay
+	$(MAKE) ENGINE=delay program-dfu
 
 libs:
 	cd $(LIBDAISY_DIR) && $(MAKE)

@@ -13,6 +13,9 @@
 #elif defined(SPK_ENGINE_PASSTHROUGH)
   #include "engine/passthrough/passthrough_engine.h"
   namespace spotykach { using ActiveEngine = PassthroughEngine; }
+#elif defined(SPK_ENGINE_DELAY)
+  #include "engine/delay/delay_engine.h"
+  namespace spotykach { using ActiveEngine = DelayEngine; }
 #else
-  #error "No engine selected: build with ENGINE=granular (default) or ENGINE=passthrough"
+  #error "No engine selected: build with ENGINE=granular (default), passthrough, or delay"
 #endif
