@@ -1,38 +1,52 @@
 # Platform / engine refactor — status & resume guide
 
-## Resuming — start here (paused 2026-06-02)
+## Resuming — start here (paused 2026-06-03)
 
-**Done:** pre-work (SRAM #2/#5), item 1 (transport off `core()`), item 2 (IEngine interface lifted,
-sub-rounds 2a-2d). All flash-verified.
+**The platform/engine refactor is structurally COMPLETE, committed, and hardware-verified.** A fixed
+hardware/UI platform hosts a swappable DSP engine, proven end-to-end on the board. Everything below is
+on `main` (user confirmed "everything committed").
 
-**Commit state (verified 2026-06-02):** all rounds through item 2 are committed and pushed to
-`origin/main`; the working tree is clean. Item 2's surface landed across `732e4b3` (`granular_engine.h`
-+ UI edits) and `8b1b435` (`iengine.h` interface lift, the `IEngine&`/`IEngine*` flip in
-`CoreUI`/`Storage`, the `Route` move `core.h`->`mode.h`, and the 2 new files
-`src/engine/engine_leds.h` + `docs/item2-interface-lift-plan.md`). (The earlier "item 2 lives only in
-the working tree" warning is resolved. Note `8b1b435`'s message — "pause till later" — is vague for
-what is actually the bulk of the interface lift, so bisecting this range by message won't help.)
+**Done + committed + flash-verified:**
+- **Items 1-2:** transport off `core()`; `IEngine` interface lifted (Strategy A, no-op default bodies).
+- **Item 3(a):** platform fully decoupled from `Core` — `engine.core()` deleted, `CoreUI` holds only
+  `IEngine&`, `Storage` an `IEngine*`. Rounds: 3a-0 (config channel `set_config`/`tempo_to_fit`/
+  `toggle_grit_mode`), 3a-2 (MValue pickup rekeyed by `ParamId`, one array vs ~21 named members),
+  3a-3 (`DeckLayout`/`size_sets_tempo` queries replace the pot-queue/apply-pass `Mode` reads),
+  3a-3b (seeding via pre-seeded `param()`), 3a-4 (delete `core()` + the `GranularEngine&` ctor).
+- **Item 3(b)-1:** build-time engine selection (`make ENGINE=passthrough`; `src/engine/engine_select.h`
+  -> `ActiveEngine`; `build/.engine-stamp` rebuilds `app.o` on switch, no `make clean` needed) +
+  `PassthroughEngine` promoted to a real capability-less variant + the Storage `CapTapeStorage` gate
+  (`capabilities()`'s first consumer, also the boot null-deref fix). BOTH variants flash + run on
+  hardware via `make program-dfu` (granular default re-verified = the 3b-1 regression check).
+- **3a-1 `render(DisplayModel)` was DEFERRED into 3(b):** a granular render() migration is mostly
+  platform interaction-grammar (storage/tape/palette/blink) the engine can't own; it only pays off for
+  a non-granular engine drawing its own panel. See docs/item3-plan.md.
 
-**Item 3(a) CORE GOAL COMPLETE (2026-06-02, builds clean; flash-verify pending): `engine.core()` is
-DELETED.** Rounds 3a-0 (config channel), 3a-2 (MValue->ParamId array), 3a-3 (DeckLayout query
-replacing the apply-pass/pot-queue mode reads), 3a-3b (seeding via pre-seeded `param()`), 3a-4 (delete
-`core()`, ctor now `IEngine&`). The platform no longer touches `Core` — grep finds no `.core()`/`_core`
-in src/ui, src/memory, app.cpp. Full per-round detail in `docs/item3-plan.md`. **Remaining:** 3a-1
-`render(DisplayModel)` (deferred, OFF the critical path — LED queries already route through IEngine);
-then item 3(b) (promote `PassthroughEngine` to a real 2nd variant + the engine-select mechanism in
-`docs/architecture.md`). The "Still coupled / Categories 2-3" section below is now historical.
+**Gotcha (keep in mind):** daisy-web-programmer caches the firmware image and flashed a stale granular
+binary once; use `make program-dfu` (or clear its cache) when swapping variants.
 
-**Historical resume notes (item 2 era, kept for context):**
-1. Item 2 is committed (verified 2026-06-02, see commit-state note above) — no action needed.
-1. Item 2 is committed (verified 2026-06-02, see commit-state note above) — no action needed.
-2. **SRAM lever is spent (verified 2026-06-02).** `-Os` was applied to `core.ui.midi.cpp` and
-   reclaimed only **16 B** (424 -> 440 B free) — MIDI parsing isn't a meaningful size contributor, so
-   the doc's "remaining lever" is effectively exhausted. **TU-level `-Os` sweeps are no longer a viable
-   funding source.** Item 3 must instead be **net-neutral-or-negative on SRAM by deleting as it adds** —
-   the real headroom is the intrinsic reduction from removing the `*_leds`/`render_ring` query wrapper
-   bodies + the platform's color/blink interpretation once the engine fills `DisplayModel` directly.
-3. Scope item 3(a) (`render(DisplayModel)` + `MValue`->`ParamId` toolkit, which absorbs `core()`
-   Categories 2-3) vs 3(b) (promote `PassthroughEngine`, forces `Driver` relocation) — decide order.
+**Pressing constraint — SRAM:** the **granular build is at 88 B free** (`SRAM_EXEC` 99.95%). Any change
+touching granular/shared-platform code risks overflow; a *separate* engine build (passthrough ~36 KB
+free) is unaffected. TU-level `-Os` sweeps are spent (midi.cpp gave 16 B); reclaim must come from
+deleting code or `-Os` on a not-yet-optimised non-RT TU (e.g. `storage.cpp`).
+
+**Next — pick a direction (paused here, no decision made):**
+1. **Reclaim SRAM** (recommended before any shared-platform change): `-Os` on `storage.cpp`, revisit the
+   +48 B Storage gate cost, or other non-RT levers. Low-glory but de-risks everything granular-side.
+2. **Build a real second engine** (the payoff): a useful non-granular engine (delay / synth / sampler).
+   Its own build has ample SRAM, so granular's 88 B doesn't block it.
+3. **3b-2 — finish engine #2:** wire `render(DisplayModel)` so the passthrough shows its level meter
+   (grounds the display contract for future engines) + relocate `Driver` to a platform transport service
+   only when an engine wants `CapTransport`. Touches shared platform -> reclaim SRAM first.
+4. **Phase 5 — build boundaries + DSP libs:** split into static libs (`libgranular`/`libtransport`/...),
+   drop the blanket `-Isrc/`, give platform and engine separate include roots to enforce the layering.
+
+**Optional tidy:** exclude `src/core/*.cpp` from the passthrough source set (currently still compiled,
+so granular static-init runs at boot — harmless but wasteful) for a provably granular-free variant.
+
+**Plan docs:** `docs/item3-plan.md` (3a rounds + the 3a-1 deferral), `docs/item3b-plan.md` (3b-1 done +
+3b-2 outline + the engine-switch-guard gotcha), `docs/architecture.md` (platform/engine design +
+engine-select mechanism + writing-a-new-engine checklist).
 
 ## Goal
 
