@@ -8,6 +8,46 @@ by the Git tag / release they ship in. The latest released baseline is 1.0.2.
 
 ## [Unreleased]
 
+### Added
+
+- **Engine-drawn panels via `render(DisplayModel)` + the `CapOwnDisplay` capability.** An engine that
+  advertises `CapOwnDisplay` fills the hardware-agnostic `DisplayModel` (rings + named indicators) in
+  `render()`; the platform calls it from the main loop and blits it in the LED ISR (`_blit_display`),
+  bypassing the granular `*_leds`/`render_ring` query path. The granular engine (no `CapOwnDisplay`)
+  keeps its query+interpret path unchanged. The bundled `PassthroughEngine` now draws a live input
+  level meter + lit play indicators instead of blank rings. (`src/engine/iengine.h`,
+  `src/engine/engine_params.h`, `src/ui/core.ui.cpp`, `src/ui/core.ui.leds.cpp`)
+
+- **One-shot variant flash targets.** `make granular` and `make passthrough` do clean -> build ->
+  flash (`program-dfu`) in a single command (device in DFU mode first). (`Makefile`)
+
+### Changed
+
+- **Compiler-enforceable platform/engine boundary (Phase 5, rounds 1-2).** The `IEngine` contract no
+  longer pulls any granular `core/` types: the A/B selector (`DeckRef`), `Mode`/`Route`, the LED-query
+  enums (`ModType`/`GritMode`/`DeckSource`), and the transport clock source (`ClockSource`) were
+  relocated into contract headers (`src/engine/deck_ref.h`, `src/engine/mode.h`); the granular classes
+  alias them, so their internals are unchanged (a duplicate `ModType` in `core.h` was unified away).
+  `EngineBuffers` was type-stripped (`void*` + counts, casts in `Core::init`) so `engine_context.h`
+  carries no granular types; `LEDRing` + `Color` moved `src/ui/` -> `src/engine/` so `DisplayModel`
+  has no `ui/` dependency. All behaviour-preserving (codegen-neutral) and verified across the granular,
+  passthrough, and host builds. The granular DSP `Driver` stays in `core/`; relocating it to a
+  platform transport service is deferred to a transport-capable engine. (`src/engine/`, `src/core/`,
+  `src/ui/`)
+
+- **Engine file layout + build selection.** Engines live under `src/engine/<name>/`
+  (`passthrough/passthrough_engine.h`); the `ENGINE` Makefile variable now selects the engine sources
+  so a non-granular build doesn't compile the granular DSP at all. A `build/.engine-stamp` dependency
+  rebuilds the engine-dependent object when `ENGINE` changes, so switching variants needs no
+  `make clean`. See `docs/engine-layout.md`. (`Makefile`, `src/engine/engine_select.h`)
+
+### Fixed
+
+- **Host harness restored.** `make -C host` and `make -C host test` had stopped compiling when the
+  `engine.core()` escape hatch was removed (both reached the graph through it). Rewritten onto the
+  public `IEngine` API (`transport_*`, `set_config`, `on_*_pad`); the one white-box assertion that
+  read internal fx state was dropped (no longer observable by design). (`host/`)
+
 ## [0.1.3]
 
 ### Fixed
