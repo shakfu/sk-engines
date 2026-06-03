@@ -1,7 +1,7 @@
 #pragma once
 
 #include "biquad.h"
-#include "deline.h"
+#include "dsp/deline.h"
 #include "../../common.h"
 
 namespace infrasonic {

@@ -1,6 +1,6 @@
 #include "modulator.h"
 #include "config.h"
-#include "hann.h"
+#include "dsp/hann.h"
 
 using namespace spotykach;
 

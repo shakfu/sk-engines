@@ -1,7 +1,7 @@
 #pragma once
 
 #include <algorithm>
-#include "hann.h"
+#include "dsp/hann.h"
 #include "nocopy.h"
 
 namespace spotykach {

@@ -2,7 +2,7 @@
 
 #include <algorithm>
 #include <bitset>
-#include "hann.h"
+#include "dsp/hann.h"
 #include "config.h"
 #include "nocopy.h"
 #include "buffer.h"

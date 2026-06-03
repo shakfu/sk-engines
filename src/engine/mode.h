@@ -55,4 +55,29 @@ struct ClockSource {
     };
 };
 
+// Key-interval grid (was driver.h's kKeyInterval): the musical lengths the key-quarter clock divides
+// to, in 1/16 units (k4_4 = 1 bar). UNSCOPED + int8_t because the values ARE PPQN-relative tick
+// counts used arithmetically - the UI's ring layout does interval/4, the Driver uses them as
+// divisors. Contract-owned (Phase 5 R4) so the UI's key-interval ring display no longer includes the
+// granular driver.h. The granular Driver keeps its kKeyIntervals[] lookup; only the enum is shared.
+enum kKeyInterval: int8_t {
+    k1_16   = 1,    // 1/16th
+    k1_4    = 4,
+    k2_4    = 8,
+    k3_4    = 12,
+    k4_4    = 16,   // 1 bar
+    k5_4    = 20,
+    k6_4    = 24,
+    k7_4    = 28,
+    k8_4    = 32,   // 2 bars
+    k9_4    = 36,
+    k10_4   = 40,
+    k11_4   = 44,
+    k12_4   = 48,   // 3 bars
+    k13_4   = 52,
+    k14_4   = 56,
+    k15_4   = 60,
+    k16_4   = 64    // 4 bars
+};
+
 };

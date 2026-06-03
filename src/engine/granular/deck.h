@@ -10,7 +10,7 @@
 #include "dispatcher.h"
 #include "xfade.h"
 #include "fx.h"
-#include "smooth.h"
+#include "dsp/smooth.h"
 #include "daisysp.h"
 #include "engine/deck_ref.h"
 

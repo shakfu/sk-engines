@@ -7,7 +7,6 @@
 #include "hw/hardware.h"
 #include "hw/buffer.sdram.h"
 #include "ui/core.ui.h"
-#include "engine/granular/core.h"
 #include "engine/itimesource.h"
 #include "engine/engine_select.h"  // ActiveEngine (build-time engine selection, item 3b)
 #include "memory/storage.h"

@@ -17,27 +17,9 @@
 
 namespace spotykach {
 
-enum kKeyInterval: int8_t {
-    k1_16   = 1,    // 1/16th
-    k1_4    = 4,
-    k2_4    = 8, 
-    k3_4    = 12,
-    k4_4    = 16,   // 1 bar
-    k5_4    = 20,
-    k6_4    = 24,
-    k7_4    = 28,
-    k8_4    = 32,   // 2 bars
-    k9_4    = 36,   
-    k10_4   = 40,
-    k11_4   = 44,
-    k12_4   = 48,   // 3 bars
-    k13_4   = 52,
-    k14_4   = 56,
-    k15_4   = 60,
-    k16_4   = 64    // 4 bars
-};
-
-static const std::array<kKeyInterval, 17> kKeyIntervals = { 
+// kKeyInterval is contract-owned (engine/mode.h, included above) since Phase 5 R4 - the UI's
+// key-interval ring display needs the enum without pulling this header. The lookup array stays here.
+static const std::array<kKeyInterval, 17> kKeyIntervals = {
     kKeyInterval::k1_16,
     kKeyInterval::k1_4, 
     kKeyInterval::k2_4,

@@ -3,7 +3,7 @@
 #ifndef LFO_H
 #define LFO_H
 
-#include "lutsinosc.h"
+#include "dsp/lutsinosc.h"
 #include "daisysp.h"
 #include "random.lfo.h"
 

@@ -1,10 +1,10 @@
 #include "buffer.h"
 #include <cstring>
-#include "hann.h"
+#include "dsp/hann.h"
 #include "expose.h"
 #include "daisysp.h"
 #include "../../common.h"
-#include "sample16.h"
+#include "memory/sample16.h"
 
 using namespace spotykach;
 

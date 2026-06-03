@@ -37,7 +37,7 @@ void Tempo::tap()
                 summ += _times[i];
             }
             _avg = static_cast<float>(summ) / static_cast<float>(size);
-            _bpm = std::clamp(60000.f / _avg, kMin, kMax);
+            _bpm = std::clamp(60000.f / _avg, kTempoMinBpm, kTempoMaxBpm);
         }
     }
     _prev_time = time;

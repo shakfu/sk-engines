@@ -14,7 +14,7 @@
 #include "modulator.h"
 #include "xfade.h"
 #include "panner.h"
-#include "smooth.h"
+#include "dsp/smooth.h"
 
 namespace spotykach {
 

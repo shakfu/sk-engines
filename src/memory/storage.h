@@ -2,9 +2,10 @@
 
 #include <array>
 #include <functional>
+#include <string>
 #include "hw/card.h"
 #include "hw/buffer.sdram.h"
-#include "engine/granular/deck.h"
+#include "engine/deck_ref.h"
 #include "config.h"
 #include "nocopy.h"
 

@@ -7,10 +7,10 @@
 #include <array>
 
 #include "../common.h"
+#include "config.h"              // shared tempo range helpers (tempo_abs_to_norm) - was via core.h
 #include "engine/color.h"
 #include "hw/hardware.h"
-#include "engine/granular/core.h"
-#include "engine/granular_engine.h"
+#include "engine/iengine.h"
 #include "engine/display_model.h"
 #include "memory/storage.h"
 #include "nocopy.h"
@@ -19,7 +19,7 @@
 #include "calibrator.h"
 #include "time.iterval.h"
 #include "engine/led.ring.h"
-#include "../engine/granular/lutsinosc.h"
+#include "dsp/lutsinosc.h"          // shared sine LUT (relocated to src/ root in R4; also used by granular lfo.h)
 
 namespace spotykach { 
 

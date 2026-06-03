@@ -2,6 +2,7 @@
 
 #include <string.h>
 #include <stdint.h>
+#include <algorithm>
 
 namespace spotykach {
 
@@ -145,5 +146,19 @@ static constexpr unsigned kSourceMaxSeconds = 84;
 #else
 static constexpr unsigned kSourceMaxSeconds = 42;
 #endif
+
+// Tempo control range (BPM). The platform's tempo knob spans this range; the granular Tempo class and
+// the UI's tempo MValue display both convert through the helpers below. Lives here (not on Tempo) so
+// the platform has no granular dependency for tempo display - Phase 5 R4.
+static constexpr float kTempoMinBpm = 20.f;
+static constexpr float kTempoMaxBpm = 250.f;
+inline float tempo_abs_to_norm(const float bpm)
+{
+    return (bpm - kTempoMinBpm) / (kTempoMaxBpm - kTempoMinBpm);
+}
+inline float tempo_norm_to_abs(const float norm)
+{
+    return kTempoMinBpm + std::clamp(norm, 0.f, 1.f) * (kTempoMaxBpm - kTempoMinBpm);
+}
 
 }

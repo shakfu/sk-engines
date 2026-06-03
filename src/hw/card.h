@@ -2,7 +2,7 @@
 
 #include <daisy_seed.h>
 #include "nocopy.h"
-#include "../engine/granular/pcm_loader.h"
+#include "memory/pcm_loader.h"
 
 namespace spotykach {
 

@@ -91,7 +91,7 @@ void CoreUI::_init_values()
 
     mv(ParamId::ClickMix)[DeckRef::A].set(0.f);
     mv(ParamId::KeyInterval)[DeckRef::A].set(.0588f); //Corresponds to 1/4th
-    mv(ParamId::Tempo)[DeckRef::A].set(Tempo::abs_to_norm(120.f));
+    mv(ParamId::Tempo)[DeckRef::A].set(tempo_abs_to_norm(120.f));
 }
 
 void CoreUI::process() 
@@ -607,7 +607,7 @@ void CoreUI::_process_switches()
         else {
             if (!_engine.transport_is_external_sync()) {
                 _engine.transport_tap_tempo();
-                mv(ParamId::Tempo)[DeckRef::A].set(Tempo::abs_to_norm(_engine.transport_tempo()));
+                mv(ParamId::Tempo)[DeckRef::A].set(tempo_abs_to_norm(_engine.transport_tempo()));
             }
             if (!_tap_hold.is_holding()) {
                 _tap_hold.begin();
@@ -647,7 +647,7 @@ void CoreUI::_reset_changing_value_id()
 void CoreUI::_set_tempo_by_size(const DeckRef::Ref ref, const float fraction)
 {
     auto bpm = _engine.tempo_to_fit(ref, fraction);
-    auto norm = Tempo::abs_to_norm(bpm); 
+    auto norm = tempo_abs_to_norm(bpm); 
     mv(ParamId::Tempo)[DeckRef::A].set(norm);
     _engine.transport_set_tempo_norm(norm);
 }
