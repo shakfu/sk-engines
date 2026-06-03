@@ -3,11 +3,21 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 
 #include "itimesource.h"
 #include "engine/deck_ref.h" // DeckRef::Count (contract; no granular deck.h dependency)
 
 namespace spotykach {
+
+// An opaque block of SDRAM the platform hands the engine to sub-allocate however it likes (via
+// engine/arena.h's Arena). This is the generalization target that replaces the granular-shaped
+// EngineBuffers below: Stage 1 (item: EngineBuffers generalization) adds it and routes the delay
+// engine through it; Stage 2 will migrate granular's buffers onto it and retire EngineBuffers.
+struct EngineArena {
+    uint8_t* base  = nullptr;
+    size_t   bytes = 0;
+};
 
 // Large buffers handed to the engine by the platform (firmware: the SDRAM pool; desktop: malloc).
 // Type-opaque so this contract header carries no granular types (item 5b): `source`/`track` are
@@ -28,7 +38,8 @@ struct EngineBuffers {
 struct EngineContext {
     float              sample_rate;
     float              block_size;
-    EngineBuffers      buffers;
+    EngineBuffers      buffers;   // granular-shaped (Stage 2 will fold these into `arena`)
+    EngineArena        arena;     // opaque SDRAM the engine sub-allocates (item: EngineBuffers generalization)
     const ITimeSource* time;
 };
 

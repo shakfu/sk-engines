@@ -10,6 +10,7 @@
 #include "../core/fx.h"
 #include "../core/buffer.h"
 #include "card.h"
+#include "core/engine_context.h" // EngineArena
 
 namespace spotykach {
 
@@ -45,6 +46,11 @@ public:
     size_t* slices_b() const;
 
     uint8_t* card_buffer() const;
+
+    // Opaque SDRAM arena for non-granular engines to sub-allocate (item: EngineBuffers
+    // generalization, Stage 1). Reuses the currently-unused third source ("Undo") buffer; Stage 2
+    // will make this the single backing store and retire the typed granular buffers above.
+    EngineArena engineArena();
 
 private:
     NOCOPY(SDRAMBuffer)

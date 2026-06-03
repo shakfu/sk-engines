@@ -144,6 +144,7 @@ void AppImpl::Init()
     ctx.buffers.slices[DeckRef::B] = pool.slices_b();
     ctx.buffers.track[DeckRef::A] = pool.track_buffer_a();
     ctx.buffers.track[DeckRef::B] = pool.track_buffer_b();
+    ctx.arena = pool.engineArena(); // opaque SDRAM for engines that sub-allocate (e.g. the delay)
     _engine.init(ctx);
 
     _ui.init();

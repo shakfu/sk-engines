@@ -1,6 +1,7 @@
 // SYNTHUX ACADEMY /////////////////////////////////////////
 // SPOTYKACH ///////////////////////////////////////////////
 #include "engine/delay/delay_engine.h"
+#include "engine/arena.h"
 
 #include <cmath>
 
@@ -85,9 +86,12 @@ float DelayEngine::Tap::process(float x)
 // --- DelayEngine ----------------------------------------------------------------------------------
 void DelayEngine::init(const EngineContext& ctx)
 {
-    // Borrow the per-deck source buffers as opaque float delay memory (see header note).
-    _tap[DeckRef::A].init(ctx.buffers.source[DeckRef::A], ctx.sample_rate);
-    _tap[DeckRef::B].init(ctx.buffers.source[DeckRef::B], ctx.sample_rate);
+    // Sub-allocate two delay lines from the platform's opaque SDRAM arena (item: EngineBuffers
+    // generalization). Each tap uses 2 s of float storage (must match Tap::init's `len`).
+    Arena arena(ctx.arena);
+    const size_t need = static_cast<size_t>(ctx.sample_rate * 2.0f);
+    _tap[DeckRef::A].init(arena.alloc<float>(need), ctx.sample_rate);
+    _tap[DeckRef::B].init(arena.alloc<float>(need), ctx.sample_rate);
 }
 
 void DelayEngine::process(const float* const* in, float** out, size_t size)

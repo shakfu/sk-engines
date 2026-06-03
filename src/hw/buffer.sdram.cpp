@@ -103,6 +103,12 @@ uint8_t* SDRAMBuffer::card_buffer() const
     return _card_buffer;
 }
 
+EngineArena SDRAMBuffer::engineArena()
+{
+    // Reuse the unused third source buffer (~16 MB) as the engine arena (Stage 1).
+    return { reinterpret_cast<uint8_t*>(_srcBuf3), sizeof(_srcBuf3) };
+}
+
 Event* SDRAMBuffer::track_buffer_a() const 
 { 
     return _trackBufA; 
