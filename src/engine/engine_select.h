@@ -11,7 +11,7 @@
   #include "engine/granular_engine.h"
   namespace spotykach { using ActiveEngine = GranularEngine; }
 #elif defined(SPK_ENGINE_PASSTHROUGH)
-  #include "engine/passthrough_engine.h"
+  #include "engine/passthrough/passthrough_engine.h"
   namespace spotykach { using ActiveEngine = PassthroughEngine; }
 #else
   #error "No engine selected: build with ENGINE=granular (default) or ENGINE=passthrough"

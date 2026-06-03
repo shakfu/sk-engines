@@ -5,8 +5,11 @@
 // readback (param) before the live UI rewire switches onto them. Checks:
 //   1. param() round-trips the last set_param value for every ParamId, across all modes.
 //   2. set_param drives the real graph without producing NaN/Inf (finite-output smoke).
-//   3. a getter-backed leaf effect (FluxMix -> fx().flux_mix()) actually lands.
-//   4. capabilities() reports the granular set.
+//   3. capabilities() reports the granular set.
+//
+// Drives the engine through the public IEngine surface only (transport_*/set_config/param/...);
+// item 3a-4 removed the engine.core() escape hatch, so internal leaf state is no longer
+// observable from a test - the cache round-trip + finite-output smoke cover the param API.
 
 #include <cmath>
 #include <cstdio>
@@ -14,7 +17,7 @@
 #include "core/core.h"
 #include "core/mode.h"
 #include "engine/granular_engine.h"
-#include "engine/passthrough_engine.h"
+#include "engine/passthrough/passthrough_engine.h"
 #include "engine/display_model.h"
 #include "host_setup.h"
 
@@ -54,6 +57,15 @@ const char* mode_name(Mode m) {
     }
 }
 
+// Mode -> the set_config(ConfigId::Mode, ...) selector the engine maps (Slice=0, Reel=1, Drift=2).
+int mode_to_config(Mode m) {
+    switch (m) {
+        case Mode::Drift: return 2;
+        case Mode::Reel:  return 1;
+        default:          return 0; // Slice
+    }
+}
+
 } // namespace
 
 int main() {
@@ -63,10 +75,10 @@ int main() {
 
     GranularEngine engine;
     engine.init(ctx);
-    engine.core().driver().set_on_quarter([](bool) {});
-    engine.core().driver().set_on_clock_out([]() {});
-    engine.core().set_route(Route::Stereo);
-    engine.core().set_route(Route::DoubleMono);
+    engine.transport_set_on_quarter([](bool) {});
+    engine.transport_set_on_clock_out([]() {});
+    engine.set_config(ConfigId::Route, Deck::A, 0); // Stereo
+    engine.set_config(ConfigId::Route, Deck::A, 1); // DoubleMono
 
     // (4) capabilities
     auto caps = engine.capabilities();
@@ -80,7 +92,7 @@ int main() {
 
     for (Mode mode : {Mode::Reel, Mode::Slice, Mode::Drift}) {
         std::printf("mode %s\n", mode_name(mode));
-        for (auto ref : {Deck::A, Deck::B}) engine.core().deck(ref).set_mode(mode);
+        for (auto ref : {Deck::A, Deck::B}) engine.set_config(ConfigId::Mode, ref, mode_to_config(mode));
 
         // (1) per-deck param() round-trips set_param across a value sweep.
         int k = 0;
@@ -98,9 +110,9 @@ int main() {
             check(approx(engine.param(id, Deck::A), v), "global param() round-trips set_param");
         }
 
-        // (3) leaf spot-check: FluxMix clamps-and-stores, so the getter must match.
-        engine.set_param(ParamId::FluxMix, Deck::A, 0.3f);
-        check(approx(engine.core().deck(Deck::A).fx().flux_mix(), 0.3f), "FluxMix lands on fx().flux_mix()");
+        // (3) leaf spot-check removed: it read engine.core().deck().fx().flux_mix() to prove
+        // set_param reached the DSP leaf. item 3a-4 removed core(), so leaf state isn't observable
+        // from the public IEngine API; the cache round-trip (1) + finite-output smoke (2) cover it.
 
         // (4) CV + gate + mod-speed: the host CAN drive these directly (unlike pads/LEDs).
         // Exercise every handler across both decks; just assert no crash + cache where applicable.
@@ -133,7 +145,7 @@ int main() {
                 float s = 0.4f * std::sin(2.f * 3.14159265f * 220.f * (b * host::kBlock + i) / host::kSampleRate);
                 in_l[i] = in_r[i] = s;
             }
-            engine.core().driver().tick(false);
+            engine.transport_tick(false);
             engine.process(in_ptrs, out_ptrs, host::kBlock);
             for (size_t i = 0; i < host::kBlock; i++) {
                 if (!std::isfinite(out_l[i]) || !std::isfinite(out_r[i])) finite = false;
@@ -151,8 +163,8 @@ int main() {
         pe.init(ctx);
         pe.prepare();
 
-        // capabilities: Transport only - no Recording/Tape/Sequencer.
-        check(pe.capabilities() == CapTransport, "passthrough capabilities() == CapTransport");
+        // capabilities: own-display only - no Recording/Tape/Sequencer/Transport.
+        check(pe.capabilities() == CapOwnDisplay, "passthrough capabilities() == CapOwnDisplay");
 
         // process: out == in, sample for sample.
         bool passthrough = true;

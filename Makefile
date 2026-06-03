@@ -16,9 +16,11 @@ endif
 ENGINE ?= granular
 ifeq ($(ENGINE), granular)
 C_DEFS += -DSPK_ENGINE_GRANULAR
-ENGINE_SOURCES = src/engine/granular_engine.cpp
+# Granular engine = its IEngine wrapper + all the DSP under src/core/ (legacy location).
+ENGINE_SOURCES = src/engine/granular_engine.cpp $(wildcard src/core/*.cpp)
 else ifeq ($(ENGINE), passthrough)
 C_DEFS += -DSPK_ENGINE_PASSTHROUGH
+# Passthrough engine is header-only (src/engine/passthrough/); no engine .cpp to compile.
 ENGINE_SOURCES =
 else
 $(error Unknown ENGINE '$(ENGINE)' - use 'granular' or 'passthrough')
@@ -47,7 +49,6 @@ C_DEFS += -DINFS_LOG_TARGET=daisy::LOGGER_EXTERNAL
 CPP_SOURCES = \
 	main.cpp \
 	app.cpp \
-	$(wildcard src/core/*.cpp) \
 	$(ENGINE_SOURCES) \
 	$(wildcard src/hw/*.cpp) \
 	$(wildcard src/ui/*.cpp) \
