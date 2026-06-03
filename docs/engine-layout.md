@@ -15,16 +15,16 @@ How the firmware's files split between the fixed **platform**, the **contract**,
 | `src/engine/display_model.h` | `DisplayModel` (the panel an own-display engine fills) |
 | `src/engine/engine_leds.h` | LED-query POD structs (granular-flavored, but referenced by `IEngine`) |
 | `src/engine/engine_select.h` | build define -> `ActiveEngine` typedef |
-| `src/core/engine_context.h` | `EngineContext`/`EngineBuffers` (init injection) — *logically contract, still in core/* |
-| `src/core/itimesource.h` | `ITimeSource` clock abstraction — *logically contract, still in core/* |
+| `src/engine/engine_context.h` | `EngineContext`/`EngineArena` (init injection) — contract, moved here in R3 |
+| `src/engine/itimesource.h` | `ITimeSource` clock abstraction — contract, moved here in R3 |
 
 ### Granular engine
 
-`src/engine/granular_engine.{h,cpp}` + **all of `src/core/`** except the two contract headers above
-(~58 files: `core`, `deck`, `generator`, `vox`, `buffer`, `fx*`, `driver`, `synclock`, `tempo`,
-`divider`, `track`, `panner`, `modulator`, `detector`, `follower`, `biquad`, `adenv`, `click`,
-`cpattern`, plus their headers and `mode.h`/`speed.map.h`/etc.). `src/core/` is the granular engine's
-private DSP, kept at its legacy path for now (see "Deferred").
+`src/engine/granular_engine.{h,cpp}` + **all of `src/engine/granular/`** (~58 files: `core`, `deck`,
+`generator`, `vox`, `buffer`, `fx*`, `driver`, `synclock`, `tempo`, `divider`, `track`, `panner`,
+`modulator`, `detector`, `follower`, `biquad`, `adenv`, `click`, `cpattern`, plus their headers and
+`mode.h`/`speed.map.h`/etc.). `src/engine/granular/` is the granular engine's private DSP (relocated
+from `src/core/` in Phase 5 R3, 2026-06-03).
 
 ### Passthrough engine
 
@@ -37,7 +37,7 @@ Lives in its own subdirectory: **`src/engine/<name>/`**, holding `<name>_engine.
 engine's private DSP. It depends only on the contract headers. Checklist (also in `architecture.md`):
 
 1. Subclass `IEngine`; implement `init`/`prepare`/`process` (own your DSP privately — do not reuse
-   `src/core/`, that is granular-specific).
+   `src/engine/granular/`, that is granular-specific).
 2. Return a `capabilities()` bitset; override only the methods for regions you support.
 3. Map `ParamId`s in `set_param`/`param`; fill `render(DisplayModel&)` and advertise `CapOwnDisplay`
    if you draw your own panel.
@@ -52,7 +52,7 @@ engine:
 ```make
 ifeq ($(ENGINE), granular)
   C_DEFS += -DSPK_ENGINE_GRANULAR
-  ENGINE_SOURCES = src/engine/granular_engine.cpp $(wildcard src/core/*.cpp)
+  ENGINE_SOURCES = src/engine/granular_engine.cpp $(wildcard src/engine/granular/*.cpp)
 else ifeq ($(ENGINE), passthrough)
   C_DEFS += -DSPK_ENGINE_PASSTHROUGH
   ENGINE_SOURCES =                       # header-only
@@ -67,35 +67,30 @@ switch, so swapping needs no `make clean`.
 
 **Done + verified:**
 - **Per-engine subdir convention** adopted; `passthrough_engine.h` moved to `src/engine/passthrough/`.
-- **Granular DSP compiled only for the granular build:** `src/core/*.cpp` moved out of the global
-  `CPP_SOURCES` into the granular `ENGINE_SOURCES`. **Verified the passthrough now links with zero
-  `src/core/` objects** — i.e. the platform has *no link-dependency on the granular DSP* (the 3a/3b
-  decoupling is clean at the link level, not just conceptually). Non-granular builds no longer compile
-  the 58 granular files at all.
-
-**Deferred to Phase 5 (real couplings, not cheap moves):**
-- **Relocating `src/core/` -> `src/engine/granular/`.** ~58 files + every `#include "core/..."`; pure
-  mechanical churn with no functional gain — do it as the build-boundary round. Until then `src/core/`
-  = "granular's private DSP (legacy path)."
-- **Moving the contract headers** `engine_context.h`/`itimesource.h` into `src/engine/`. Looks cheap
-  but `engine_context.h` includes `core/deck.h` (for `Buffer::Frame`/`Event`/`Deck::Ref` in
-  `EngineBuffers`), so moving it would make `engine/` depend on `core/` — backwards. Relocate it
-  *with* the `EngineBuffers` generalization below.
+- **Granular DSP compiled only for the granular build:** `src/engine/granular/*.cpp` lives in the
+  granular `ENGINE_SOURCES`, not the global `CPP_SOURCES`. Non-granular builds link with zero granular
+  objects — the platform has *no link-dependency on the granular DSP*.
+- **Relocated `src/core/` -> `src/engine/granular/`** (Phase 5 R3, 2026-06-03). 64 git renames + 14
+  include-repath edits; codegen-identical (SRAM/SDRAM byte-identical pre/post). The two contract
+  headers (`engine_context.h`, `itimesource.h`) moved up to `src/engine/`.
+- **`EngineBuffers` generalized to an opaque SDRAM arena** (2026-06-03). `EngineContext` now carries
+  only an `EngineArena {base, bytes}`; each engine sub-allocates its own buffers via `engine/arena.h`.
+  The SDRAM pool (`hw/buffer.sdram`) is now granular-DSP-free — it hands out one 48 MB byte block and
+  knows nothing of `source/detect/delay/slices/track`. This was the coupling that blocked R4.
 
 ## Known contract leaks (the build-boundary work for Phase 5)
 
-The contract isn't pure yet — three granular dependencies leak into it:
-1. `iengine.h` -> `core/driver.h` (`Driver::Source` for `transport_source()`) — removed by the
-   `Driver` relocation (3b-2b).
-2. `engine_context.h` -> `core/deck.h`: **`EngineBuffers` is granular-shaped** (`source/detect/delay/
-   slices/track`). A new engine with different buffer needs (e.g. a delay's delay-line) should *drive*
-   how this generalizes — design it against the first real consumer, not abstractly.
-3. `display_model.h` -> `ui/led.ring.h` (`DisplayModel` embeds `LEDRing`) — a UI dependency in the
-   contract; lift `LEDRing`'s drawing half out, or make the dependency one-way, in Phase 5.
+Resolved during R1-R3 + the arena generalization:
+1. ~~`iengine.h` -> `core/driver.h` (`Driver::Source`)~~ — `ClockSource` lifted to the contract (R1/R2).
+2. ~~`engine_context.h` -> `core/deck.h` (`EngineBuffers` granular-shaped)~~ — replaced by the opaque
+   `EngineArena`; the contract no longer references any granular type.
+3. ~~`display_model.h` -> `ui/led.ring.h`~~ — `LEDRing`/`Color` lifted out to `src/engine/` (R2).
 
-`Deck::Ref` (from `core/deck.h`) is also the pervasive "which of the two channels" type every
-`IEngine` method takes — conceptually platform, physically granular. A future cleanup could move it
-to the contract.
+Remaining for **R4** (enforce the boundary so the compiler, not convention, prevents leaks): build
+granular as a static lib, give platform/contract/engine separate include roots, and DROP the blanket
+`-Isrc/`. The residual platform-reaches-into-granular path-includes R4 must resolve: `ui/core.ui.h`
+(`engine/granular/core.h` + `lutsinosc.h`), `memory/storage.h` (`engine/granular/deck.h`), `hw/card.h`
+(`engine/granular/pcm_loader.h`). `DeckRef` is already contract-owned (`engine/deck_ref.h`).
 
 ## Host harness — fixed 2026-06-03
 

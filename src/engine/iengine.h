@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <functional>
 
-#include "core/engine_context.h"  // EngineContext (contract; type-clean since item 5b)
+#include "engine/engine_context.h"  // EngineContext (contract; type-clean since item 5b)
 #include "engine/deck_ref.h"      // DeckRef (the A/B selector every method takes)
 #include "engine/mode.h"          // Route, ClockSource (contract-owned, items 5b/5c)
 #include "engine/engine_params.h" // ParamId, FxKind, Capabilities

@@ -9,7 +9,7 @@
 #include "../common.h"
 #include "engine/color.h"
 #include "hw/hardware.h"
-#include "core/core.h"
+#include "engine/granular/core.h"
 #include "engine/granular_engine.h"
 #include "engine/display_model.h"
 #include "memory/storage.h"
@@ -19,7 +19,7 @@
 #include "calibrator.h"
 #include "time.iterval.h"
 #include "engine/led.ring.h"
-#include "../core/lutsinosc.h"
+#include "../engine/granular/lutsinosc.h"
 
 namespace spotykach { 
 

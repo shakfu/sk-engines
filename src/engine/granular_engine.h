@@ -6,8 +6,8 @@
 #include "engine/engine_params.h"
 #include "engine/engine_leds.h"   // FxLeds/PlayLeds/AltLeds/TransportLeds/DeckLeds/RingGeometry
 #include "engine/display_model.h"
-#include "core/core.h"
-#include "core/speed.map.h"
+#include "engine/granular/core.h"
+#include "engine/granular/speed.map.h"
 #include "nocopy.h"
 
 #include <cstdint>

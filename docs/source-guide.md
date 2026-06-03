@@ -24,7 +24,7 @@ enough to grep for.
 | `expose.h`        | `Expose::values()` debug singleton for printing internal values; gated behind `DEBUG`. |
 | `nocopy.h`        | `NOCOPY(Class)` macro used throughout to delete copy/assign. |
 
-## `src/core/` - DSP and musical timing
+## `src/engine/granular/` - DSP and musical timing
 
 This is where audio is generated. None of it touches hardware directly.
 

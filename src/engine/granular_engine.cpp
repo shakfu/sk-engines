@@ -1,8 +1,8 @@
 // SYNTHUX ACADEMY /////////////////////////////////////////
 // SPOTYKACH ///////////////////////////////////////////////
 #include "engine/granular_engine.h"
-#include "core/mode.h"
-#include "core/event.h"
+#include "engine/granular/mode.h"
+#include "engine/granular/event.h"
 #include "config.h"
 
 using namespace spotykach;

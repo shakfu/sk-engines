@@ -8,8 +8,8 @@
 #include <cstdint>
 #include <vector>
 
-#include "core/itimesource.h"
-#include "core/engine_context.h"
+#include "engine/itimesource.h"
+#include "engine/engine_context.h"
 
 namespace host {
 

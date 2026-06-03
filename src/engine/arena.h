@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <cstddef>
 
-#include "core/engine_context.h" // EngineArena
+#include "engine/engine_context.h" // EngineArena
 
 namespace spotykach {
 

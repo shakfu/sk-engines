@@ -5,7 +5,7 @@
 #include <functional>
 
 #include "nocopy.h"
-#include "itimesource.h"
+#include "engine/itimesource.h"
 #include "engine/mode.h"   // ClockSource (Driver::Source alias target, item 5c)
 #include "synclock.h"
 #include "divider.h"

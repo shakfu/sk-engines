@@ -7,7 +7,7 @@
 
 #include "nocopy.h"
 #include "config.h"
-#include "engine_context.h"
+#include "engine/engine_context.h"
 
 #include "mode.h"     // Mode + Route (Route moved here from core.h)
 #include "driver.h"

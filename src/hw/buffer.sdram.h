@@ -4,7 +4,7 @@
 #include "daisy_seed.h"
 #include "nocopy.h"
 #include "card.h"
-#include "core/engine_context.h" // EngineArena
+#include "engine/engine_context.h" // EngineArena
 
 namespace spotykach {
 

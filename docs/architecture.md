@@ -95,7 +95,7 @@ Dependencies point downward; nothing below depends on anything above it.
                   IEngine, GranularEngine, (PassthroughEngine sketch),
                   ParamId/Capabilities, DisplayModel, engine_leds
                           |
-                  src/core/  (the granular DSP graph)   <-- engine-private, platform-independent
+                  src/engine/granular/  (the granular DSP graph)   <-- engine-private, platform-independent
                   Core, Deck, Generator/Vox, Buffer, Fx, Driver, Track, Panner, Modulator
                           |
                   src/hw/  (HAL: Daisy peripherals, SDRAM pool, board I/O)
@@ -107,7 +107,7 @@ Dependencies point downward; nothing below depends on anything above it.
   storage/tape state machine. It does not know what the engine *is*.
 - **`src/engine/` - the seam + engines.** `IEngine` is the contract; each engine implements it
   and owns its DSP graph privately.
-- **`src/core/` - the granular engine's private DSP.** Now platform-independent (no libDaisy
+- **`src/engine/granular/` - the granular engine's private DSP.** Now platform-independent (no libDaisy
   include; all hardware injected via `EngineContext`). It is *not* a shared layer - it belongs
   to `GranularEngine`. A different engine brings its own DSP, not `Core`.
 - **`src/hw/`, `src/memory/` - HAL and persistence.** Platform-side.
@@ -140,7 +140,7 @@ engine's `Mode`.
 
 ### Hardware-free core via `EngineContext`
 
-`src/core/engine_context.h` is how the DSP graph avoids any libDaisy dependency. At `init()`
+`src/engine/engine_context.h` is how the DSP graph avoids any libDaisy dependency. At `init()`
 the platform fills an `EngineContext` - `sample_rate`, `block_size`, an `ITimeSource` (clock
 abstraction; `daisy::System` on hardware, a host clock off-target), and `EngineBuffers` (the
 large SDRAM buffers, from `SDRAMBuffer::pool()` on hardware or `malloc` on the host) - and
@@ -251,7 +251,7 @@ Build a variant with `make ENGINE=passthrough`; the default stays `granular`.
 ### Writing a new engine - checklist
 
 1. Subclass `IEngine`; implement the three pure-virtual lifecycle methods. Own your DSP
-   privately (do not reuse `src/core/` - that is granular-specific).
+   privately (do not reuse `src/engine/granular/` - that is granular-specific).
 2. Return a `capabilities()` bitset for the regions you support; override only those methods.
 3. Map `ParamId`s in `set_param`/`param` (own any mode fanout internally).
 4. If `CapTapeStorage`: implement the `audio_*` byte-port so the platform tape can save/load
@@ -319,7 +319,7 @@ analysis.
                                    | owns
         audio in  ----->  +--------+----------+  -----> audio out
                           |       Core        |
-                          |    (src/core)     |
+                          |    (src/engine/granular)     |
                           +--+-----+------+---++
                              |     |      |   |
               +--------------+     |      |   +-------------+
@@ -351,7 +351,7 @@ through the `audio_*` byte-port, not a `Deck*`.
 
 ## 7. Core DSP graph (the granular engine's private DSP)
 
-`Core` (`src/core/core.cpp`) is the DSP graph owned privately by `GranularEngine`; it is not a
+`Core` (`src/engine/granular/core.cpp`) is the DSP graph owned privately by `GranularEngine`; it is not a
 shared platform layer. It holds the two decks plus the shared `Driver`, `XFade` (the
 A/B crossfade mix), `Click`, `Panner`, and a per-deck `Modulator`. The per-sample signal
 flow in `Core::process` is, conceptually:
@@ -370,7 +370,7 @@ panner behaviour.
 
 ### Clock / transport
 
-`Driver` (`src/core/driver.cpp`) is the transport. `SynClock` runs a 48-PPQN internal
+`Driver` (`src/engine/granular/driver.cpp`) is the transport. `SynClock` runs a 48-PPQN internal
 timeline that can phase-lock to an external 4-PPQN (TRS) or 24-PPQN (MIDI) source using
 fractional tick accumulation and a tempo-adjustment feedback loop. `Tempo` provides
 tap-tempo (averaged, with outlier rejection, clamped 20-250 BPM). `Divider` turns the
@@ -385,7 +385,7 @@ outgoing MIDI clock.
 
 ### Deck
 
-Each `Deck` (`src/core/deck.cpp`) is a complete looper voice:
+Each `Deck` (`src/engine/granular/deck.cpp`) is a complete looper voice:
 
 - `Buffer` - the loop buffer with a record/overdub state machine (idle/fadein/sustain/
   fadeout, 4 ms Hann fades) and feedback-controlled overdub. Reads use linear or cubic

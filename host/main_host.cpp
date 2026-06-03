@@ -20,8 +20,8 @@
 #include <string>
 #include <vector>
 
-#include "core/core.h"
-#include "core/mode.h"
+#include "engine/granular/core.h"
+#include "engine/granular/mode.h"
 #include "engine/granular_engine.h"
 
 #include "host_setup.h"

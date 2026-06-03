@@ -4,7 +4,7 @@
 #include <functional>
 #include "hw/card.h"
 #include "hw/buffer.sdram.h"
-#include "core/deck.h"
+#include "engine/granular/deck.h"
 #include "config.h"
 #include "nocopy.h"
 

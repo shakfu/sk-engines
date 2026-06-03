@@ -10,6 +10,12 @@ by the Git tag / release they ship in. The latest released baseline is 1.0.2.
 
 ### Added
 
+- **Stereo delay engine (second full engine).** `make engine-delay` builds a dual-tap stereo delay
+  (deck A = left, deck B = right) with fractional-interpolated delay lines: SIZE sets delay time, POS
+  the feedback, the mix knob the wet/dry, and PITCH transposes the delay taps +/-1 octave via a
+  crossfading two-head pitch shifter. Advertises `CapOwnDisplay` (blue pitch rings). Proves the
+  platform hosts a non-granular engine end to end. (`src/engine/delay/`)
+
 - **Engine-drawn panels via `render(DisplayModel)` + the `CapOwnDisplay` capability.** An engine that
   advertises `CapOwnDisplay` fills the hardware-agnostic `DisplayModel` (rings + named indicators) in
   `render()`; the platform calls it from the main loop and blits it in the LED ISR (`_blit_display`),
@@ -23,6 +29,22 @@ by the Git tag / release they ship in. The latest released baseline is 1.0.2.
 
 ### Changed
 
+- **Granular DSP relocated to `src/engine/granular/` (Phase 5, round 3).** `git mv src/core` ->
+  `src/engine/granular/`, with the two contract headers (`engine_context.h`, `itimesource.h`) moved up
+  to the contract root `src/engine/`. All `#include "core/..."` references repathed across the tree and
+  both Makefiles. The source tree now reads as one platform plus per-engine subdirectories
+  (`granular/`, `delay/`, `passthrough/`). Purely mechanical (64 git renames; SRAM/SDRAM byte-identical
+  before and after). (`src/engine/granular/`, `src/engine/`)
+
+- **`EngineBuffers` generalized to an opaque SDRAM arena.** `EngineContext` now carries a single
+  `EngineArena {base, bytes}` instead of granular-shaped buffer pointers; each engine sub-allocates its
+  own buffers with a bump allocator (`src/engine/arena.h`). The SDRAM pool (`hw/buffer.sdram`) hands
+  out one 48 MB block and no longer references any granular buffer (`source/detect/delay/slices/track`)
+  - removing the last hardware-layer dependency on the granular engine. Granular's `Core::init`
+  sub-allocates from the arena preserving the exact sizes, 32 KB alignment, and zeroing (behaviour-
+  identical). Reclaimed ~4.2 KB of `SRAM_EXEC` as a side effect. (`src/engine/arena.h`,
+  `src/hw/buffer.sdram.{h,cpp}`, `src/engine/engine_context.h`, `src/engine/granular/core.cpp`)
+
 - **Compiler-enforceable platform/engine boundary (Phase 5, rounds 1-2).** The `IEngine` contract no
   longer pulls any granular `core/` types: the A/B selector (`DeckRef`), `Mode`/`Route`, the LED-query
   enums (`ModType`/`GritMode`/`DeckSource`), and the transport clock source (`ClockSource`) were
@@ -31,8 +53,8 @@ by the Git tag / release they ship in. The latest released baseline is 1.0.2.
   `EngineBuffers` was type-stripped (`void*` + counts, casts in `Core::init`) so `engine_context.h`
   carries no granular types; `LEDRing` + `Color` moved `src/ui/` -> `src/engine/` so `DisplayModel`
   has no `ui/` dependency. All behaviour-preserving (codegen-neutral) and verified across the granular,
-  passthrough, and host builds. The granular DSP `Driver` stays in `core/`; relocating it to a
-  platform transport service is deferred to a transport-capable engine. (`src/engine/`, `src/core/`,
+  passthrough, and host builds. The granular DSP `Driver` stays inside the granular engine; relocating
+  it to a platform transport service is deferred to a transport-capable engine. (`src/engine/`,
   `src/ui/`)
 
 - **Engine file layout + build selection.** Engines live under `src/engine/<name>/`

@@ -16,8 +16,8 @@ endif
 ENGINE ?= granular
 ifeq ($(ENGINE), granular)
 C_DEFS += -DSPK_ENGINE_GRANULAR
-# Granular engine = its IEngine wrapper + all the DSP under src/core/ (legacy location).
-ENGINE_SOURCES = src/engine/granular_engine.cpp $(wildcard src/core/*.cpp)
+# Granular engine = its IEngine wrapper + all the DSP under src/engine/granular/ (legacy location).
+ENGINE_SOURCES = src/engine/granular_engine.cpp $(wildcard src/engine/granular/*.cpp)
 else ifeq ($(ENGINE), passthrough)
 C_DEFS += -DSPK_ENGINE_PASSTHROUGH
 # Passthrough engine is header-only (src/engine/passthrough/); no engine .cpp to compile.

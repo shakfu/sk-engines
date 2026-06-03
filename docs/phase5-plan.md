@@ -88,11 +88,20 @@ the Driver-class move to a platform transport service is deferred to a transport
   `core/engine_context.h` by path - its physical move to `engine/` happens in R3. Granular 190048,
   passthrough 149988, host main + test green. **=> ROUND 2 COMPLETE.**
 
-### Round 3 — relocate the granular DSP (`5a`)
-- `git mv src/core/*` -> `src/engine/granular/` (minus the contract headers already moved out);
-  update the granular-internal `#include "core/..."` -> `"engine/granular/..."` and
-  `granular_engine.{h,cpp}`. Platform is already `core/`-free (Round 1), so it's untouched.
-- Verify: both variants build; host; flash granular.
+### Round 3 — relocate the granular DSP (`5a`) -- DONE 2026-06-03
+- `git mv src/core` -> `src/engine/granular/`; the two contract headers (`engine_context.h`,
+  `itimesource.h`) then moved up to `src/engine/` (the contract root). Repathed every external
+  `"core/..."`/`"../core/..."` include -> `"engine/granular/..."` (and the two contract headers ->
+  `"engine/..."`) across the tree (app/hw/ui/memory/engine/host) + both Makefiles. Two gotchas hit:
+  (1) granular files reaching `src/` root via `../common.h`/`../nocopy.h` went one level deeper, so
+  those became `../../`; (2) `iengine.h` had been getting `DeckRef` transitively via
+  `engine_context.h` and now includes `engine/deck_ref.h` directly. Granular internals were already
+  fully relative, so the bulk move needed no edits inside them.
+- Result: `src/core` gone; `src/engine/` = contract headers at top + `granular/`, `delay/`,
+  `passthrough/` subdirs. Git tracked it as 64 renames + 14 include edits, 0 untracked.
+  SRAM/SDRAM byte-identical to pre-move (185928 B / 75%) => codegen-identical, paths only. All four
+  targets build (granular/passthrough/delay) + host main + test green. **=> ROUND 3 COMPLETE.**
+  Flash-verify is a formality (no codegen change) but worth a granular boot smoke-check.
 
 ### Round 4 — enforce (`5d`)
 - Build the granular DSP as a static lib (`libgranular`); give the platform, the contract, and each

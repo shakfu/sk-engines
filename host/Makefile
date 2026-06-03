@@ -1,6 +1,6 @@
 # Desktop host harness for the Spotykach DSP core.
 #
-# Builds the real src/core/ for the host (no libDaisy: the <daisy.h> shim under host/shim
+# Builds the real src/engine/granular/ for the host (no libDaisy: the <daisy.h> shim under host/shim
 # supplies the few symbols common.h needs). DaisySP is portable C++ and is compiled from
 # source. Run from the repo root:  make -C host   then   ./host/build/host_spotykach
 
@@ -17,7 +17,7 @@ DAISYSP_INC = $(addprefix -I,$(wildcard $(DAISYSP)/*/))
 INCLUDES  = -Ishim -I$(ROOT)/src -I. -I$(DAISYSP) $(DAISYSP_INC)
 CXXFLAGS  = -std=c++17 -O2 -Wall -Wno-unused-variable -Wno-unused-but-set-variable $(INCLUDES)
 
-CORE_SRC    = $(wildcard $(ROOT)/src/core/*.cpp)
+CORE_SRC    = $(wildcard $(ROOT)/src/engine/granular/*.cpp)
 # src/engine/*.cpp now includes the hardware-free LEDRing + Color impls (moved out of src/ui/ in
 # Phase 5 R2), which the DisplayModel needs; the rest of src/ui/ stays out (it needs the HAL).
 ENGINE_SRC  = $(wildcard $(ROOT)/src/engine/*.cpp)
