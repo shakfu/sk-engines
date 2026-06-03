@@ -25,14 +25,16 @@ on `main` (user confirmed "everything committed").
 **Gotcha (keep in mind):** daisy-web-programmer caches the firmware image and flashed a stale granular
 binary once; use `make program-dfu` (or clear its cache) when swapping variants.
 
-**Pressing constraint — SRAM:** the **granular build is at 88 B free** (`SRAM_EXEC` 99.95%). Any change
-touching granular/shared-platform code risks overflow; a *separate* engine build (passthrough ~36 KB
-free) is unaffected. TU-level `-Os` sweeps are spent (midi.cpp gave 16 B); reclaim must come from
-deleting code or `-Os` on a not-yet-optimised non-RT TU (e.g. `storage.cpp`).
+**SRAM headroom — RECLAIMED 2026-06-03 (88 B -> 552 B free).** `-Os` applied to `storage.cpp` +
+`card.cpp` (both pure main-loop SD I/O, perf-irrelevant) reclaimed 464 B; `SRAM_EXEC` 190376 -> 189912
+(99.71%). Comfortable for the next shared-platform work. **Remaining safe runway if needed:** `-Os` on
+`led.ring.cpp` / `color.cpp` (62 Hz LED-render path) / `calibrator.cpp` (startup) — another few hundred
+bytes. AVOID `hardware.cpp`/`ws2812.cpp` (audio-callback analog reads / timing-sensitive driver).
+TU `-Os` is the only lever now (midi.cpp earlier gave just 16 B); the audio DSP in `src/core/*.cpp`
+stays `-O2 -funroll-loops`.
 
 **Next — pick a direction (paused here, no decision made):**
-1. **Reclaim SRAM** (recommended before any shared-platform change): `-Os` on `storage.cpp`, revisit the
-   +48 B Storage gate cost, or other non-RT levers. Low-glory but de-risks everything granular-side.
+1. **Reclaim SRAM — DONE (552 B free).** Further levers listed above if a later round needs them.
 2. **Build a real second engine** (the payoff): a useful non-granular engine (delay / synth / sampler).
    Its own build has ample SRAM, so granular's 88 B doesn't block it.
 3. **3b-2 — finish engine #2:** wire `render(DisplayModel)` so the passthrough shows its level meter

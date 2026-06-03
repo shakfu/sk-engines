@@ -2,6 +2,10 @@
 #include "../memory/wav.h"
 #include <string.h>
 
+// Size-optimize this whole TU to reclaim SRAM_EXEC. SD-card chunked I/O is main-loop only (never
+// the audio path), so -Os is perf-irrelevant here.
+#pragma GCC optimize("Os")
+
 using namespace spotykach;
 using namespace daisy;
 

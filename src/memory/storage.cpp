@@ -5,6 +5,10 @@
 #include "engine/iengine.h"
 #include "wav.h"
 
+// Size-optimize this whole TU to reclaim SRAM_EXEC. Storage is the SD save/load/preload state
+// machine, driven entirely from the main loop (never the audio path), so -Os is perf-irrelevant.
+#pragma GCC optimize("Os")
+
 using namespace spotykach;
 
 static const std::string kRootDir = "SK";
