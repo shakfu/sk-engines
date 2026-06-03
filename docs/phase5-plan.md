@@ -44,6 +44,7 @@ Do the **contract type cleanup before the file relocation**: once the platform s
 files are touched once, not twice.
 
 ### Round 1 — clean the contract types (`5b`)
+
 - **DeckRef extraction — DONE 2026-06-03 (all 4 targets build; flash-verify pending, very low risk).**
   Created `src/engine/deck_ref.h` (`struct DeckRef { enum Ref : uint8_t { A,B,Count,None=0xff }; }` —
   UNSCOPED to keep implicit-int for array indexing; my earlier `enum class` recommendation was
@@ -73,10 +74,12 @@ files are touched once, not twice.
 - Verify: granular + passthrough build; host test; flash granular (behavior-preserving rename).
 
 ### Round 2 — RESCOPED to "R2-lite" + DONE 2026-06-03 (all 4 targets build; flash-verify pending)
+
 **Reframed:** the full Driver-class relocation is NOT needed for the boundary goal (the only
 contract->Driver leak is the `Driver::Source` enum; the platform drives transport via the
 `transport_*` virtuals, never including `driver.h`). So R2-lite did just the boundary-relevant part;
 the Driver-class move to a platform transport service is deferred to a transport-capable 2nd engine.
+
 - `Driver::Source` -> contract `ClockSource` (`struct ClockSource { enum Source ... }`, unscoped -
   values are PPQN used as ints); `Driver` aliases it. Removed `core/driver.h` from `iengine.h` +
   `engine_leds.h` -> **`engine_leds.h` fully `core/`-free**.
@@ -89,6 +92,7 @@ the Driver-class move to a platform transport service is deferred to a transport
   passthrough 149988, host main + test green. **=> ROUND 2 COMPLETE.**
 
 ### Round 3 — relocate the granular DSP (`5a`) -- DONE 2026-06-03
+
 - `git mv src/core` -> `src/engine/granular/`; the two contract headers (`engine_context.h`,
   `itimesource.h`) then moved up to `src/engine/` (the contract root). Repathed every external
   `"core/..."`/`"../core/..."` include -> `"engine/granular/..."` (and the two contract headers ->
@@ -103,19 +107,37 @@ the Driver-class move to a platform transport service is deferred to a transport
   targets build (granular/passthrough/delay) + host main + test green. **=> ROUND 3 COMPLETE.**
   Flash-verify is a formality (no codegen change) but worth a granular boot smoke-check.
 
-### Round 4 — enforce (`5d`)
-- Build the granular DSP as a static lib (`libgranular`); give the platform, the contract, and each
-  engine separate include roots; drop the blanket `-Isrc/` so the platform physically cannot include
-  granular headers (the compiler enforces the boundary). Optionally `libfx`/`libseq`/`libtransport`
-  splits. Wire into the existing `ENGINE`-selected Makefile.
-- Verify: both variants build + link; flash both.
+### Round 4 — cut the couplings + enforce -- DONE 2026-06-03
+
+Done in two parts. **R4a (cut):** the remaining platform->granular includes were all dead, stale, or
+misplaced code, not real DSP couplings (Stage-2's arena work had already removed the hard one). Fixes:
+`common.h` moved repo-root -> `src/` (it was wrongly at root); the tempo BPM<->norm range + helpers
+moved off granular `Tempo` into `config.h` (`kTempoMin/MaxBpm`, `tempo_abs_to_norm`); `kKeyInterval`
+lifted to the contract `engine/mode.h` (the `kKeyIntervals[]` array stays granular-private);
+`lutsinosc.h` and the PCM trio (`pcm_loader`/`pcm_convert`/`sample16`) relocated to a shared
+`src/dsp/` tier and `src/memory/` respectively; `storage.h` -> `engine/deck_ref.h`; dead `core.h`/
+`granular_engine.h` includes dropped. Result: **`grep` confirms zero `engine/granular/` includes in
+`hw/`/`ui/`/`memory/`** - only `app.cpp` (composition root, via `engine_select.h`) sees the concrete
+engine. New `src/dsp/` shared-primitive tier seeded (`lutsinosc`, `smooth`, `deline`, `hann`); the
+`.cpp`-bearing primitives + a delay-engine refactor to use them are in `TODO.md`. SRAM 185912 B (neutral).
+
+**R4b (enforce):** rather than the originally-planned static-lib + separate-include-roots + drop-`-Isrc/`
+(disproportionate churn for a single-binary firmware, with `app.cpp`/`granular_engine` straddling roots),
+a `check-boundary` Make target greps `hw/ui/memory` for any `engine/granular/` include and fails the
+build; it is wired as a prerequisite of `all`, so every `make` enforces it. Verified: passes clean,
+fails on an injected violation, all three engine builds + host green. The static-lib/separate-roots
+approach remains a future option if a true multi-engine-in-one-binary/plugin model is ever needed.
+**=> ROUND 4 COMPLETE. PHASE 5 COMPLETE.** (Flash-verify the granular path - tempo/key-interval ring/
+sample-load/LED-breathe - since R4a touched it, though codegen-identical.)
 
 ## Deferred (not Phase 5)
+
 - **`EngineBuffers` shape generalization** (opaque arena the engine sub-allocates) — wants the real
   2nd engine to validate; Round 1 only removes the type dependency.
 - Optional `config.h` sample-rate constants as functions; `Buffer` sample-format templating.
 
 ## Risks / watch-items
+
 - **Churn + behavior preservation:** Rounds 1 and 3 are large mechanical diffs over hardware-only-
   verified code; keep each behavior-preserving and flash-verify. The `DeckRef` rename is a pure
   type/spelling change (codegen-identical) — lowest-risk despite size.

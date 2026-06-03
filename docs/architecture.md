@@ -80,7 +80,7 @@ runtime.
 
 Dependencies point downward; nothing below depends on anything above it.
 
-```
+```text
             app.cpp / main.cpp          boot + wiring + the 4 execution contexts (section 5)
                   |
       +-----------+------------------------------+
@@ -92,13 +92,15 @@ Dependencies point downward; nothing below depends on anything above it.
       +------------------ IEngine ---------------+    <-- THE SEAM (src/engine/iengine.h)
                           |
                   src/engine/  (the contract + engines)
-                  IEngine, GranularEngine, (PassthroughEngine sketch),
+                  IEngine, GranularEngine, DelayEngine, PassthroughEngine,
                   ParamId/Capabilities, DisplayModel, engine_leds
                           |
                   src/engine/granular/  (the granular DSP graph)   <-- engine-private, platform-independent
                   Core, Deck, Generator/Vox, Buffer, Fx, Driver, Track, Panner, Modulator
                           |
                   src/hw/  (HAL: Daisy peripherals, SDRAM pool, board I/O)
+
+      src/dsp/  (engine-agnostic primitives: lutsinosc, smooth, deline, hann)  <-- shared base; platform + engines depend on it, never the reverse
 ```
 
 - **`src/ui/` (CoreUI) - the platform.** Owns the interaction grammar and talks to the engine
@@ -110,7 +112,17 @@ Dependencies point downward; nothing below depends on anything above it.
 - **`src/engine/granular/` - the granular engine's private DSP.** Now platform-independent (no libDaisy
   include; all hardware injected via `EngineContext`). It is *not* a shared layer - it belongs
   to `GranularEngine`. A different engine brings its own DSP, not `Core`.
+- **`src/dsp/` - engine-agnostic primitives.** Small reusable pieces (sine LUT, one-pole smoother,
+  delay line, Hann window) that any engine or the platform may use; the dependency flows toward `dsp/`,
+  never out of it. A primitive moves here once it has a real second consumer.
 - **`src/hw/`, `src/memory/` - HAL and persistence.** Platform-side.
+
+**The boundary is build-enforced.** The platform (`src/hw/`, `src/ui/`, `src/memory/`) includes *zero*
+granular headers - it reaches the engine only through the contract in `src/engine/`. `make check-boundary`
+(a prerequisite of `all`) greps those directories and fails the build if a granular include is
+reintroduced. Only `app.cpp`, the composition root that instantiates the build-selected engine via
+`engine_select.h`, is exempt. See [engine-layout.md](engine-layout.md) for the contract map and Phase 5
+history.
 
 ### The `IEngine` seam
 
@@ -212,6 +224,7 @@ exactly one place - `app.cpp`'s member declaration - and selection becomes a one
 flag.
 
 `Makefile`:
+
 ```make
 ENGINE ?= granular
 ifeq ($(ENGINE), granular)
@@ -226,6 +239,7 @@ CPP_SOURCES += $(ENGINE_SOURCES) $(wildcard src/engine/shared/*.cpp)
 ```
 
 `src/engine/engine_select.h` (new, the single `#if`):
+
 ```cpp
 #pragma once
 #if defined(SPK_ENGINE_GRANULAR)
@@ -240,6 +254,7 @@ CPP_SOURCES += $(ENGINE_SOURCES) $(wildcard src/engine/shared/*.cpp)
 ```
 
 `app.cpp`:
+
 ```cpp
 #include "engine/engine_select.h"   // not granular_engine.h
 ...
@@ -267,7 +282,7 @@ There is no RTOS. Concurrency comes from interrupts layered over a single main l
 `AppImpl` (`app.cpp`) owns the top-level subsystems and wires the callbacks in
 `AppImpl::Init`:
 
-```
+```text
 DaisyTimeSource _time_source; // injected clock (ITimeSource) for the engine
 GranularEngine  _engine;      // the active DSP engine, driven through IEngine
 CoreUI          _ui;          // platform: controls, LEDs, pads, MIDI, storage UI
@@ -304,7 +319,7 @@ analysis.
 
 ## 6. Subsystem map
 
-```
+```text
                          +-------------------+
             pads/pots --> |      CoreUI       | <-- MIDI in
             switches  --> | (src/ui) PLATFORM | --> MIDI out, gate out
@@ -356,7 +371,7 @@ shared platform layer. It holds the two decks plus the shared `Driver`, `XFade` 
 A/B crossfade mix), `Click`, `Panner`, and a per-deck `Modulator`. The per-sample signal
 flow in `Core::process` is, conceptually:
 
-```
+```text
 in[L,R] --route--> Deck A.process_out --> panner --\
                                                     >-- XFade(mix) --> +click --> SoftLimit --> out[L,R]
 in[L,R] --route--> Deck B.process_out --> panner --/

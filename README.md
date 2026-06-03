@@ -1,6 +1,6 @@
 # Spotykach (platform/engine fork)
 
-A fork of the official [Synthux Academy Spotykach](https://synthux.academy/store/spotykach) firmware, re-architected into a fixed hardware/UI **platform** that hosts a swappable DSP **engine**. The board and its whole interaction language — multi-function knobs with pickup, ring feedback, pad gestures, transport, SD-card sample storage, CV/gate, MIDI — stay fixed; a firmware variant swaps only the parameters and DSP. The dual-deck granular looper is the reference engine (and remains the default build); a minimal stereo passthrough ships as a second, non-granular engine that demonstrates the api.
+A fork of the official [Synthux Academy Spotykach](https://synthux.academy/store/spotykach) firmware, re-architected into a fixed hardware/UI **platform** that hosts a swappable DSP **engine**. The board and its whole interaction language — multi-function knobs with pickup, ring feedback, pad gestures, transport, SD-card sample storage, CV/gate, MIDI — stay fixed; a firmware variant swaps only the parameters and DSP. The dual-deck granular looper is the reference engine (and remains the default build); a stereo delay and a minimal stereo passthrough ship as additional, non-granular engines that demonstrate the api. The platform is decoupled from any one engine: `src/hw/`, `src/ui/`, and `src/memory/` include zero granular headers, and the build enforces it (see `make check-boundary`).
 
 This began as a feature-extension fork of the upstream firmware and grew into the platform/engine separation above, so future instruments can reuse the board and the interaction language rather than rewrite them. See [`docs/architecture.md`](docs/architecture.md) for the design and how to add an engine.
 
@@ -24,7 +24,7 @@ Then, build the actual firmware code:
 
 If successful the compiled binaries will end up in the `build/` directory along with many other intermediate build files:
 
-```
+```text
 spotykach.bin
 spotykach.elf
 ```
@@ -36,10 +36,18 @@ The `.elf` file is mainly used for debugging. The `.bin` file is the one that th
 The firmware is a fixed hardware/UI **platform** that hosts a swappable DSP **engine**, chosen at build time with the `ENGINE` variable:
 
 - `make -j8` — the granular looper (default; `ENGINE=granular`).
+- `make -j8 ENGINE=delay` — a stereo delay (dual tap, feedback, pitch-shifted taps).
 - `make -j8 ENGINE=passthrough` — a minimal stereo-passthrough variant.
 
-Switching `ENGINE` does not require `make clean`. Other build flags: `DEBUG=1` (enables UART
-logging) and `LOFI_INT16=1` (16-bit loop buffer, doubling record time). See [`docs/architecture.md`](docs/architecture.md) for the platform/engine design and how to add a new engine.
+Switching `ENGINE` does not require `make clean`. Other build flags: `DEBUG=1` (enables UART logging) and `LOFI_INT16=1` (16-bit loop buffer, doubling record time). See [`docs/architecture.md`](docs/architecture.md) for the platform/engine design and how to add a new engine.
+
+### Editor tooling (clangd)
+
+The repo's includes (the libDaisy header set, `-Isrc`, the build-time `-DSPK_ENGINE_*` define) aren't discoverable by clangd on their own, so generate a `compile_commands.json` from a real build:
+
+`bear -- make -j8`
+
+It is git-ignored and is a snapshot of whichever `ENGINE` you built (granular by default) — regenerate after adding files or changing flags.
 
 ## Flashing the Firmware
 
@@ -52,7 +60,7 @@ The bootloader version used in this project enables USB DFU firmware updating fr
 
 `make program-dfu` flashes whatever is currently in `build/` (it does not rebuild). To flash a non-default engine, build it first in the same step, e.g. `make ENGINE=passthrough && make program-dfu`.
 
-For convenience there are one-shot targets that **clean + build + flash** a variant (put the device in DFU mode first, as in step 3): `make granular` (the looper) and `make passthrough`.
+For convenience there are one-shot targets that **clean + build + flash** a variant (put the device in DFU mode first, as in step 3): `make engine-granular` (the looper), `make engine-delay`, and `make engine-passthrough`.
 
 Once finished, the device will automatically boot the new firmware. This can "brick" (temporarily) the device and require reinstallation of either the bootloader, the firmware binary, or both.
 

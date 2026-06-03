@@ -75,6 +75,23 @@ build/.engine-stamp: FORCE
 .PHONY: FORCE
 FORCE:
 
+# Platform/engine boundary guard (Phase 5 R4b). The platform (hw/ui/memory) must reach the engine
+# ONLY through the contract headers in src/engine/, never the granular DSP under src/engine/granular/.
+# app.cpp is exempt: it is the composition root that instantiates the concrete ActiveEngine via
+# engine_select.h. Wired as a prerequisite of `all`, so a `make` that reintroduces a granular include
+# into hw/ui/memory fails - the boundary is enforced by the build, not by convention/review.
+PLATFORM_DIRS = src/hw src/ui src/memory
+.PHONY: check-boundary
+check-boundary:
+	@if grep -rn '#include "engine/granular/\|#include "\.\./engine/granular/' $(PLATFORM_DIRS) ; then \
+		echo "*** BOUNDARY VIOLATION: a platform TU (hw/ui/memory) includes granular DSP (above)."; \
+		echo "*** The platform must use only the contract headers in src/engine/. See docs/engine-layout.md."; \
+		exit 1; \
+	fi
+	@echo "boundary OK: hw/ui/memory include no engine/granular/ headers"
+
+all: check-boundary
+
 # One-shot variant flash: clean -> build -> flash over DFU. Put the device in DFU mode first
 # (hold Reset ~3s until the bottom pad LEDs breathe white), then `make granular` / `make passthrough`.
 .PHONY: engine-granular engine-passthrough engine-delay

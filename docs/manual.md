@@ -3,7 +3,7 @@
 This is the in-repo user manual. Unlike the published manual, it is kept in sync with the
 firmware in this repository: when you change behaviour, update this file in the same
 commit. Where this document and the published manual
-(https://tsemah.notion.site/Spotykach-Manual-22c6331933b880c59108c0de25102bb5) disagree,
+(<https://tsemah.notion.site/Spotykach-Manual-22c6331933b880c59108c0de25102bb5>) disagree,
 this document describes what the current code actually does. Differences known at the time
 of writing are called out in [Notes vs published manual](#notes-vs-published-manual).
 

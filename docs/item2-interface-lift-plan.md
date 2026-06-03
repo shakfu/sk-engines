@@ -44,6 +44,7 @@ Categories 2-3 keep a narrow concrete handle until the item-3 toolkit.
 ## Sub-rounds (each behavior-preserving, build + host + flash-verified)
 
 **2a — Grow `IEngine` to the contract (additive; no call-site or type changes).**
+
 - Add virtuals with no-op defaults for every cluster-1/2/3/4 method + `render(DisplayModel&)` +
   `process_cv(...)`. Mark `GranularEngine` methods `override`.
 - Include-surface decision: `iengine.h` needs `ParamId`/`FxKind`/`Capabilities` (engine_params.h),
@@ -59,6 +60,7 @@ NOT throwaway scaffolding — they are the legitimate engine->platform state cha
 would require either inverting the architecture (dragging platform state into the engine) or doing the
 item-3 `MValue`->`ParamId` toolkit now (large/blind/byte-faithful, under ~640 B SRAM) — and it does NOT
 enable a 2nd engine's display until that toolkit exists anyway. So:
+
 - Lifted the 8 LED query methods (`fx_leds`/`play_leds`/`alt_leds`/`transport_leds`/`deck_leds`/`mix`/
   `route`/`render_ring`) onto `IEngine` (virtual + inert defaults, Strategy A) — `core.ui.leds.cpp`
   works unchanged through `IEngine&`. NO `_draw_ring` rewrite.
@@ -68,6 +70,7 @@ enable a 2nd engine's display until that toolkit exists anyway. So:
   the real display-abstraction round and the only thing that lets a non-granular engine draw itself).
 
 **2c — CV-out lift (DONE, flash-verified 2026-06-02; CV outputs confirmed).**
+
 - Added `IEngine::process_cv(cv0, cv1, n)` (block-rate, default silence) + `GranularEngine` override
   (faithful to the old per-sample loop). `DACCallback` calls `impl.process_cv(out, size)` once per
   block, fills a `kDacBufSize`(48) float scratch on the ISR stack, converts to 12-bit, and caches the
@@ -75,15 +78,17 @@ enable a 2nd engine's display until that toolkit exists anyway. So:
   per-sample virtual on the ISR. `app.cpp` is now `core()`-free.
 
 **2d — Flip the holder types (DONE, flash-verified 2026-06-02).**
+
 - `CoreUI._engine`: `GranularEngine&` -> `IEngine&` (ctor still takes `GranularEngine&` to bind
   `Core& _core` for Cat 2-3 — that IS the residual hatch; no separate `_gran` needed). `Storage._engine`
-  + `init` signatures: `GranularEngine*`/`&` -> `IEngine*`/`&`; storage.cpp includes `iengine.h` now.
+  - `init` signatures: `GranularEngine*`/`&` -> `IEngine*`/`&`; storage.cpp includes `iengine.h` now.
   The only `.core()` call left is `core.ui.cpp:24`.
 
 **2e — records (DONE).** `docs/refactor-status.md`, this plan, and the project memory updated; the
 `core()` hatch comment in `granular_engine.h` already names Cat 2-3.
 
 ## Honest milestone / non-goals — ACHIEVED 2026-06-02
+
 The platform drives the engine through `IEngine` for input, CV-out, storage, transport, and the LED
 *queries*. It does NOT yet wire a 2nd engine — Cat 2-3 + the generic value-display toolkit +
 `render(DisplayModel&)` remain (item 3, which then unblocks the 2nd engine). The LED display itself
@@ -92,6 +97,7 @@ queries. `Driver` relocation is contained (forwards), not resolved; the 2nd engi
 forces it during 2nd-engine prep. Final SRAM_EXEC ~416 B free.
 
 ## Known risks
+
 1. SRAM — Strategy A's vtable + lost inlining is net-additive vs ~1312 B free; `-Os` on
    `core.ui.midi.cpp` is the next lever. 2b retiring the query bodies may give some back.
 2. 2b is a byte-faithful port of the most intricate hardware-only-verified UI code (the same caution

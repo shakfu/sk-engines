@@ -4,9 +4,11 @@ All notable changes to the Spotykach firmware are recorded here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project does not yet expose a version constant in the firmware; entries are grouped
-by the Git tag / release they ship in. The latest released baseline is 1.0.2.
+by the Git tag / release they ship in.
 
 ## [Unreleased]
+
+## [0.2.0]
 
 ### Added
 
@@ -24,10 +26,36 @@ by the Git tag / release they ship in. The latest released baseline is 1.0.2.
   level meter + lit play indicators instead of blank rings. (`src/engine/iengine.h`,
   `src/engine/engine_params.h`, `src/ui/core.ui.cpp`, `src/ui/core.ui.leds.cpp`)
 
-- **One-shot variant flash targets.** `make granular` and `make passthrough` do clean -> build ->
-  flash (`program-dfu`) in a single command (device in DFU mode first). (`Makefile`)
+- **One-shot variant flash targets.** `make engine-granular`, `make engine-delay`, and
+  `make engine-passthrough` do clean -> build -> flash (`program-dfu`) in a single command (device in
+  DFU mode first). (`Makefile`)
+
+- **`compile_commands.json` for clangd.** Generate it from a real build with `bear -- make` so the
+  editor sees the actual include paths (the libDaisy header set, `-Isrc`), the `-std=c++17`, and the
+  build-time `-DSPK_ENGINE_*` define. It is git-ignored and is a snapshot of whichever engine was built
+  (granular by default); regenerate after structural changes. Tooling only - does not affect the
+  firmware. (`.gitignore`, README)
 
 ### Changed
+
+- **Platform/engine boundary cut and enforced (Phase 5, round 4).** The platform (`hw/`, `ui/`,
+  `memory/`) now reaches the engine only through the contract headers in `src/engine/` - it includes
+  zero granular DSP headers. The remaining couplings were dead/stale/misplaced code, not real DSP
+  dependencies: the tempo BPM<->normalized range moved off granular `Tempo` into `config.h`
+  (`kTempoMin/MaxBpm` + `tempo_abs_to_norm`/`tempo_norm_to_abs`); the `kKeyInterval` enum was lifted to
+  the contract (`engine/mode.h`); the self-contained PCM utilities (`pcm_loader`/`pcm_convert`/
+  `sample16`) moved to `src/memory/`; `storage.h` now includes `engine/deck_ref.h`; and stale
+  `core.h`/`granular_engine.h` includes were dropped. A `make check-boundary` target (wired as a
+  prerequisite of `all`) fails the build if any `hw/`/`ui/`/`memory/` translation unit reintroduces an
+  `engine/granular/` include, so the boundary is enforced by the build rather than by review. `app.cpp`
+  is exempt as the composition root. (`src/config.h`, `src/engine/mode.h`, `src/memory/`, `src/ui/`,
+  `src/hw/`, `Makefile`)
+
+- **New `src/dsp/` shared-primitive tier.** Engine-agnostic DSP primitives that more than one consumer
+  needs now live in `src/dsp/`, with the dependency flowing platform/engine -> dsp and never the
+  reverse. Seeded with `lutsinosc.h` (sine LUT, used by the UI's LED rendering and the granular LFO)
+  plus the header-only `smooth.h`, `deline.h`, and `hann.h`. The `common.h` shared header, previously
+  sitting at the repository root by mistake, also moved into `src/`. (`src/dsp/`, `src/common.h`)
 
 - **Granular DSP relocated to `src/engine/granular/` (Phase 5, round 3).** `git mv src/core` ->
   `src/engine/granular/`, with the two contract headers (`engine_context.h`, `itimesource.h`) moved up

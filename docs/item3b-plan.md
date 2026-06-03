@@ -57,6 +57,7 @@ separate and optional:
 > granular-free (`nm`: 0 GranularEngine symbols, audio path = PassthroughEngine::process).
 
 Implemented all five steps below. Results:
+
 - `make` (granular, default): builds clean, **190376 B / 88 B free** (+48 B vs the 3(a) build, from the
   Storage `CapTapeStorage` gate — granular behaviour is identical since its `_tape_storage` is true,
   but the gate is real shared code; NOT byte-unchanged as the plan first hoped). Tight; watch it.
@@ -111,6 +112,7 @@ build clean with no manual `make clean`.
 
 Chose the **capability-bit** mechanism: added `CapOwnDisplay` (`engine_params.h`); `PassthroughEngine`
 advertises it. The platform caches `_engine_owns_display` in `CoreUI::init`. When set:
+
 - main loop (`process()`) calls `_engine.render(_display)` (produce) instead of the granular
   `_draw_ring`/`_draw_fx`/`_draw_alt`/`_draw_play` producers — keeps `render()` off the ISR and avoids
   a cross-context ring write;
@@ -153,6 +155,7 @@ blit) makes granular overflow again, the options, best-first:
    field mix). Trades greppable, obvious code for indirection for an unmeasured gain — skip it.
 
 ## 3b-2b — Driver relocation (deferred)
+
 - **Driver relocation.** Only forced when a non-granular engine wants `CapTransport`. Move `Driver`
   (clock/transport, currently inside `Core`) to a platform transport service both engines can use;
   retire the `transport_*` forwards on `IEngine`. Heavy, isolated, do it when needed.

@@ -4,6 +4,7 @@
 **/build
 *.log
 *.mmon
+.*_cache
 
 # testing
 *.dSYM
@@ -13,3 +14,7 @@ runner
 .claude
 CLAUDE.md
 
+
+# tooling (clangd) - regenerate with: bear -- make
+compile_commands.json
+.cache/

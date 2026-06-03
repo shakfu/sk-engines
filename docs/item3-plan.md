@@ -59,7 +59,7 @@ This is what "toolkit keyed by ParamId" means and is the mechanical core of the 
 locked at 3a-3, not now.** The engine declares, per physical control + deck + modifier state,
 which ParamId(s) the control drives and which is "active" (the Alt gate):
 
-```
+```text
 struct Binding { ParamId id; bool active; };          // up to ~2 per control
 // engine fills caller-owned span; returns count. No allocation, no Core leak.
 virtual uint8_t bindings(ControlId, Deck::Ref, Modifiers, Binding* out) const;

@@ -2,11 +2,16 @@
 
 ## Resuming — start here (paused 2026-06-03)
 
-**The platform/engine refactor is structurally COMPLETE, committed, and hardware-verified.** A fixed
-hardware/UI platform hosts a swappable DSP engine, proven end-to-end on the board. Everything below is
-on `main` (user confirmed "everything committed").
+**The platform/engine refactor is COMPLETE through Phase 5.** A fixed hardware/UI platform hosts a
+swappable DSP engine, proven end-to-end on the board with THREE working engines (granular + stereo
+delay + passthrough). The platform is fully decoupled from the granular engine and the build enforces
+it. Items 1-3 are committed + hardware-verified; **Phase 5 (R1-R4) + the second engine are build-verified
+across all targets + host, with flash-verify of the granular path and the final commit still pending**
+(R3/R4 are in the working tree). Authoritative Phase 5 record: [phase5-plan.md](phase5-plan.md); see
+also [engine-layout.md](engine-layout.md) and the auto-memory.
 
 **Done + committed + flash-verified:**
+
 - **Items 1-2:** transport off `core()`; `IEngine` interface lifted (Strategy A, no-op default bodies).
 - **Item 3(a):** platform fully decoupled from `Core` — `engine.core()` deleted, `CoreUI` holds only
   `IEngine&`, `Storage` an `IEngine*`. Rounds: 3a-0 (config channel `set_config`/`tempo_to_fit`/
@@ -41,23 +46,33 @@ The passthrough now draws its level meter instead of blank rings. SRAM: net +248
 ~744 B in the granular build, funded by `-Os` on `led.ring`/`color`/`calibrator`); **granular now 304 B
 free**, and the cheap TU-`-Os` levers are largely spent. Detail in `docs/item3b-plan.md`.
 
-**Next — pick a direction (paused here, no decision made):**
-1. **Build a real second engine** (the payoff): a useful non-granular engine (delay / synth / sampler) -
-   now fully enabled (params + render path both work); its own build has ample SRAM.
-2. **3b-2b — `Driver` relocation:** move transport out of `Core` to a platform service, only when a
-   non-granular engine wants `CapTransport`. Heavy, isolated; deferred until needed.
-3. **Phase 5 — build boundaries + DSP libs:** split into static libs (`libgranular`/`libtransport`/...),
-   drop the blanket `-Isrc/`, give platform and engine separate include roots to enforce the layering.
+**Since 3b — all done (2026-06-03):**
 
-**SRAM note:** granular at 304 B free; TU-`-Os` reclaim largely exhausted (storage/card/led.ring/color/
-calibrator + the 4 UI TUs all `-Os`). Further headroom needs real code reduction, not optimisation flags.
+- **Second engine (the payoff):** a stereo `DelayEngine` (`make engine-delay`) - dual tap, feedback,
+  pitch-shifted taps, `CapOwnDisplay`. Proves the platform hosts a non-granular engine end-to-end.
+- **`EngineBuffers` generalized to an opaque SDRAM arena:** `EngineContext` carries one `EngineArena`;
+  each engine sub-allocates via `src/dsp`-style bump allocator. The SDRAM pool is now granular-free -
+  this removed the last HAL->granular coupling.
+- **Phase 5 R1-R4 (boundary):** contract enums lifted (`DeckRef`/`Mode`/`Route`/`ClockSource`/`ModType`/
+  `GritMode`/`DeckSource`/`kKeyInterval`); granular DSP relocated `src/core` -> `src/engine/granular`;
+  the last platform->granular includes cut (tempo helpers -> `config.h`, PCM utils -> `src/memory`,
+  `lutsinosc` + `smooth`/`deline`/`hann` -> new shared `src/dsp/` tier); enforced by `make check-boundary`
+  (a prerequisite of `all`). Chose the grep-guard over static-lib/separate-include-roots as proportionate
+  for single-binary firmware.
+- **Tooling:** `compile_commands.json` via `bear -- make` (git-ignored) for clangd.
 
-**Optional tidy:** exclude `src/core/*.cpp` from the passthrough source set (currently still compiled,
-so granular static-init runs at boot — harmless but wasteful) for a provably granular-free variant.
+**SRAM:** `SRAM_EXEC` 185912 B (97.61%) - the arena generalization reclaimed ~4 KB vs the pre-Phase-5 peak.
 
-**Plan docs:** `docs/item3-plan.md` (3a rounds + the 3a-1 deferral), `docs/item3b-plan.md` (3b-1 done +
-3b-2 outline + the engine-switch-guard gotcha), `docs/architecture.md` (platform/engine design +
-engine-select mechanism + writing-a-new-engine checklist).
+**Pending:** flash-verify the granular path (tempo knob + tap, key-interval ring, sample load, LED
+breathe - all codegen-identical, so a smoke-check) and commit R3/R4.
+
+**Deferred (in `TODO.md`):** grow `src/dsp/` with the `.cpp`-bearing primitives + refactor delay onto
+shared `smooth`/`deline`; evaluate a CMake build (Make-as-frontend); mono-input normalization; `3b-2b`
+`Driver` relocation (only when a non-granular engine wants `CapTransport`).
+
+**Plan docs:** [phase5-plan.md](phase5-plan.md) (R1-R4, authoritative), [engine-layout.md](engine-layout.md)
+(contract map + boundary enforcement), [architecture.md](architecture.md) (platform/engine design +
+how to add an engine), `item3-plan.md` / `item3b-plan.md` (item-3 history).
 
 ## Goal
 

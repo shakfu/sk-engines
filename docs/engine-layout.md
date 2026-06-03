@@ -66,6 +66,7 @@ switch, so swapping needs no `make clean`.
 ## Reorg status (2026-06-03)
 
 **Done + verified:**
+
 - **Per-engine subdir convention** adopted; `passthrough_engine.h` moved to `src/engine/passthrough/`.
 - **Granular DSP compiled only for the granular build:** `src/engine/granular/*.cpp` lives in the
   granular `ENGINE_SOURCES`, not the global `CPP_SOURCES`. Non-granular builds link with zero granular
@@ -81,16 +82,22 @@ switch, so swapping needs no `make clean`.
 ## Known contract leaks (the build-boundary work for Phase 5)
 
 Resolved during R1-R3 + the arena generalization:
+
 1. ~~`iengine.h` -> `core/driver.h` (`Driver::Source`)~~ — `ClockSource` lifted to the contract (R1/R2).
 2. ~~`engine_context.h` -> `core/deck.h` (`EngineBuffers` granular-shaped)~~ — replaced by the opaque
    `EngineArena`; the contract no longer references any granular type.
 3. ~~`display_model.h` -> `ui/led.ring.h`~~ — `LEDRing`/`Color` lifted out to `src/engine/` (R2).
 
-Remaining for **R4** (enforce the boundary so the compiler, not convention, prevents leaks): build
-granular as a static lib, give platform/contract/engine separate include roots, and DROP the blanket
-`-Isrc/`. The residual platform-reaches-into-granular path-includes R4 must resolve: `ui/core.ui.h`
-(`engine/granular/core.h` + `lutsinosc.h`), `memory/storage.h` (`engine/granular/deck.h`), `hw/card.h`
-(`engine/granular/pcm_loader.h`). `DeckRef` is already contract-owned (`engine/deck_ref.h`).
+**R4 (done 2026-06-03)** cut the last platform-reaches-into-granular path-includes and now enforces
+the boundary. They were all dead/stale/misplaced, not real DSP couplings: `ui/core.ui.h` dropped
+`core.h` (only needed `Tempo::abs_to_norm`, now `tempo_abs_to_norm` in `config.h`) and swapped
+`granular_engine.h` for `iengine.h`; `kKeyInterval` lifted to `engine/mode.h`; `lutsinosc.h` moved to
+the shared `src/dsp/` tier; `memory/storage.h` -> `engine/deck_ref.h`; `hw/card.h`'s `pcm_loader.h`
+(self-contained PCM util) moved to `src/memory/`. Enforcement is a `check-boundary` Make target (greps
+`hw/ui/memory` for `engine/granular/` includes, wired as a prerequisite of `all`) - chosen over the
+static-lib/separate-include-roots/drop-`-Isrc/` approach, which is disproportionate churn for a
+single-binary firmware (kept as a future option for a true multi-engine-in-one-binary model). `app.cpp`
+is exempt (composition root). `DeckRef` is contract-owned (`engine/deck_ref.h`).
 
 ## Host harness — fixed 2026-06-03
 
