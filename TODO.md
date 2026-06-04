@@ -43,12 +43,8 @@ the repo; needs the board schematic or a bench check.)
 
 ## P2 - Refactor the delay engine onto the shared primitives (HARDWARE-GATED)
 
-The shared primitives are now in `dsp/` (the `.cpp` tier move is done), so the prerequisite is
-satisfied. This is the concrete second consumer that justified the tier: the delay reimplemented
-one-pole smoothing and a fractional delay line, which now live in `dsp/smooth.h` and `dsp/deline.h`.
-But it **CHANGES the delay's DSP** (its smoothing/interpolation may not be bit-identical to the
-shared versions), so do it deliberately with a hardware flash test, not a silent swap. Batch with
-the other hardware-gated items (see top note).
+The shared primitives are now in `dsp/` (the `.cpp` tier move is done), so the prerequisite is satisfied. This is the concrete second consumer that justified the tier: the delay reimplemented one-pole smoothing and a fractional delay line, which now live in `dsp/smooth.h` and `dsp/deline.h`.
+But it **CHANGES the delay's DSP** (its smoothing/interpolation may not be bit-identical to the shared versions), so do it deliberately with a hardware flash test, not a silent swap. Batch with the other hardware-gated items (see top note).
 
 ## P3 - Evaluate converting the build to CMake (Make as a thin frontend)
 
