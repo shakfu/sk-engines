@@ -8,6 +8,19 @@ by the Git tag / release they ship in.
 
 ## [Unreleased]
 
+### Changed
+
+- **App-composition tier moved into `src/` (root hygiene).** `git mv` of `app.{h,cpp}` and `meter.h`
+  from the repository root into `src/`, leaving the root as just the entry point (`main.cpp`). Same
+  motivation as the earlier `common.h` root->`src/` move: a coherent "the library lives in `src/`"
+  rule, and it clears the latent `-Isrc` fallback smell (`meter.h`'s `#include "nocopy.h"` now
+  resolves as a `src/` sibling rather than via the include-path fallback). `main.cpp` stays at root as
+  the thin entry; its `#include "app.h"` resolves through `-Isrc`. The `build/app.o` engine-stamp rule
+  is unaffected (libDaisy flattens objects to `build/` by basename), and `check-boundary` is unaffected
+  (`src/app.cpp`, the composition root, is exempt and not under the scanned `hw/ui/memory` dirs). Purely
+  mechanical (3 git renames; `SRAM_EXEC` byte-identical at 185912 B / 97.61% before and after).
+  (`src/app.{h,cpp}`, `src/meter.h`, `Makefile`)
+
 ## [0.2.0]
 
 ### Added

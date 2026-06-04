@@ -51,7 +51,7 @@ C_DEFS += -DINFS_LOG_TARGET=daisy::LOGGER_EXTERNAL
 
 CPP_SOURCES = \
 	main.cpp \
-	app.cpp \
+	src/app.cpp \
 	$(ENGINE_SOURCES) \
 	src/engine/color.cpp \
 	src/engine/led.ring.cpp \
