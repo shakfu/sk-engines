@@ -6,7 +6,7 @@
 #include "generator.h"
 #include "track.h"
 #include "mode.h"
-#include "divider.h"
+#include "dsp/divider.h"
 #include "dispatcher.h"
 #include "xfade.h"
 #include "fx.h"

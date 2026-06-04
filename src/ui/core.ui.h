@@ -12,6 +12,7 @@
 #include "hw/hardware.h"
 #include "engine/iengine.h"
 #include "engine/display_model.h"
+#include "transport/transport.h"   // platform clock the UI drives directly (tap/source/tempo/leds)
 #include "memory/storage.h"
 #include "nocopy.h"
 #include "hold.h"
@@ -35,7 +36,7 @@ static constexpr std::array<float, 7> kSpeedSteps = {
 
 class CoreUI {
 public:
-    CoreUI(Hardware&, IEngine&, Settings&, Storage&);
+    CoreUI(Hardware&, IEngine&, Transport&, Settings&, Storage&);
     ~CoreUI() = default;
 
     void init();
@@ -149,6 +150,7 @@ private:
 
     Hardware& _hw;
     IEngine& _engine; // the platform drives the engine ONLY through IEngine (item 3 complete)
+    Transport& _transport; // platform clock: UI drives tick/reset/tap/source/tempo + reads leds()
     bool _engine_owns_display = false; // engine fills DisplayModel via render(); platform blits it (3b-2a)
     Settings& _settings;
     Storage& _storage;

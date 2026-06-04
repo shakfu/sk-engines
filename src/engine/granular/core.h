@@ -8,9 +8,11 @@
 #include "nocopy.h"
 #include "config.h"
 #include "engine/engine_context.h"
+#include "engine/itransport.h"   // ITransport + TransportTick (the clock contract Core subscribes to)
 
 #include "mode.h"     // Mode + Route (Route moved here from core.h)
-#include "driver.h"
+#include "deck.h"
+#include "click.h"
 #include "modulator.h"
 #include "xfade.h"
 #include "panner.h"
@@ -28,10 +30,12 @@ public:
   
   void init(const EngineContext& ctx);
 
-  Driver& driver() { return _driver; }
   Panner& panner() { return _panner; }
   Deck& deck(const DeckRef::Ref ref) { return _decks[ref]; }
   Modulator& mod(const DeckRef::Ref ref) { return _mod[ref]; }
+
+  // Transport query forwarded to the platform clock (the engine reads it, never commands it).
+  bool is_key_sub_quarter() const { return _transport->is_key_sub_quarter(); }
 
   Deck::Source source(const DeckRef::Ref deck) const { return _source[deck]; }
   void set_source(const Deck::Source source, const DeckRef::Ref deck) { _source[deck] = source; }
@@ -54,8 +58,12 @@ public:
 
 private:
   NOCOPY(Core)
-  
+
   void _resolve_mix();
+
+  // The clock fan-out sink: reproduces the old Driver granular tick distribution (panner / set_tempo
+  // / deck.tick / mod.tick / click) from the platform Transport's TransportTick.
+  void _on_transport_tick(const TransportTick& e);
 
   static constexpr uint8_t kNotesCount = 7;
   static constexpr uint8_t kVoxCount = 4;
@@ -66,7 +74,7 @@ private:
   // (Deck::Params wants float**); populated in init(). Item: EngineBuffers generalization (Stage 2).
   float* _detect_buf[DeckRef::Count][2];
   float* _delay_buf[DeckRef::Count][2];
-  Driver  _driver;
+  ITransport* _transport = nullptr;  // platform clock (read-only view), injected at init()
   XFade   _xfade;
   Click   _click;
   Panner  _panner;

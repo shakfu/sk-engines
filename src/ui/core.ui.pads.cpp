@@ -65,8 +65,8 @@ void CoreUI::_on_pad_touch(Hardware::Pad pad)
                 else _storage.of(DeckRef::A).next_tape();
             }
             else if (_storage.of(DeckRef::A).is_idle()) {
-                if (_tap_hold.passed() && _engine.transport_is_external_sync()) {
-                    _engine.transport_reset();
+                if (_tap_hold.passed() && _transport.is_external_sync()) {
+                    _transport.reset();
                 }
                 else if (is_alt_touched) {
                     _engine.on_seq_toggle_arm(DeckRef::A);
@@ -203,7 +203,7 @@ void CoreUI::_on_alt_touch()
     if (_touched.test(FluxB)) _engine.toggle_fx_lock(DeckRef::B, FxKind::Flux);
 
     if (_tap_hold.passed()) {
-        _engine.transport_toggle_source();
+        _transport.toggle_source();
         _clock_source_changed = true;
         _value_display_timeout.start();
     }

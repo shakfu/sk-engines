@@ -1,31 +1,47 @@
-#include "driver.h"
+// SYNTHUX ACADEMY /////////////////////////////////////////
+// SPOTYKACH ///////////////////////////////////////////////
+#include "transport.h"
+
+#include <cmath>
+#include <array>
 #include <functional>
 
 #include "config.h"
-#include "mode.h"
 
 using namespace spotykach;
 
-Driver::Driver(
-    Deck& deck_a, 
-    Deck& deck_b, 
-    Click& click, 
-    Panner& panner, 
-    Modulator* mod
-):
-_deck_a             { deck_a },
-_deck_b             { deck_b },
+// Key-interval lookup (was driver.h): norm 0..1 -> musical bar length in 1/16 units. File-local; only
+// set_key_tick_interval_norm uses it. The kKeyInterval enum itself is contract-owned (engine/mode.h).
+static const std::array<kKeyInterval, 17> kKeyIntervals = {
+    kKeyInterval::k1_16,
+    kKeyInterval::k1_4,
+    kKeyInterval::k2_4,
+    kKeyInterval::k3_4,
+    kKeyInterval::k4_4,
+    kKeyInterval::k5_4,
+    kKeyInterval::k6_4,
+    kKeyInterval::k7_4,
+    kKeyInterval::k8_4,
+    kKeyInterval::k9_4,
+    kKeyInterval::k10_4,
+    kKeyInterval::k11_4,
+    kKeyInterval::k12_4,
+    kKeyInterval::k13_4,
+    kKeyInterval::k14_4,
+    kKeyInterval::k15_4,
+    kKeyInterval::k16_4
+};
+
+Transport::Transport():
 _divider            { Divider(kPPQNIntern) },
-_click              { click },
-_panner             { panner },
-_mod                { mod },
+_tick_index         { 0 },
 _source             { Source::internal },
 _key_tick_count     { 0 },
 _key_tick_interval  { 4 },
 _tap                { false }
 {};
 
-void Driver::init(const float sample_rate, const float buffer_size, const ITimeSource* time)
+void Transport::init(const float sample_rate, const float buffer_size, const ITimeSource* time)
 {
     _time = time;
     _tempo.set_time_source(time);
@@ -36,18 +52,18 @@ void Driver::init(const float sample_rate, const float buffer_size, const ITimeS
 
     using namespace std::placeholders;
 
-    auto on_clock = std::bind(&Driver::_on_clock_tick, this, _1);
+    auto on_clock = std::bind(&Transport::_on_clock_tick, this, _1);
     _clock.SetTempo(_tempo.bpm());
     _clock.SetOnTick(on_clock);
     _clock.Run();
 };
 
-void Driver::toggle_source() 
+void Transport::toggle_source()
 {
     _clock.Stop();
     _divider_reset_counts(true);
     static const auto src_cnt = 3;
-    static Source src[src_cnt] = { Source::internal, Source::ts4, Source::midi };    
+    static Source src[src_cnt] = { Source::internal, Source::ts4, Source::midi };
     for (uint8_t i = 0; i < src_cnt; i++) {
         if (src[i] == _source) {
             auto n = i + 1;
@@ -60,7 +76,7 @@ void Driver::toggle_source()
     _clock.Run();
 }
 
-void Driver::tick(const bool external_tick) 
+void Transport::tick(const bool external_tick)
 {
     _clock.Tick(external_tick);
 
@@ -68,18 +84,30 @@ void Driver::tick(const bool external_tick)
     _clock.SetTempo(_tempo.bpm());
 };
 
-void Driver::toggle_play(DeckRef::Ref deck) {    
-    (deck == DeckRef::A ? _deck_a : _deck_b).toggle_play();
-};
+void Transport::_emit(const bool tick, const bool is_quarter, const float tempo, const bool reset)
+{
+    if (tick) _tick_index++;
+    if (_on_tick) {
+        TransportTick e;
+        e.index   = _tick_index;
+        e.tick    = tick;
+        e.key     = _is_key;
+        e.quarter = is_quarter;
+        e.tempo   = tempo;
+        e.reset   = reset;
+        _on_tick(e);
+    }
+}
 
-void Driver::_on_clock_tick(const bool external_tick) {
+void Transport::_on_clock_tick(const bool external_tick)
+{
     if (external_tick) {
         _reset_us = _time ? _time->now_us() : 0;
         _send_clock = true;
     }
 
     // Given the clock resolution is 48PPQN, sending every second tick.
-    if (_send_clock) _on_clock_out();
+    if (_send_clock && _on_clock_out) _on_clock_out();
     _send_clock = !_send_clock;
 
     auto is_quarter = false;
@@ -97,37 +125,37 @@ void Driver::_on_clock_tick(const bool external_tick) {
             }
             is_quarter = true;
         }
-        _panner.tick();
     }
 
-    _deck_a.set_tempo(_clock.Tempo());
-    _deck_b.set_tempo(_clock.Tempo());
-
-    _send_tick(tick, is_quarter, _clock.Tempo());
+    // Fan the tick out to the subscribed engine (granular fan-out, delay sync, sequencer step), then
+    // signal the quarter to the platform (metronome LED) - matching the old _indicate_quarter order
+    // (the engine's click fires inside the tick, on_quarter last).
+    _emit(tick, is_quarter, _clock.Tempo(), /*reset*/false);
+    if (is_quarter && _on_quarter) _on_quarter(_is_key);
 };
 
-void Driver::set_key_tick_interval_norm(const float norm)
+void Transport::set_key_tick_interval_norm(const float norm)
 {
     _key_tick_interval = kKeyIntervals[std::round(norm * (kKeyIntervals.size() - 1))];
 }
 
-void Driver::reset()
+void Transport::reset()
 {
     if (_source == Source::internal) return;
     _divider_reset_counts();
 }
 
-void Driver::_divider_reset_counts(const bool force)
+void Transport::_divider_reset_counts(const bool force)
 {
     auto reset_elapsed_us = _time ? (_time->now_us() - _reset_us) : 0xFFFFFFFFu;
     if (reset_elapsed_us >= 4000u/*4ms*/ || force) {
-        //The clock is stopped or we're long after the tick, 
+        //The clock is stopped or we're long after the tick,
         // so the next one will be the key
         _key_tick_count = 0;
         _quarter_tick_count = 0;
         _divider.reset();
-        _deck_a.reset_track_divider();
-        _deck_b.reset_track_divider();
+        // Tell the engine the grid was realigned (granular resets its per-deck track dividers).
+        _emit(/*tick*/false, /*is_quarter*/false, _clock.Tempo(), /*reset*/true);
         if (_clock.IsRunning()) {
             _clock.Stop();
             _clock.Run();
@@ -138,32 +166,13 @@ void Driver::_divider_reset_counts(const bool force)
         // Then we simulate the key.
         _quarter_tick_count = static_cast<int8_t>(_divider.resolution());
         _make_key();
-        _indicate_quarter();
-        _send_tick(true, _clock.Tempo(), true);
+        _emit(/*tick*/true, /*is_quarter*/true, _clock.Tempo(), /*reset*/false);
+        if (_on_quarter) _on_quarter(_is_key);
     }
 }
 
-void Driver::_make_key()
+void Transport::_make_key()
 {
     _key_tick_count = _key_tick_interval;
     _is_key = true;
 }
-
-void Driver::_indicate_quarter()
-{
-    _click.trigger(_is_key && !is_key_sub_quarter());
-    _on_quarter(_is_key);
-}
-
-void Driver::_send_tick(const bool is_common_tick, const bool is_quarter, const float tempo)
-{
-    _deck_a.tick(is_common_tick, _is_key);
-    _deck_b.tick(is_common_tick, _is_key);
-    if (is_common_tick) {
-        (_mod+DeckRef::A)->tick(tempo, is_quarter);
-        (_mod+DeckRef::B)->tick(tempo, is_quarter);
-    }
-    if (is_quarter) _indicate_quarter();
-}
-
-

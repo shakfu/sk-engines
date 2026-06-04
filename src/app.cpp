@@ -9,6 +9,7 @@
 #include "ui/core.ui.h"
 #include "engine/itimesource.h"
 #include "engine/engine_select.h"  // ActiveEngine (build-time engine selection, item 3b)
+#include "transport/transport.h"   // platform clock/transport service (shared across engines)
 #include "memory/storage.h"
 #include "expose.h"
 
@@ -33,7 +34,7 @@ struct DaisyTimeSource : ITimeSource {
 class AppImpl {
   public:
     AppImpl():
-    _ui     { CoreUI(_hw, _engine, _settings, _storage) }
+    _ui     { CoreUI(_hw, _engine, _transport, _settings, _storage) }
     {}
 
     ~AppImpl() = default;
@@ -69,6 +70,7 @@ class AppImpl {
     bool _log_enabled;
 
     DaisyTimeSource _time_source;
+    Transport       _transport; // platform clock; injected into the engine + driven by CoreUI
     ActiveEngine    _engine;  // concrete engine chosen at build time; platform sees only IEngine
     CoreUI      _ui;
     Hardware    _hw;
@@ -126,10 +128,14 @@ void AppImpl::Init()
 
     // Hand the engine the SDRAM arena + clock; the engine sub-allocates whatever buffers it needs
     // (item: EngineBuffers generalization). The platform/HAL no longer knows any engine's layout.
+    // The platform clock comes up first: the engine subscribes to its ticks during init().
+    _transport.init(sample_rate, block_size, &_time_source);
+
     EngineContext ctx;
     ctx.sample_rate = sample_rate;
     ctx.block_size = block_size;
     ctx.time = &_time_source;
+    ctx.transport = &_transport;
     ctx.arena = SDRAMBuffer::pool().engineArena();
     _engine.init(ctx);
 

@@ -64,12 +64,15 @@ void GranularEngine::set_param(const ParamId id, const DeckRef::Ref ref, const f
         case ParamId::ModAmp:        _core.mod(deck_ref).set_amp_norm(v); break;
 
         // Global params (deck arg ignored).
-        case ParamId::Tempo:         _core.driver().set_tempo_norm(v); break;
         case ParamId::ClickMix:      _core.set_click_mix(v); break;
         case ParamId::PanSpeed:      _core.panner().set_speed(v); break;
         case ParamId::PanRange:      _core.panner().set_range(v); break;
-        case ParamId::KeyInterval:   _core.driver().set_key_tick_interval_norm(v); break;
         case ParamId::Crossfade:     _core.set_mix(v); break;
+
+        // Transport concerns: the platform writes Tempo + KeyInterval straight to the Transport now,
+        // so the engine ignores them (kept as explicit no-ops to stay -Wswitch-clean).
+        case ParamId::Tempo:         break;
+        case ParamId::KeyInterval:   break;
 
         case ParamId::Count:         break;
     }
@@ -194,7 +197,7 @@ bool GranularEngine::on_play_pad(const DeckRef::Ref ref, const bool reverse)
     deck.disarm();
     const bool empty = deck.is_empty();
     if (!deck.is_overdubbing() && (!deck.is_playing() || deck.is_reverse() == reverse)) {
-        _core.driver().toggle_play(_safe_ref(ref));
+        deck.toggle_play();
     }
     deck.set_reverse(reverse);
     return empty;
@@ -204,7 +207,7 @@ void GranularEngine::on_seq_toggle_arm(const DeckRef::Ref ref)
 {
     auto& t = _core.deck(_safe_ref(ref)).track();
     if (t.is_armed()) t.disarm();
-    else              t.arm(!_core.driver().is_key_sub_quarter());
+    else              t.arm(!_core.is_key_sub_quarter());
 }
 
 void GranularEngine::on_seq_trigger(const DeckRef::Ref ref)
@@ -316,12 +319,8 @@ AltLeds GranularEngine::alt_leds(const DeckRef::Ref ref)
     return { track.is_armed(), track.is_recording() };
 }
 
-TransportLeds GranularEngine::transport_leds()
-{
-    auto& d = _core.driver();
-    return { d.source(), d.is_key_at_quarter(), d.is_key_sub_quarter(),
-             d.is_external_sync(), d.key_interval() };
-}
+// transport_leds() was removed from IEngine: the platform now reads clock indicator state directly
+// from the Transport (_transport.leds()) and composites it for every engine.
 
 DeckLeds GranularEngine::deck_leds(const DeckRef::Ref ref)
 {
@@ -407,7 +406,8 @@ void GranularEngine::handle_midi_transport(const bool start)
 {
     auto& c = Config::dynamic();
     if (start) {
-        _core.driver().reset();
+        // The platform resets the Transport on a MIDI start before calling this; the engine only
+        // decides what start/stop means for its decks.
         if (c.midi_play_stop_a() && !_core.deck(DeckRef::A).is_empty()) _core.deck(DeckRef::A).play();
         if (c.midi_play_stop_b() && !_core.deck(DeckRef::B).is_empty()) _core.deck(DeckRef::B).play();
     }

@@ -26,12 +26,13 @@ namespace spotykach {
 // advertises which optional regions are live. CoreUI/Storage drive the engine through this
 // interface instead of a concrete GranularEngine.
 //
-// The whole platform-driven surface now lives on IEngine (items 2-3 complete): params/config,
-// MIDI, pads, CV/gate, storage, transport, the LED queries, and render(DisplayModel). `core()` is
-// gone; CoreUI/Storage hold only IEngine. The contract carries no granular types (Phase 5 R1/R2):
-// DeckRef/Mode/Route/ModType/GritMode/DeckSource/ClockSource are contract-owned (engine/...). The
-// transport_* group still forwards to the granular Driver (which stays in granular); relocating the
-// Driver class to a platform transport service is deferred to a transport-capable 2nd engine.
+// The platform-driven input/output surface lives on IEngine (items 2-3): params/config, MIDI, pads,
+// CV/gate, storage, the LED queries, and render(DisplayModel). `core()` is gone; CoreUI/Storage hold
+// only IEngine. The contract carries no granular types (Phase 5 R1/R2): DeckRef/Mode/Route/ModType/
+// GritMode/DeckSource/ClockSource are contract-owned (engine/...). Transport is NOT on IEngine: the
+// Driver was split into a platform Transport service (src/transport/) that the platform owns and
+// injects into engines read-only via EngineContext (ITransport) - so tempo-synced non-granular
+// engines (the delay; a future Euclidean sequencer) share one clock.
 class IEngine {
 public:
     virtual ~IEngine() = default;
@@ -107,17 +108,10 @@ public:
     virtual size_t   audio_capacity_bytes(DeckRef::Ref) { return 0; }
     virtual void     audio_apply_loaded(DeckRef::Ref, size_t frames) {}
 
-    // --- Transport (Transport capability; forwards to the engine's clock for now) ------------
-    virtual void  transport_set_on_quarter(std::function<void(const bool)> cb) {}
-    virtual void  transport_set_on_clock_out(std::function<void()> cb) {}
-    virtual ClockSource::Source transport_source() { return ClockSource::internal; }
-    virtual void  transport_tick(const bool external_tick) {}
-    virtual bool  transport_is_external_sync() { return false; }
-    virtual void  transport_reset() {}
-    virtual void  transport_toggle_source() {}
-    virtual void  transport_tap_tempo() {}
-    virtual float transport_tempo() { return 0.f; }
-    virtual void  transport_set_tempo_norm(const float norm) {}
+    // --- Transport: NOT an engine concern. The platform owns the Transport service and injects a
+    //     read-only ITransport via EngineContext; an engine that wants tempo/ticks reads or subscribes
+    //     to it (e.g. granular Core, the tempo-synced delay). The old transport_* forwarding group was
+    //     removed here when the Driver was split into the platform Transport. -----------------------
 
     // --- LED queries (item 2b): the engine reports indicator + ring-geometry state; the platform
     //     owns the color palette + blink/timer/storage/_touched compositing + the MValue overlays.
@@ -127,7 +121,6 @@ public:
     virtual FxLeds   fx_leds(DeckRef::Ref) { return {}; }
     virtual PlayLeds play_leds(DeckRef::Ref) { return {}; }
     virtual AltLeds  alt_leds(DeckRef::Ref) { return {}; }
-    virtual TransportLeds transport_leds() { return {}; }
     virtual DeckLeds      deck_leds(DeckRef::Ref) { return {}; }
     virtual float mix() const { return 0.5f; }   // A/B crossfade (fader LEDs)
     virtual Route route() const { return Route::Stereo; } // channel topology (mode L/C/R LED)

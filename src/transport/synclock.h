@@ -35,7 +35,7 @@ public:
 
     void SetOnTick(std::function<void(const bool)> on_tick) { _on_tick = on_tick; }
     
-    float Tempo() { return 60000000.f / _tempo_mks; }
+    float Tempo() const { return 60000000.f / _tempo_mks; }
 
     /*
     Setting tempo from internal control. 

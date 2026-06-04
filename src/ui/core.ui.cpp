@@ -18,9 +18,10 @@ static float snapped_speed(const float speed)
     return kSpeedSteps[idx];
 }
 
-CoreUI::CoreUI(Hardware& hw, IEngine& engine, Settings& settings, Storage& storage):
+CoreUI::CoreUI(Hardware& hw, IEngine& engine, Transport& transport, Settings& settings, Storage& storage):
 _hw                 { hw },
 _engine             { engine },
+_transport          { transport },
 _settings           { settings },
 _storage            { storage },
 _calibrator         { Calibrator(hw, settings) },
@@ -48,10 +49,10 @@ void CoreUI::init() {
     _hw.SetOnRelease(on_release);
 
     auto on_quarter = std::bind(&CoreUI::_on_quarter, this, _1);
-    _engine.transport_set_on_quarter(on_quarter);
+    _transport.set_on_quarter(on_quarter);
 
     auto on_clock_out = std::bind(&CoreUI::_process_clock_out, this);
-    _engine.transport_set_on_clock_out(on_clock_out);
+    _transport.set_on_clock_out(on_clock_out);
 
     for (int i = 0; i < Hardware::LED_LAST; i++) _led[i].init(i);
 
@@ -216,7 +217,7 @@ void CoreUI::process()
         }
     }
     if (_apply.test(Hardware::CTRL_MODFREQ_A)) {
-        if (_tap_hold.passed()) _engine.set_param(ParamId::Tempo, DeckRef::A, mv(ParamId::Tempo)[DeckRef::A].value());
+        if (_tap_hold.passed()) _transport.set_tempo_norm(mv(ParamId::Tempo)[DeckRef::A].value());
         else _engine.set_mod_speed(DeckRef::A, mv(ParamId::ModSpeed)[DeckRef::A].value(), _touched.test(Alt));
     }
     if (_apply.test(Hardware::CTRL_MOD_AMT_A)) {
@@ -233,7 +234,7 @@ void CoreUI::process()
     }
     if (_apply.test(Hardware::CTRL_SOS_A)) {
         if (_tap_hold.passed()) {
-            _engine.set_param(ParamId::KeyInterval, DeckRef::A, mv(ParamId::KeyInterval)[DeckRef::A].value());
+            _transport.set_key_tick_interval_norm(mv(ParamId::KeyInterval)[DeckRef::A].value());
         }
         else if (_touched.test(FluxA)) {
             _engine.set_param(ParamId::FluxMix, DeckRef::A, mv(ParamId::FluxMix)[DeckRef::A].value());
@@ -590,7 +591,7 @@ void CoreUI::_process_switches()
         _tap_was_tapped = true;
         
         if (_touched.test(Alt)) {
-            _engine.transport_toggle_source();
+            _transport.toggle_source();
             _clock_source_changed = true;
             _value_display_timeout.start();
         }
@@ -605,9 +606,9 @@ void CoreUI::_process_switches()
             mv(ParamId::GritMix)[DeckRef::B].set(rs.mix);
         }
         else {
-            if (!_engine.transport_is_external_sync()) {
-                _engine.transport_tap_tempo();
-                mv(ParamId::Tempo)[DeckRef::A].set(tempo_abs_to_norm(_engine.transport_tempo()));
+            if (!_transport.is_external_sync()) {
+                _transport.tap_tempo();
+                mv(ParamId::Tempo)[DeckRef::A].set(tempo_abs_to_norm(_transport.tempo()));
             }
             if (!_tap_hold.is_holding()) {
                 _tap_hold.begin();
@@ -647,7 +648,7 @@ void CoreUI::_reset_changing_value_id()
 void CoreUI::_set_tempo_by_size(const DeckRef::Ref ref, const float fraction)
 {
     auto bpm = _engine.tempo_to_fit(ref, fraction);
-    auto norm = tempo_abs_to_norm(bpm); 
+    auto norm = tempo_abs_to_norm(bpm);
     mv(ParamId::Tempo)[DeckRef::A].set(norm);
-    _engine.transport_set_tempo_norm(norm);
+    _transport.set_tempo_norm(norm);
 }

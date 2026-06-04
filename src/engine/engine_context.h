@@ -6,6 +6,7 @@
 #include <cstdint>
 
 #include "engine/itimesource.h"
+#include "engine/itransport.h"
 
 namespace spotykach {
 
@@ -18,12 +19,13 @@ struct EngineArena {
 };
 
 // Everything the core needs from the platform, injected at init() time: sample rate, block size,
-// the clock abstraction, and the SDRAM arena.
+// the clock abstraction, the platform transport (read-only/subscribe view), and the SDRAM arena.
 struct EngineContext {
     float              sample_rate;
     float              block_size;
     EngineArena        arena;
     const ITimeSource* time;
+    ITransport*        transport;
 };
 
 };

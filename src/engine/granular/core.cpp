@@ -9,8 +9,7 @@
 using namespace spotykach;
 using namespace daisysp;
 
-Core::Core():
-_driver { Driver(_decks[DeckRef::A], _decks[DeckRef::B], _click, _panner, _mod.data()) }
+Core::Core()
 {
     _source.fill(Deck::Source::external);
     _reverb_in.fill(0);
@@ -21,7 +20,11 @@ _driver { Driver(_decks[DeckRef::A], _decks[DeckRef::B], _click, _panner, _mod.d
   
 void Core::init(const EngineContext& ctx) {
     const auto sample_rate = ctx.sample_rate;
-    _driver.init(sample_rate, ctx.block_size, ctx.time);
+    // Subscribe to the platform clock instead of owning one (the old Driver split into the platform
+    // Transport + this sink). std::bind keeps a stable callable for the life of Core.
+    _transport = ctx.transport;
+    using namespace std::placeholders;
+    _transport->set_on_tick(std::bind(&Core::_on_transport_tick, this, _1));
     _panner.init(sample_rate);
     _click.init(sample_rate);
     _mix_smooth.init(sample_rate);
@@ -87,9 +90,37 @@ void Core::infer_panner_mode()
     }
 }
 
-void Core::prepare() 
+void Core::prepare()
 {
-    
+
+}
+
+// Clock fan-out: the granular half of the old Driver::_on_clock_tick / _send_tick. Order is preserved
+// exactly for the normal path - panner (on tick), set_tempo (every tick), deck.tick, mod (on tick),
+// click (on quarter). A `reset` with no tick is the grid realign: realign the per-deck track dividers
+// only (the old reset_track_divider path) and bail.
+void Core::_on_transport_tick(const TransportTick& e)
+{
+    if (e.reset) {
+        _decks[DeckRef::A].reset_track_divider();
+        _decks[DeckRef::B].reset_track_divider();
+        if (!e.tick) return;
+    }
+
+    if (e.tick) _panner.tick();
+
+    _decks[DeckRef::A].set_tempo(e.tempo);
+    _decks[DeckRef::B].set_tempo(e.tempo);
+
+    _decks[DeckRef::A].tick(e.tick, e.key);
+    _decks[DeckRef::B].tick(e.tick, e.key);
+
+    if (e.tick) {
+        _mod[DeckRef::A].tick(e.tempo, e.quarter);
+        _mod[DeckRef::B].tick(e.tempo, e.quarter);
+    }
+
+    if (e.quarter) _click.trigger(e.key && !_transport->is_key_sub_quarter());
 }
 
 void Core::process(const float* const* in, float** out, size_t size) 

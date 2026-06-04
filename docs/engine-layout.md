@@ -17,14 +17,28 @@ How the firmware's files split between the fixed **platform**, the **contract**,
 | `src/engine/engine_select.h` | build define -> `ActiveEngine` typedef |
 | `src/engine/engine_context.h` | `EngineContext`/`EngineArena` (init injection) — contract, moved here in R3 |
 | `src/engine/itimesource.h` | `ITimeSource` clock abstraction — contract, moved here in R3 |
+| `src/engine/itransport.h` | `ITransport` (read-only clock view) + `TransportTick` — engine-facing transport contract |
+
+### Platform transport (fixed; shared by every engine)
+
+`src/transport/` — the platform clock/transport service, **compiled into every variant** (added to
+`CPP_SOURCES` directly, not `ENGINE_SOURCES`): `transport.{h,cpp}` (clock-source select, tap tempo,
+key/quarter counting, clock-out + on-quarter callbacks, fans `TransportTick` to the subscribed
+engine) over `synclock.{h,cpp}` + `tempo.{h,cpp}`. Split out of the old granular `Driver` so
+tempo-synced non-granular engines (the delay; a future Euclidean drum engine) share one clock. The
+platform (app + `CoreUI`) owns the concrete `Transport` and drives it; engines get the read-only
+`ITransport` via `EngineContext`. `src/transport/` is in the `check-boundary` `PLATFORM_DIRS` (may use
+only contract headers, never `engine/granular/`). The shared clock-divider primitive lives in
+`src/dsp/divider.{h,cpp}` (used by both `Transport` and granular `Deck`'s sequencer).
 
 ### Granular engine
 
-`src/engine/granular_engine.{h,cpp}` + **all of `src/engine/granular/`** (~58 files: `core`, `deck`,
-`generator`, `vox`, `buffer`, `fx*`, `driver`, `synclock`, `tempo`, `divider`, `track`, `panner`,
-`modulator`, `detector`, `follower`, `biquad`, `adenv`, `click`, `cpattern`, plus their headers and
-`mode.h`/`speed.map.h`/etc.). `src/engine/granular/` is the granular engine's private DSP (relocated
-from `src/core/` in Phase 5 R3, 2026-06-03).
+`src/engine/granular_engine.{h,cpp}` + **all of `src/engine/granular/`** (`core`, `deck`,
+`generator`, `vox`, `buffer`, `fx*`, `track`, `panner`, `modulator`, `detector`, `follower`, `biquad`,
+`adenv`, `click`, `cpattern`, plus their headers and `mode.h`/`speed.map.h`/etc.). `src/engine/granular/`
+is the granular engine's private DSP (relocated from `src/core/` in Phase 5 R3, 2026-06-03). The clock
+(`driver`/`synclock`/`tempo`/`divider`) was split out to `src/transport/` + `src/dsp/` when transport
+became a shared platform service; granular `Core` now subscribes to the platform `Transport`'s ticks.
 
 ### Passthrough engine
 

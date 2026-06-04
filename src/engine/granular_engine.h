@@ -102,21 +102,9 @@ public:
     size_t audio_capacity_bytes(DeckRef::Ref) override;
     void   audio_apply_loaded(DeckRef::Ref, size_t frames) override;
 
-    // Transport (item 1). Thin forwards to the engine's Driver so the platform drives transport
-    // through the engine instead of reaching through core().driver(). Per the faithful stopgap
-    // (B1), the platform still owns clock-source selection + edge detection in tick(); these only
-    // forward. The Driver still lives in Core today (see the core() note below) - relocating it to
-    // a platform transport service is item 2's decision. Inline so they cost nothing (no LTO here).
-    void  transport_set_on_quarter(std::function<void(const bool)> cb) override { _core.driver().set_on_quarter(cb); }
-    void  transport_set_on_clock_out(std::function<void()> cb) override         { _core.driver().set_on_clock_out(cb); }
-    ClockSource::Source transport_source() override { return _core.driver().source(); }
-    void  transport_tick(const bool external_tick) override { _core.driver().tick(external_tick); }
-    bool  transport_is_external_sync() override     { return _core.driver().is_external_sync(); }
-    void  transport_reset() override                { _core.driver().reset(); }
-    void  transport_toggle_source() override        { _core.driver().toggle_source(); }
-    void  transport_tap_tempo() override            { _core.driver().tap_tempo(); }
-    float transport_tempo() override                { return _core.driver().tempo(); }
-    void  transport_set_tempo_norm(const float norm) override { _core.driver().set_tempo_norm(norm); }
+    // Transport is no longer an engine concern: the platform owns the Transport service and injects a
+    // read-only ITransport via EngineContext (Core subscribes to its ticks). The old transport_*
+    // forwarding group + transport_leds() were removed from IEngine when the Driver was split.
 
     // CV outputs (DAC, block-rate). Fills n samples of the two modulator CV channels. Faithful to
     // the old per-sample DACCallback loop: each sample is zeroed then written by the deck's mod.
@@ -136,8 +124,8 @@ public:
     PlayLeds play_leds(DeckRef::Ref) override;
     AltLeds  alt_leds(DeckRef::Ref) override;
 
-    // Transport + topology state for the ISR LED render (_draw_leds) and launch-quant display.
-    TransportLeds transport_leds() override;
+    // Topology state for the ISR LED render (_draw_leds) and launch-quant display. (Clock indicator
+    // state moved to the platform Transport - transport_leds() is gone from IEngine.)
     DeckLeds      deck_leds(DeckRef::Ref) override;
     float         mix() const override;   // A/B crossfade (fader LEDs)
     Route         route() const override; // channel topology (mode L/C/R LED)

@@ -16,12 +16,12 @@ void CoreUI::tick()
 {
     auto new_state = false;
     auto midi_state = _process_midi();
-    switch (_engine.transport_source()) {
+    switch (_transport.source()) {
         case ClockSource::ts4: new_state = _hw.GetClockInputState(); break;
         case ClockSource::midi: new_state = midi_state; break;
         default: break;
     }
-    _engine.transport_tick(new_state && !clock_state);
+    _transport.tick(new_state && !clock_state);
     clock_state = new_state;
 
     // Modified libDaisy MIDI handlers require explicit call to transmit
@@ -60,8 +60,9 @@ bool CoreUI::_process_realtime(daisy::MidiEvent& event)
 {
     switch (event.srt_type) {
         case SystemRealTimeType::TimingClock: return true;
+        // The clock reset is a platform/transport action; the engine only reacts (deck play/stop).
         case SystemRealTimeType::Start:
-        case SystemRealTimeType::Continue: _engine.handle_midi_transport(true); break;
+        case SystemRealTimeType::Continue: _transport.reset(); _engine.handle_midi_transport(true); break;
         case SystemRealTimeType::Stop:     _engine.handle_midi_transport(false); break;
         default: break;
     }

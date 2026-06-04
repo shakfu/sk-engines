@@ -55,6 +55,7 @@ CPP_SOURCES = \
 	$(ENGINE_SOURCES) \
 	src/engine/color.cpp \
 	src/engine/led.ring.cpp \
+	$(wildcard src/transport/*.cpp) \
 	$(wildcard src/dsp/*.cpp) \
 	$(wildcard src/hw/*.cpp) \
 	$(wildcard src/ui/*.cpp) \
@@ -81,7 +82,7 @@ FORCE:
 # app.cpp is exempt: it is the composition root that instantiates the concrete ActiveEngine via
 # engine_select.h. Wired as a prerequisite of `all`, so a `make` that reintroduces a granular include
 # into hw/ui/memory fails - the boundary is enforced by the build, not by convention/review.
-PLATFORM_DIRS = src/hw src/ui src/memory
+PLATFORM_DIRS = src/hw src/ui src/memory src/transport
 .PHONY: check-boundary
 check-boundary:
 	@if grep -rn '#include "engine/granular/\|#include "\.\./engine/granular/' $(PLATFORM_DIRS) ; then \

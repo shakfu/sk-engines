@@ -123,7 +123,7 @@ void CoreUI::_draw_leds()
 
     auto da = _engine.deck_leds(DeckRef::A);
     auto db = _engine.deck_leds(DeckRef::B);
-    auto trn = _engine.transport_leds();
+    auto trn = _transport.leds();   // clock indicators are platform state, rendered for every engine
     auto mix = _engine.mix();
 
     auto mode_color_a = mode_color(da.mode);
@@ -570,7 +570,7 @@ void CoreUI::_show_key_intervals()
         _display.ring[DeckRef::A].set_segment(start, end);
     }
 
-    auto trn = _engine.transport_leds();
+    auto trn = _transport.leds();
     auto interval = trn.key_interval;
     uint8_t step;
     uint8_t steps;
