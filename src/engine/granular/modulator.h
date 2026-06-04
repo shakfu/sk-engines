@@ -2,7 +2,7 @@
 
 #include <array>
 #include "lfo.h"
-#include "follower.h"
+#include "dsp/follower.h"
 #include "nocopy.h"
 #include "engine/mode.h"
 

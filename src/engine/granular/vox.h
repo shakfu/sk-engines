@@ -6,7 +6,7 @@
 
 #include "window.h"
 #include "buffer.h"  
-#include "adenv.h"
+#include "dsp/adenv.h"
 #include "xfade.h"
 #include "config.h"
 #include "nocopy.h"

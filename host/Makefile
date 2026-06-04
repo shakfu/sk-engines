@@ -18,11 +18,14 @@ INCLUDES  = -Ishim -I$(ROOT)/src -I. -I$(DAISYSP) $(DAISYSP_INC)
 CXXFLAGS  = -std=c++17 -O2 -Wall -Wno-unused-variable -Wno-unused-but-set-variable $(INCLUDES)
 
 CORE_SRC    = $(wildcard $(ROOT)/src/engine/granular/*.cpp)
+# Engine-agnostic shared primitives (biquad/follower/adenv/cpattern + header-only siblings) live in
+# src/dsp/ and are consumed by the granular engine via "dsp/..." includes, so compile them here too.
+DSP_SRC     = $(wildcard $(ROOT)/src/dsp/*.cpp)
 # src/engine/*.cpp now includes the hardware-free LEDRing + Color impls (moved out of src/ui/ in
 # Phase 5 R2), which the DisplayModel needs; the rest of src/ui/ stays out (it needs the HAL).
 ENGINE_SRC  = $(wildcard $(ROOT)/src/engine/*.cpp)
 DAISYSP_SRC = $(wildcard $(DAISYSP)/*/*.cpp)
-LIB_SRC     = $(CORE_SRC) $(ENGINE_SRC) $(DAISYSP_SRC)
+LIB_SRC     = $(CORE_SRC) $(DSP_SRC) $(ENGINE_SRC) $(DAISYSP_SRC)
 
 SRC        = main_host.cpp $(LIB_SRC)
 TEST       = $(BUILD)/test_engine_params

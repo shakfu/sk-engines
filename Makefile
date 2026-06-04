@@ -55,6 +55,7 @@ CPP_SOURCES = \
 	$(ENGINE_SOURCES) \
 	src/engine/color.cpp \
 	src/engine/led.ring.cpp \
+	$(wildcard src/dsp/*.cpp) \
 	$(wildcard src/hw/*.cpp) \
 	$(wildcard src/ui/*.cpp) \
 	$(wildcard src/memory/*.cpp)

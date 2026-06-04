@@ -3,7 +3,7 @@
 #include "../../nocopy.h"
 #include "fx.drive.h"
 #include "fx.reduce.h"
-#include "biquad.h"
+#include "dsp/biquad.h"
 #include "echo.h"
 #include "softswitch.h"
 #include "engine/mode.h"

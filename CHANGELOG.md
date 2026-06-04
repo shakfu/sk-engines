@@ -10,6 +10,27 @@ by the Git tag / release they ship in.
 
 ### Changed
 
+- **`.cpp`-bearing primitives moved into the `src/dsp/` shared tier.** `git mv` of `biquad`,
+  `follower`, `adenv`, and `cpattern` (`.h` + `.cpp`) from `src/engine/granular/` into `src/dsp/`,
+  joining the header-only batch seeded in Phase 5 R4. Their `.cpp` now compile from a new global
+  `$(wildcard src/dsp/*.cpp)` in `CPP_SOURCES` so every engine links them, and the granular consumers
+  reach them through the `dsp/` include prefix (`vox.h`, `fx.h`, `echo.h`, `modulator.h`), matching
+  the platform/engine boundary convention. `biquad.cpp`'s `#include "../../common.h"` becomes
+  `"common.h"` (same `src/common.h`, via `-Isrc`). Granular codegen is unaffected (identical TU set;
+  `SRAM_EXEC` 185920 B, +8 B object-reorder alignment); the non-granular engines now compile these
+  TUs but `--gc-sections` strips every unused symbol, so passthrough/delay are size-unaffected and
+  link cleanly. Host build (`host/Makefile`) wired with the same `src/dsp/*.cpp` glob. (`src/dsp/`,
+  `src/engine/granular/{vox,fx,echo,modulator}.h`, `Makefile`, `host/Makefile`)
+
+### Fixed
+
+- **Restored the host unit-test harness (`test/`).** `test/Makefile` had been broken since the
+  Phase-5 R3 `src/core` -> `src/engine/granular` move: it still pointed at `../src/core/*` sources and
+  `-I../src/core`, none of which exist, so `make -C test` could not build. Repathed the unit sources
+  to their current homes (`divider`/`synclock` under `src/engine/granular/`, `follower` under
+  `src/dsp/`) and corrected the include roots. The suite builds and passes again (116 assertions).
+  (`test/Makefile`)
+
 - **App-composition tier moved into `src/` (root hygiene).** `git mv` of `app.{h,cpp}` and `meter.h`
   from the repository root into `src/`, leaving the root as just the entry point (`main.cpp`). Same
   motivation as the earlier `common.h` root->`src/` move: a coherent "the library lives in `src/`"

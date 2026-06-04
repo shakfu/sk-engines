@@ -11,11 +11,10 @@ session.
 | # | Item | Effort | Risk | Verify | Gating |
 |---|------|--------|------|--------|--------|
 | P1 | Mono-input: answer the normalling question | trivial | n/a | a fact | unblocks/kills P1-code |
-| P2 | Move `.cpp` primitives into `src/dsp/` | low-med | low-med | build + `check-boundary` | none |
-| P3 | Refactor delay engine onto shared primitives | med | med-high | **hardware flash** | needs P2 |
-| P4 | Evaluate converting the build to CMake | high | high | parity + flash | strategic intent |
+| P2 | Refactor delay engine onto shared primitives | med | med-high | **hardware flash** | none (primitives now in `dsp/`) |
+| P3 | Evaluate converting the build to CMake | high | high | parity + flash | strategic intent |
 
-Hardware-batch note: P3, the mono-input *software fallback* (if P1 says "not normalled"), and the
+Hardware-batch note: P2, the mono-input *software fallback* (if P1 says "not normalled"), and the
 still-outstanding Phase-5 R4a granular-path flash-verify are all hardware-gated - do them together
 in one bench session.
 
@@ -36,40 +35,22 @@ the repo; needs the board schematic or a bench check.)
   moot** (delete it).
 
 - **Software fallback** (only if NOT normalled - and then this code is hardware-gated, batch with
-  P3): detect a near-silent right input (peak below a small threshold over a window) and copy
+  P2): detect a near-silent right input (peak below a small threshold over a window) and copy
   left -> right. Needs hysteresis/timing so it doesn't flap, and it's a *platform* input concern
   (applies to any engine), so it belongs in the platform's audio path (e.g. `AppImpl::ProcessAudio`
   before `engine.process`), not in an individual engine. Caveat: silence-detection can't tell "cable
   plugged but quiet" from "no cable".
 
-## P2 - Grow `src/dsp/` with the remaining shared primitives (move .cpp tier)
+## P2 - Refactor the delay engine onto the shared primitives (HARDWARE-GATED)
 
-Build-verifiable, continues committed Phase-5 work, and is the prerequisite for P3.
+The shared primitives are now in `dsp/` (the `.cpp` tier move is done), so the prerequisite is
+satisfied. This is the concrete second consumer that justified the tier: the delay reimplemented
+one-pole smoothing and a fractional delay line, which now live in `dsp/smooth.h` and `dsp/deline.h`.
+But it **CHANGES the delay's DSP** (its smoothing/interpolation may not be bit-identical to the
+shared versions), so do it deliberately with a hardware flash test, not a silent swap. Batch with
+the other hardware-gated items (see top note).
 
-`src/dsp/` (the engine-agnostic primitive tier, dependency flows platform/engine -> dsp, never the
-reverse) was seeded in Phase 5 R4 with the header-only batch: `lutsinosc.h`, `smooth.h`, `deline.h`,
-`hann.h`.
-
-**Move the `.cpp`-bearing generic primitives** currently under `src/engine/granular/`:
-`biquad.{h,cpp}` (filter), `follower.{h,cpp}` (envelope follower), `adenv.{h,cpp}` (AD envelope),
-`cpattern.{h,cpp}`. They're self-contained (no granular siblings) but deferred because each needs
-build wiring: their `.cpp` must move from granular's `$(wildcard src/engine/granular/*.cpp)` into
-the **global** `CPP_SOURCES` (a new `$(wildcard src/dsp/*.cpp)`) so every engine links them. The
-granular build's codegen should be unchanged (pure relocation); verify that the **non-granular**
-builds (passthrough/delay) still link cleanly and don't regress SRAM now that they also link these.
-
-Principle going forward: a primitive earns its place in `dsp/` when it gets a real second consumer,
-not preemptively.
-
-## P3 - Refactor the delay engine onto the shared primitives (HARDWARE-GATED)
-
-Depends on P2 (primitives must be in `dsp/`). This is the concrete second consumer that justified
-the tier: the delay reimplemented one-pole smoothing and a fractional delay line, which now live in
-`dsp/smooth.h` and `dsp/deline.h`. But it **CHANGES the delay's DSP** (its smoothing/interpolation
-may not be bit-identical to the shared versions), so do it deliberately with a hardware flash test,
-not a silent swap. Batch with the other hardware-gated items (see top note).
-
-## P4 - Evaluate converting the build to CMake (Make as a thin frontend)
+## P3 - Evaluate converting the build to CMake (Make as a thin frontend)
 
 Lowest priority: a deliberate spike, not a task, and explicitly *not worth it for aesthetics alone*
 - the grep-guard already enforces the boundary and `bear` already gives clangd its flags. Worth

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "biquad.h"
+#include "dsp/biquad.h"
 #include "dsp/deline.h"
 #include "../../common.h"
 
