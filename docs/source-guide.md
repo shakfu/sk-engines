@@ -1,9 +1,6 @@
 # Spotykach Source Guide
 
-A navigational map of the source tree for developers adding or changing features. Read
-[architecture.md](architecture.md) first for the big picture. Line numbers are
-intentionally omitted here because they drift; names of classes and methods are stable
-enough to grep for.
+A navigational map of the source tree for developers adding or changing features. Read [architecture.md](architecture.md) first for the big picture. Line numbers are intentionally omitted here because they drift; names of classes and methods are stable enough to grep for.
 
 ## Top level
 
@@ -26,16 +23,11 @@ enough to grep for.
 
 ## `src/engine/` - the platform/engine contract + the engines
 
-The contract headers the platform talks to (`iengine.h`, `engine_context.h`, `itimesource.h`,
-`engine_params.h`, `display_model.h`, `engine_leds.h`, `mode.h`, `deck_ref.h`, `color.h`,
-`led.ring.h`, `engine_select.h`, `granular_engine.h`) live at the top of `src/engine/`; each engine
-has its own subdirectory (`granular/`, `delay/`, `passthrough/`). See
-[engine-layout.md](engine-layout.md) for the full contract map and how the boundary is enforced.
+The contract headers the platform talks to (`iengine.h`, `engine_context.h`, `itimesource.h`, `engine_params.h`, `display_model.h`, `engine_leds.h`, `mode.h`, `deck_ref.h`, `color.h`, `led.ring.h`, `engine_select.h`, `granular_engine.h`) live at the top of `src/engine/`; each engine has its own subdirectory (`granular/`, `delay/`, `passthrough/`). See [engine-layout.md](engine-layout.md) for the full contract map and how the boundary is enforced.
 
 ## `src/dsp/` - engine-agnostic DSP primitives
 
-Shared primitives any engine (or the platform) may use; the dependency flows platform/engine -> dsp,
-never the reverse. A primitive earns a place here once it has a real second consumer.
+Shared primitives any engine (or the platform) may use; the dependency flows platform/engine -> dsp, never the reverse. A primitive earns a place here once it has a real second consumer.
 
 | File           | Role |
 |----------------|------|
@@ -96,9 +88,7 @@ This is where audio is generated. None of it touches hardware directly.
 
 ### Other helpers
 
-`click.*` (metronome), `cpattern.*`, `adenv.*` (AD envelope), `globals.h`,
-`skip.write.head.h`. Granular's `mode.h` redirects to the contract `engine/mode.h`, which owns the
-shared enums (`Mode`, `Route`, `ModType`, `GritMode`, `DeckSource`, `ClockSource`, `kKeyInterval`).
+`click.*` (metronome), `cpattern.*`, `adenv.*` (AD envelope), `globals.h`, `skip.write.head.h`. Granular's `mode.h` redirects to the contract `engine/mode.h`, which owns the shared enums (`Mode`, `Route`, `ModType`, `GritMode`, `DeckSource`, `ClockSource`, `kKeyInterval`).
 
 ## `src/ui/` - controls, LEDs, MIDI
 
@@ -139,16 +129,16 @@ shared enums (`Mode`, `Route`, `ModType`, `GritMode`, `DeckSource`, `ClockSource
 
 ## Where features live (quick index)
 
-- Add a **new playback mode**: `mode.h`, `Deck::_set_mode`, `Generator`/`Vox` mode
-  handling, plus UI mode selection in `core.ui.*` and a color in `color.*`.
-- Change **recording behaviour**: `Buffer` state machine and `Deck` record methods
-  (`toggle_recording`, `_start_recording`, `_clock_recording`, `_set_grid`).
-- Add an **effect**: model it on `fx.drive.*`/`fx.reduce.*`, register it in `Fx`, and
-  expose UI control in `core.ui.pads.cpp`/`core.ui.leds.cpp`.
-- Change **sync/clock**: `Driver`, `SynClock`, `Divider`, `Tempo`; clock-source UI in
-  `core.ui.midi.cpp` and `core.ui.cpp`.
-- Add a **config option**: extend `Config::Values` and the parser in `config.h`, and read
-  it where needed (e.g. `core.ui.midi.cpp` for MIDI).
-- Change **storage/SD**: `Storage`/`DeckStorage`, `Card`, `wav.h`, and the storage UI
-  gestures in `core.ui.pads.cpp`.
+- Add a **new playback mode**: `mode.h`, `Deck::_set_mode`, `Generator`/`Vox` mode handling, plus UI mode selection in `core.ui.*` and a color in `color.*`.
+
+- Change **recording behaviour**: `Buffer` state machine and `Deck` record methods (`toggle_recording`, `_start_recording`, `_clock_recording`, `_set_grid`).
+
+- Add an **effect**: model it on `fx.drive.*`/`fx.reduce.*`, register it in `Fx`, and expose UI control in `core.ui.pads.cpp`/`core.ui.leds.cpp`.
+
+- Change **sync/clock**: `Driver`, `SynClock`, `Divider`, `Tempo`; clock-source UI in `core.ui.midi.cpp` and `core.ui.cpp`.
+
+- Add a **config option**: extend `Config::Values` and the parser in `config.h`, and read it where needed (e.g. `core.ui.midi.cpp` for MIDI).
+
+- Change **storage/SD**: `Storage`/`DeckStorage`, `Card`, `wav.h`, and the storage UI gestures in `core.ui.pads.cpp`.
+
 - Re-map **controls/LEDs/pins**: the enums in `hardware.h` are the single source of truth.

@@ -120,6 +120,23 @@ engine-edrums:
 	$(MAKE) -j8 ENGINE=edrums
 	$(MAKE) ENGINE=edrums program-dfu
 
+# Vendored Daisy archives. The core Makefile's link step (-ldaisy -ldaisysp) needs these built, but a
+# fresh checkout has source-only submodules, so a bare `make` used to fail at link with "cannot find
+# -ldaisy". Wire each archive as a file prerequisite of the elf with its own build rule: a plain `make`
+# builds a missing archive on demand, but the rules have no prerequisites so the sub-make never re-runs
+# on a normal rebuild once the .a exists. `make libs` still force-rebuilds; pair with `clean-libs`.
+LIBDAISY_A = $(LIBDAISY_DIR)/build/libdaisy.a
+DAISYSP_A = $(DAISYSP_DIR)/build/libdaisysp.a
+
+$(BUILD_DIR)/$(TARGET).elf: $(LIBDAISY_A) $(DAISYSP_A)
+
+$(LIBDAISY_A):
+	cd $(LIBDAISY_DIR) && $(MAKE)
+
+$(DAISYSP_A):
+	cd $(DAISYSP_DIR) && $(MAKE)
+
+.PHONY: libs
 libs:
 	cd $(LIBDAISY_DIR) && $(MAKE)
 	cd $(DAISYSP_DIR) && $(MAKE)

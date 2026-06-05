@@ -1,4 +1,4 @@
-# Spotykach (platform/engine fork)
+# sk-engines: A Spotykach (platform/engine fork)
 
 A fork of the official [Synthux Academy Spotykach](https://synthux.academy/store/spotykach) firmware, re-architected into a fixed hardware/UI **platform** that hosts a swappable DSP **engine**. The board and its whole interaction language — multi-function knobs with pickup, ring feedback, pad gestures, transport, SD-card sample storage, CV/gate, MIDI — stay fixed; a firmware variant swaps only the parameters and DSP. The dual-deck granular looper is the reference engine (and remains the default build); a tempo-synced stereo delay, a dual Euclidean drum machine, and a minimal stereo passthrough ship as additional, non-granular engines that demonstrate the api. The clock/transport is itself a shared platform service, so any engine can lock to the same internal/TS4/MIDI clock. The platform is decoupled from any one engine: `src/hw/`, `src/ui/`, `src/memory/`, and `src/transport/` include zero granular headers, and the build enforces it (see `make check-boundary`).
 
@@ -36,8 +36,11 @@ The `.elf` file is mainly used for debugging. The `.bin` file is the one that th
 The firmware is a fixed hardware/UI **platform** that hosts a swappable DSP **engine**, chosen at build time with the `ENGINE` variable:
 
 - `make -j8` — the granular looper (default; `ENGINE=granular`).
+
 - `make -j8 ENGINE=delay` — a tempo-synced stereo delay (musical divisions, feedback, pitch-shifted taps).
+
 - `make -j8 ENGINE=edrums` — a dual Euclidean drum machine (synthesized voices, polymeter, live model select).
+
 - `make -j8 ENGINE=passthrough` — a minimal stereo-passthrough variant.
 
 Switching `ENGINE` does not require `make clean`. Other build flags: `DEBUG=1` (enables UART logging) and `LOFI_INT16=1` (16-bit loop buffer, doubling record time). See [`docs/architecture.md`](docs/architecture.md) for the platform/engine design and [`docs/engines/`](docs/engines/) for a per-engine reference (and how to add a new engine).
@@ -55,8 +58,11 @@ It is git-ignored and is a snapshot of whichever `ENGINE` you built (granular by
 The bootloader version used in this project enables USB DFU firmware updating from the _external_ USB port - i.e. the USB-C port on the rear of the main PCB, NOT the one on the Seed. Application firmware can only be flashed using the USB-C port.
 
 1. Compile the firmware using the steps above
+
 2. Connect the USB-C connector on the main PCB to the computer (ensure the cable is not power-only)
+
 3. Hold the `Reset` button on the back of the unit for ~3 seconds. The leds under bottom pads going to "breathe" in white.
+
 4. Run the command `make program-dfu` from a terminal
 
 `make program-dfu` flashes whatever is currently in `build/` (it does not rebuild). To flash a non-default engine, build it first in the same step, e.g. `make ENGINE=passthrough && make program-dfu`.

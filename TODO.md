@@ -49,6 +49,7 @@ But it **CHANGES the delay's DSP** (its smoothing/interpolation may not be bit-i
 ## P3 - Evaluate converting the build to CMake (Make as a thin frontend)
 
 Lowest priority: a deliberate spike, not a task, and explicitly *not worth it for aesthetics alone*
+
 - the grep-guard already enforces the boundary and `bear` already gives clangd its flags. Worth
 doing only if committing to the compiler-enforced boundary + multi-engine growth. Do it as a spike
 on a branch, NOT a blind migration of a working hardware-critical boot path.
