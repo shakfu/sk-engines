@@ -129,13 +129,47 @@ Each former gating unknown is now resolved or characterized:
   over. On adoption it is renamed to `Makefile`. Verified end-to-end host-side (build + engine switch +
   DFU command); kept as a separate file on the spike branch so the proven `Makefile` stays intact.
 
-- **Incidental Make bug found (independent of CMake):** `Makefile:52` sets `C_USR_FLAGS` but libDaisy's
-  core Makefile reads `C_USER_FLAGS` (with the E), so `-ffast-math -funroll-loops` are silently dropped
-  - the live firmware has neither. Fix the typo or delete the dead config.
+- **All four engines build host-side.** `granular`, `passthrough`, `delay`, and `edrums` each compile
+  and link under CMake with no source changes (the `CMakeLists` engine switch mirrors the Makefile's).
+  Host build success only - none are flash-verified.
+
+- **Incidental Make bug found (resolved on `main`):** `Makefile:52` set `C_USR_FLAGS` but libDaisy's
+  core Makefile reads `C_USER_FLAGS` (with the E), so `-ffast-math -funroll-loops` were silently dropped
+  - the live firmware had neither. Fixed on `main` (dead line removed with a documenting comment, verified
+  a host no-op), separately from this branch.
 
 **Revised acceptance** (the original "`.map`/objdump matches" bar is unreachable across two build
 systems that compile the library halves with different flags; do not chase byte-identity): adopt iff
 a hardware flash of the CMake `.bin` boots and passes an audio/IO smoke test on the bench, with the
-memory-map + bss parity above as the host-side precondition (met). On pass, adopt by renaming the
-prototyped `Makefile.cmake` over `Makefile` so `make` / `make program-dfu` muscle memory survives, and
-unify the host build. If the boot path fights it on hardware, stay on Make.
+memory-map + bss parity above as the host-side precondition (met). If the boot path fights it on
+hardware, stay on Make. On pass, work the adoption tail below.
+
+### Adoption tail (do NOT call this "adopted" until these are closed)
+
+A green flash is necessary but not sufficient. Items 1-4 are independent of the flash; item 5 is the
+flash gate itself. The spike branch must NOT be merged with all three build-system files straddling
+`main` - decide adoption first.
+
+1. **Collapse the engine-list duplication.** The engine list lives in three places today: the old
+   `Makefile`, `CMakeLists.txt`, and `Makefile.cmake`. On adoption, delete the old `Makefile`, rename
+   `Makefile.cmake` -> `Makefile`; the list then lives only in `CMakeLists.txt` and the wrapper just
+   forwards `ENGINE=`. Leaving all three on `main` is the main reason not to merge this branch as-is.
+
+2. **Decide the `midi_util.cpp` fix: upstream vs local patch.** The spike papers over libDaisy's CMake
+   gap with `target_sources(daisy ...)` in our root `CMakeLists`. Either PR the missing source into the
+   bleeptools libDaisy fork's `CMakeLists.txt` (clean, but a submodule/upstream change) or keep the
+   local patch (self-contained, but a future libDaisy bump could add the file and double-compile, or
+   move it and break the patch). Same call for `per/pwm.cpp` if any engine ever uses `daisy::Pwm`.
+
+3. **Unify the host build.** `host/` still has its own Makefile; folding the desktop harness into CMake
+   delivers the stated "one build system for firmware + host" benefit. Not attempted in the spike.
+
+4. **Build the compiler-enforced boundary (the actual headline justification).** The spike carries the
+   grep-guard verbatim; it does NOT yet implement the per-target include roots
+   (`target_include_directories(... PRIVATE)`) that turn a platform->engine include into a compile
+   error instead of a grep hit. That needs the engine and platform split into separate targets with
+   private includes - the real reason to adopt at all (see the top of this item); without it, CMake is
+   only the aesthetic win this item explicitly says is not worth it.
+
+5. **Flash-verify each image you intend to run.** All four engines build host-side, but only a bench
+   flash confirms boot + audio/IO per image. This is the acceptance gate above.
