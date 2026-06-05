@@ -57,6 +57,7 @@ void CoreUI::init() {
     for (int i = 0; i < Hardware::LED_LAST; i++) _led[i].init(i);
 
     _engine_owns_display = _engine.capabilities() & CapOwnDisplay;
+    _aux_select = _engine.capabilities() & CapAux;
 };
 
 void CoreUI::_init_values()
@@ -76,7 +77,12 @@ void CoreUI::_init_values()
         mv(ParamId::PolySlice)[ref].set(.51f);
 
         mv(ParamId::ModSpeed)[ref].set(.3f);
-        mv(ParamId::ModAmp)[ref].set(0.f);
+        // Engine-seeded (like Pos): granular's param(ModAmp) is 0 (unchanged), but edrums seeds it to
+        // 1.0 so its MOD_AMT->probability knob defaults to 100%.
+        mv(ParamId::ModAmp)[ref].set(_engine.param(ParamId::ModAmp, ref));
+        // Alt+PITCH selector (CapAux engines, e.g. edrums model select). Engine-seeded so a deck can
+        // start on a chosen item; granular's param(Aux) is 0 and the knob is unused there.
+        mv(ParamId::Aux)[ref].set(_engine.param(ParamId::Aux, ref));
 
         _hold_clear[ref].init();
 
@@ -193,9 +199,12 @@ void CoreUI::process()
         else if (_touched.test(GritA)) {
             _engine.set_param(ParamId::GritIntensity, DeckRef::A, mv(ParamId::GritIntensity)[DeckRef::A].value());
         }
+        else if (_aux_select && _touched.test(Alt)) {
+            _engine.set_param(ParamId::Aux, DeckRef::A, mv(ParamId::Aux)[DeckRef::A].value());
+        }
         else {
             auto speed_a = mv(ParamId::Speed)[DeckRef::A].value();
-            if (_pitch_quantized.test(DeckRef::A)) {
+            if (!_aux_select && _pitch_quantized.test(DeckRef::A)) {
                 speed_a = snapped_speed(speed_a);
             }
             _engine.set_param(ParamId::Speed, DeckRef::A, speed_a);
@@ -208,9 +217,12 @@ void CoreUI::process()
         else if (_touched.test(GritB)) {
             _engine.set_param(ParamId::GritIntensity, DeckRef::B, mv(ParamId::GritIntensity)[DeckRef::B].value());
         }
+        else if (_aux_select && _touched.test(Alt)) {
+            _engine.set_param(ParamId::Aux, DeckRef::B, mv(ParamId::Aux)[DeckRef::B].value());
+        }
         else {
             auto speed_b = mv(ParamId::Speed)[DeckRef::B].value();
-            if (_pitch_quantized.test(DeckRef::B)) {
+            if (!_aux_select && _pitch_quantized.test(DeckRef::B)) {
                 speed_b = snapped_speed(speed_b);
             }
             _engine.set_param(ParamId::Speed, DeckRef::B, speed_b);
@@ -425,9 +437,16 @@ void CoreUI::_process_ui_queue()
 
                     mv(ParamId::FluxIntensity)[DeckRef::A].process(val, _touched.test(FluxA), changing_id_a);
                     mv(ParamId::GritIntensity)[DeckRef::A].process(val, _touched.test(GritA), changing_id_a);
-                    mv(ParamId::Speed)[DeckRef::A].process(val, !fx_a_touched, changing_id_a);
-                    if (!fx_a_touched) {
-                        _pitch_quantized.set(DeckRef::A, _touched.test(Alt));
+                    if (_aux_select) {
+                        // Alt+PITCH is the engine's selector (e.g. edrums model); PITCH alone is pitch.
+                        mv(ParamId::Speed)[DeckRef::A].process(val, !fx_a_touched && !is_alt_touched, changing_id_a);
+                        mv(ParamId::Aux)[DeckRef::A].process(val, !fx_a_touched && is_alt_touched, changing_id_a);
+                    }
+                    else {
+                        mv(ParamId::Speed)[DeckRef::A].process(val, !fx_a_touched, changing_id_a);
+                        if (!fx_a_touched) {
+                            _pitch_quantized.set(DeckRef::A, _touched.test(Alt));
+                        }
                     }
                     break;
                 }
@@ -503,9 +522,15 @@ void CoreUI::_process_ui_queue()
                     mv(ParamId::GritIntensity)[DeckRef::B].process(val, _touched.test(GritB), changing_id_b);
 
                     auto no_fx_b_touched = !_touched.test(FluxB) && !_touched.test(GritB);
-                    mv(ParamId::Speed)[DeckRef::B].process(val, no_fx_b_touched, changing_id_b);
-                    if (no_fx_b_touched) {
-                        _pitch_quantized.set(DeckRef::B, _touched.test(Alt));
+                    if (_aux_select) {
+                        mv(ParamId::Speed)[DeckRef::B].process(val, no_fx_b_touched && !is_alt_touched, changing_id_b);
+                        mv(ParamId::Aux)[DeckRef::B].process(val, no_fx_b_touched && is_alt_touched, changing_id_b);
+                    }
+                    else {
+                        mv(ParamId::Speed)[DeckRef::B].process(val, no_fx_b_touched, changing_id_b);
+                        if (no_fx_b_touched) {
+                            _pitch_quantized.set(DeckRef::B, _touched.test(Alt));
+                        }
                     }
                     break;
                 }

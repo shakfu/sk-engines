@@ -25,8 +25,11 @@ ENGINE_SOURCES =
 else ifeq ($(ENGINE), delay)
 C_DEFS += -DSPK_ENGINE_DELAY
 ENGINE_SOURCES = src/engine/delay/delay_engine.cpp
+else ifeq ($(ENGINE), edrums)
+C_DEFS += -DSPK_ENGINE_EDRUMS
+ENGINE_SOURCES = src/engine/edrums/edrums_engine.cpp
 else
-$(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', or 'delay')
+$(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', or 'edrums')
 endif
 
 USE_FATFS = 1
@@ -96,7 +99,7 @@ all: check-boundary
 
 # One-shot variant flash: clean -> build -> flash over DFU. Put the device in DFU mode first
 # (hold Reset ~3s until the bottom pad LEDs breathe white), then `make granular` / `make passthrough`.
-.PHONY: engine-granular engine-passthrough engine-delay
+.PHONY: engine-granular engine-passthrough engine-delay engine-edrums
 engine-granular:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=granular
@@ -111,6 +114,11 @@ engine-delay:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=delay
 	$(MAKE) ENGINE=delay program-dfu
+
+engine-edrums:
+	$(MAKE) clean
+	$(MAKE) -j8 ENGINE=edrums
+	$(MAKE) ENGINE=edrums program-dfu
 
 libs:
 	cd $(LIBDAISY_DIR) && $(MAKE)

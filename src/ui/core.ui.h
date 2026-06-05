@@ -152,6 +152,7 @@ private:
     IEngine& _engine; // the platform drives the engine ONLY through IEngine (item 3 complete)
     Transport& _transport; // platform clock: UI drives tick/reset/tap/source/tempo + reads leds()
     bool _engine_owns_display = false; // engine fills DisplayModel via render(); platform blits it (3b-2a)
+    bool _aux_select = false;          // engine claims Alt+PITCH as a selector (CapAux -> ParamId::Aux)
     Settings& _settings;
     Storage& _storage;
     Calibrator _calibrator;

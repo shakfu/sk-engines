@@ -2,7 +2,8 @@
 
 How the firmware's files split between the fixed **platform**, the **contract**, and each swappable
 **engine**, plus the convention for adding a new engine. Companion to `docs/architecture.md`
-(the platform/engine design) and `docs/item3b-plan.md` (the build-time engine selection).
+(the platform/engine design), `docs/item3b-plan.md` (the build-time engine selection), and
+`docs/engines/` (per-engine design docs + the shared transport/knob-routing model).
 
 ## The three buckets
 

@@ -33,6 +33,7 @@ enum class ParamId : uint8_t {
     PanRange,       // global
     KeyInterval,    // global (launch quantization)
     Crossfade,      // global deck A/B mix
+    Aux,            // per-deck Alt+PITCH selector (engines with CapAux; e.g. edrums model select)
     Count
 };
 
@@ -81,6 +82,8 @@ enum Capability : uint32_t {
     CapDualDeck      = 1u << 5,
     CapOwnDisplay    = 1u << 6,  // engine fills DisplayModel in render(); platform blits it directly
                                  // (bypasses the granular *_leds/render_ring query path) - item 3b-2a
+    CapAux           = 1u << 7,  // engine claims Alt+PITCH as a per-deck selector (ParamId::Aux);
+                                 // without it Alt+PITCH keeps its default meaning (granular: pitch-quantize)
 };
 using Capabilities = uint32_t;
 

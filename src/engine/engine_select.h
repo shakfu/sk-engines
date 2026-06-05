@@ -16,6 +16,9 @@
 #elif defined(SPK_ENGINE_DELAY)
   #include "engine/delay/delay_engine.h"
   namespace spotykach { using ActiveEngine = DelayEngine; }
+#elif defined(SPK_ENGINE_EDRUMS)
+  #include "engine/edrums/edrums_engine.h"
+  namespace spotykach { using ActiveEngine = EdrumsEngine; }
 #else
-  #error "No engine selected: build with ENGINE=granular (default), passthrough, or delay"
+  #error "No engine selected: build with ENGINE=granular (default), passthrough, delay, or edrums"
 #endif
