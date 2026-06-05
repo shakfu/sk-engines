@@ -49,7 +49,12 @@ LDSCRIPT = alt_sram.lds
 BOOT_BIN = bootloader-spotykach-v2.bin
 
 C_INCLUDES = -Isrc/ -Ilib/
-C_USR_FLAGS = -ffast-math -funroll-loops
+# NOTE: there used to be `C_USR_FLAGS = -ffast-math -funroll-loops` here, but the core Makefile reads
+# C_USER_FLAGS (with the E), so it was dead - those flags never reached the compiler and the shipping
+# firmware was built without them. Removed to stop it reading as active. The device meets its CPU/SRAM
+# budget without them, so do NOT just rename the var: -ffast-math changes FP semantics (implies
+# -ffinite-math-only, dropping isnan/isinf guards) and -funroll-loops inflates .text (SRAM_EXEC is
+# ~94% full). Enabling fast-math/FTZ is a deliberate, measured, hardware-flashed change - batch with P2.
 C_DEFS += -DINFS_LOG_TARGET=daisy::LOGGER_EXTERNAL
 
 CPP_SOURCES = \
