@@ -23,6 +23,7 @@
 #include "engine/granular/core.h"
 #include "engine/granular/mode.h"
 #include "engine/granular_engine.h"
+#include "transport/transport.h"
 
 #include "host_setup.h"
 #include "wav.h"
@@ -76,15 +77,22 @@ int main(int argc, char** argv) {
     host::HostArena hb;
     auto ctx = host::make_context(hb, time);
 
+    // The transport is a platform-owned service the engine only observes (post "decouple transport"):
+    // construct + init it and inject it via the context BEFORE init() so the granular Core subscribes
+    // to its ticks. The host plays the platform's role of driving it (transport.tick() per block).
+    Transport transport;
+    transport.init(kSampleRate, static_cast<float>(kBlock), &time);
+    ctx.transport = &transport;
+
     // Drive the audio lifecycle through the IEngine interface (proving the Phase 2 seam
     // off-target); reach the graph directly via core() for the host-side UI-equivalent setup.
     auto engine = std::make_unique<GranularEngine>();
     IEngine& eng = *engine;
     eng.init(ctx);
-    // The driver fires these per quarter / clock-out; the UI installs them on hardware, so
+    // The transport fires these per quarter / clock-out; the UI installs them on hardware, so
     // the host must provide no-ops or the empty std::functions throw bad_function_call.
-    eng.transport_set_on_quarter([](bool) {});
-    eng.transport_set_on_clock_out([]() {});
+    transport.set_on_quarter([](bool) {});
+    transport.set_on_clock_out([]() {});
 
     // Force a known route + mode via the public config API (item 3a-4 removed core()).
     eng.set_config(ConfigId::Route, DeckRef::A, 0); // Stereo
@@ -124,7 +132,7 @@ int main(int argc, char** argv) {
             in_r[i] = (s < in.frames()) ? in.r[s] : 0.f;
         }
 
-        eng.transport_tick(false);           // internal clock advances one 500 Hz block
+        transport.tick(false);               // internal clock advances one block; fans a TransportTick
         eng.process(in_ptrs, out_ptrs, kBlock);
 
         for (size_t i = 0; i < kBlock; i++) {

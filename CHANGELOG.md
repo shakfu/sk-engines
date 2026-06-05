@@ -18,6 +18,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Re-repaired the `test/` unit harness after the DSP restructure.** The shared-primitive move (`divider` -> `src/dsp/`, `synclock` -> `src/transport/`) left `test/Makefile` pointing at the now-defunct `src/engine/granular/` paths, so `make -C test` could not build. Repathed the unit sources and added `-I../src/transport`; the suite builds and passes again (116 assertions). (`test/Makefile`)
 
+- **Restored the `host/` granular harness after the transport decoupling.** `main_host.cpp` and `test_engine_params.cpp` still called the `transport_*` forwarders removed from `IEngine`/`GranularEngine` when the clock became a platform service, so neither compiled. Both now construct the real platform `Transport`, inject it via `EngineContext` before `init()` (so the granular `Core` subscribes to its ticks), and drive `transport.tick()` per block where they used `engine.transport_tick()` - the same injection the firmware does. Wired `src/transport/*.cpp` (and its include dir) into `host/Makefile`, and `make -C host test` now runs both the granular (`test-granular`) and edrums (`test-edrums`) engine tests. (`host/main_host.cpp`, `host/test_engine_params.cpp`, `host/Makefile`)
+
 ## [0.2.1]
 
 ### Added

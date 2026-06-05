@@ -19,6 +19,7 @@
 #include "engine/granular_engine.h"
 #include "engine/passthrough/passthrough_engine.h"
 #include "engine/display_model.h"
+#include "transport/transport.h"
 #include "host_setup.h"
 
 using namespace spotykach;
@@ -73,10 +74,18 @@ int main() {
     host::HostArena buffers;
     auto ctx = host::make_context(buffers, time);
 
+    // The transport is now a platform-owned service the engine only observes (post "decouple
+    // transport"): construct + init it, inject it via the context BEFORE init() so the granular Core
+    // can subscribe to its ticks, and drive it with transport.tick() where the old harness called the
+    // removed engine.transport_* forwarders.
+    Transport transport;
+    transport.init(host::kSampleRate, static_cast<float>(host::kBlock), &time);
+    ctx.transport = &transport;
+
     GranularEngine engine;
     engine.init(ctx);
-    engine.transport_set_on_quarter([](bool) {});
-    engine.transport_set_on_clock_out([]() {});
+    transport.set_on_quarter([](bool) {});
+    transport.set_on_clock_out([]() {});
     engine.set_config(ConfigId::Route, DeckRef::A, 0); // Stereo
     engine.set_config(ConfigId::Route, DeckRef::A, 1); // DoubleMono
 
@@ -147,7 +156,7 @@ int main() {
                 float s = 0.4f * std::sin(2.f * 3.14159265f * 220.f * (b * host::kBlock + i) / host::kSampleRate);
                 in_l[i] = in_r[i] = s;
             }
-            engine.transport_tick(false);
+            transport.tick(false);
             engine.process(in_ptrs, out_ptrs, host::kBlock);
             for (size_t i = 0; i < host::kBlock; i++) {
                 if (!std::isfinite(out_l[i]) || !std::isfinite(out_r[i])) finite = false;
