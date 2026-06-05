@@ -1,4 +1,4 @@
-# Spotykach Architecture
+# Spotykach 'engines' Architecture
 
 This document describes the big-picture architecture of the Spotykach firmware: the hardware platform, the platform/engine decoupling, the execution model, how the subsystems fit together, and how audio and control data flow through the system. For a file-by-file map of the source tree see [source-guide.md](source-guide.md). For the status and roadmap of the platform/engine refactor see [refactor-status.md](dev/refactor-status.md) and [item3-plan.md](dev/item3-plan.md). For an analysis of weaknesses and improvement opportunities see [review-260529.md](dev/review-260529.md).
 
