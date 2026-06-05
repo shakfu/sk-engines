@@ -320,8 +320,8 @@ void EdrumsEngine::render(DisplayModel& m)
     // at a glance: deck A warm (amber / red-orange), deck B cool (cyan / violet). The ring + Play LED
     // show the focused drum; the Rev LED carries the backgrounded drum's colour.
     static const uint32_t kColor[DeckRef::Count][kSlots] = {
-        { 0xff5500, 0xff1a00 }, // A: slot 0 amber, slot 1 red-orange
-        { 0x00b0ff, 0x7a5cff }, // B: slot 0 cyan,  slot 1 violet
+        { 0xff5500, 0xff0066 }, // A: slot 0 amber, slot 1 magenta (red-dominant pair, but clearly distinct)
+        { 0x00b0ff, 0x7a5cff }, // B: slot 0 cyan,  slot 1 violet  (blue-dominant pair)
     };
     for (int c = 0; c < 2; c++) {
         const int sl  = _active_slot[c];

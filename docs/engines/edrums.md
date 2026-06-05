@@ -10,9 +10,9 @@ A drum machine whose hits are placed by **Euclidean rhythms** and voiced by **sy
 
 ## Concept
 
-- Two independent tracks, deck **A** and deck **B**, each = a Euclidean pattern + a drum voice.
+- Four independent drums, two on each deck (**A** / **B**), each = a Euclidean pattern + a drum voice. A deck edits one of its two drums at a time (the **focused** one); see [Four drums](#four-drums-two-per-deck).
 
-- The pattern is a grid of steps; some steps are *onsets* (hits) distributed as evenly as possible (the Euclidean property). On each clock step the track advances one grid slot and, on an onset, fires its voice.
+- The pattern is a grid of steps; some steps are *onsets* (hits) distributed as evenly as possible (the Euclidean property). On each clock step the drum advances one grid slot and, on an onset, fires its voice.
 
 - All four drums step off the same transport clock, so the rhythm locks to the instrument's tempo and clock source (internal / TS4 / MIDI). `e.reset` realigns every pattern to the bar.
 
@@ -24,9 +24,9 @@ The two physical decks each carry **two drums** in a slot pair (`_track[deck][sl
 
 - **The swap gesture:** tapping a deck's **Rev pad** toggles that deck's focus between its two drums. On a swap the engine asks the platform to re-seed that deck's knob pickup from the newly-focused drum's values, so the pots take over cleanly (a knob does nothing until moved to the new drum's value, then catches — no jumps).
 
-- **Why two-at-a-time:** the panel has two of everything (two rings, two knob banks, two Rev pads). Mapping deck→slot inside the engine keeps the whole platform two-deck and the `IEngine` contract unchanged; the only addition is a one-shot "re-seed requested" poll the platform already honours generically.
+- **Why two-at-a-time:** the panel has two of everything (two rings, two knob banks, two Rev pads). Mapping deck→slot inside the engine keeps the whole platform two-deck; the `IEngine` contract grows by exactly one defaulted method (`take_param_reseed`, the one-shot re-seed poll), so the other engines are unaffected.
 
-- **Seeing the background drum:** the ring shows the focused drum's pattern in its colour; the **Rev LED** carries the backgrounded drum's colour (dim steady, brightening on its hits), so you always see the other drum is there and which it is. Colours are per `(deck, slot)`: deck A warm (slot 0 amber, slot 1 red-orange), deck B cool (slot 0 cyan, slot 1 violet).
+- **Seeing the background drum:** the ring shows the focused drum's pattern in its colour; the **Rev LED** carries the backgrounded drum's colour (dim steady, brightening on its hits), so you always see the other drum is there and which it is. Colours are per `(deck, slot)`: deck A warm (slot 0 amber, slot 1 magenta), deck B cool (slot 0 cyan, slot 1 violet).
 
 Defaults form a usable four-piece kit: deck A = **Kick** (slot 0) + **Tom** (slot 1), deck B = **Snare** (slot 0) + **Hat** (slot 1).
 
@@ -103,11 +103,11 @@ The platform gives each deck 7 knobs (see [README](README.md#knobs-how-a-physica
 | **MODFREQ** | `set_mod_speed` | **clock division** — 1/16, 1/8, 1/4 (per deck) |
 | **Alt + PITCH** | `Aux` | **drum model** select (live; see below) |
 
-All seven knobs act on the deck's **focused** drum; the **Rev pad** swaps focus to the other drum (see [Four drums](#four-drums-two-per-deck)). Density is stored as a fraction and re-derived over the active length, so changing SIZE keeps the relative fill. `POS` and `MOD_AMT` are engine-seeded (the platform reads `param(Pos)` / `param(ModAmp)` for their initial values), so init pre-seeds them: density A≈5/16, B≈7/16, and probability 100% (so the knob defaults to "every onset fires" with full clockwise = 100%). The display draws the focused drum's pattern over the active length (the length fills the 32-LED ring; onset lit, playhead bright) in that drum's colour, with a play-LED flash on each hit; the Rev LED carries the backgrounded drum's colour. Colours are per `(deck, slot)`: A slot 0 amber / slot 1 red-orange, B slot 0 cyan / slot 1 violet.
+All seven knobs act on the deck's **focused** drum; the **Rev pad** swaps focus to the other drum (see [Four drums](#four-drums-two-per-deck)). Density is stored as a fraction and re-derived over the active length, so changing SIZE keeps the relative fill. `POS` and `MOD_AMT` are engine-seeded (the platform reads `param(Pos)` / `param(ModAmp)` for their initial values), so init pre-seeds them: density A≈5/16, B≈7/16, and probability 100% (so the knob defaults to "every onset fires" with full clockwise = 100%). The display draws the focused drum's pattern over the active length (the length fills the 32-LED ring; onset lit, playhead bright) in that drum's colour, with a play-LED flash on each hit; the Rev LED carries the backgrounded drum's colour. Colours are per `(deck, slot)`: A slot 0 amber / slot 1 magenta, B slot 0 cyan / slot 1 violet.
 
 ### Polymeter
 
-Per-deck length **and** division make the two tracks cycle independently (a deck's cycle = `length × division` ticks). On the **external** clock a transport grid reset (`e.reset`) realigns both decks (step phase + pattern position) to the bar; on the **internal** clock there is no reset, so the decks free-run and realign naturally at their least-common-multiple. Tempo/clock-source are the shared transport's (TAP / tap-hold+MODFREQ_A / Alt+TAP — see [README](README.md#clock-control-player-facing)).
+Per-drum length **and** division make all four drums cycle independently (a drum's cycle = `length × division` ticks). On the **external** clock a transport grid reset (`e.reset`) realigns every drum (step phase + pattern position) to the bar; on the **internal** clock there is no reset, so the drums free-run and realign naturally at their least-common-multiple. Tempo/clock-source are the shared transport's (TAP / tap-hold+MODFREQ_A / Alt+TAP — see [README](README.md#clock-control-player-facing)).
 
 ---
 
@@ -167,9 +167,13 @@ Yes, possible and cheap via `TransportTick.index` (a monotonic 16th counter): a 
 
 - Step timing is block-quantized (~2 ms) — see P3.
 
-- Both decks share the PITCH knob *default*, so distinct pitch needs per-deck dial-in; the kick vs snare/clap distinction comes from the fixed per-deck `tone` (body vs band-passed noise).
+- Each of the four drums is seeded with its own pitch (and model), but a deck's PITCH knob only edits its **focused** drum; re-pitching the backgrounded drum means swapping focus to it first (its timbre still differs via the selected model — body vs band-passed noise).
+
+- The four voices share one bus with a fixed pre-limiter trim (`kBusTrim`, 0.6) and no per-drum level/accent, so balance between the four drums depends on their decay/model rather than a mix control.
 
 - Clock division is 3 values (1/16, 1/8, 1/4); no triplets yet.
+
+- A deck gives no panel cue that it *has* a second drum beyond the Rev-LED colour; the focused/background split is only legible once you know to read the Rev LED.
 
 - Polymeter realigns to the bar only on the external clock (internal clock has no grid reset).
 
