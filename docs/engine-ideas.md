@@ -2,7 +2,7 @@
 
 A scratchpad of candidate engines for the Spotykach platform. Each entry is a hypothesis: a DSP idea mapped onto the fixed hardware (dual deck, 7 knobs per deck, pads, transport, CV/gate, MIDI, SD) through the `IEngine` contract. Nothing here is committed; the point is to rank fit and cost before anyone writes a `*_engine.cpp`.
 
-Companion reading: `docs/engines/README.md` (the contract + the shared knob vocabulary), `docs/architecture.md` (platform/engine seam, memory model). Many of the DSP building blocks referenced below already exist as offline C++ in the sibling project `~/projects/personal/nanodsp` (signalsmith-dsp, DaisySP, STK, madronalib, fxdsp, vafilters) — that catalogue is the main idea source. The caveat throughout: nanodsp is offline float32 Python over large buffers; this platform is hard-real-time on a 480 MHz Cortex-M7 with a 96-sample block and no heap on the audio path. An idea being "in nanodsp" proves the algorithm, not that it fits the budget. The feasibility notes call out where that gap bites.
+Companion reading: `docs/engines/README.md` (the contract + the shared knob vocabulary), `docs/architecture.md` (platform/engine seam, memory model). Many of the DSP building blocks referenced below already exist as offline C++ in the sibling project [nanodsp](https://github.com/shakfu/nanodsp) (signalsmith-dsp, DaisySP, STK, madronalib, fxdsp, vafilters) — that catalogue is the main idea source. The caveat throughout: nanodsp is offline float32 Python over large buffers; this platform is hard-real-time on a 480 MHz Cortex-M7 with a 96-sample block and no heap on the audio path. An idea being "in nanodsp" proves the algorithm, not that it fits the budget. The feasibility notes call out where that gap bites.
 
 ---
 
@@ -27,13 +27,14 @@ The bare-metal budget (see [Feasibility](#feasibility-the-shared-constraints)) r
 | 1 | **Resonator** | dual physical-model voice (string/mallet/modal), pluck or live-exciter | yes (2 voices) | optional (arp) | DaisySP `String`/`Pluck`, STK modal | low |
 | 2 | **Ladder synth** | dual VA voice: band-limited osc + Moog ladder + env, sequenced | yes (2 voices) | yes (seq) | vafilters / DaisySP `MoogLadder`, PolyBLEP | low-med |
 | 3 | **West-coast** | complex osc: wavefold + lowpass-gate, FM between the two decks | yes (2 osc) | optional | DaisySP `Oscillator`, fxdsp wavefold, DaisySP `Lpg` | low |
-| 4 | **Vocoder** | deck A carrier x deck B modulator, channel-bank or formant | inherent (A/B roles) | no | nanodsp `vocoder`/`formant_filter` | medium |
-| 5 | **Shimmer reverb** | FDN reverb with pitch-shifted feedback; dual = two spaces / send | yes (2 sends) | optional (gate) | madronalib FDN, nanodsp `shimmer_reverb` | medium |
-| 6 | **Frequency shifter** | single-sideband shift / barber-pole, ring-mod, tempo-LFO sweep | yes (2 shifters) | optional (LFO) | fxdsp `frequency_shifter`, `ring_modulator` | low |
-| 7 | **Tape echo** | wow/flutter + saturation + bitcrush over a synced delay | yes (2 lines) | yes (sync) | nanodsp `tape_echo`/`lofi`, DaisySP delay | low-med |
+| 4 | **Vocoder** | deck A carrier x deck B modulator, channel-bank or formant | inherent (A/B roles) | no | nanodsp `vocoder`/`formant_filter` over [signalsmith](https://github.com/shakfu/nanodsp/tree/main/thirdparty/signalsmith) biquads | medium |
+| 5 | **Shimmer reverb** | FDN reverb with pitch-shifted feedback; dual = two spaces / send | yes (2 sends) | optional (gate) | [madronalib](https://github.com/shakfu/nanodsp/tree/main/thirdparty/madronalib) FDN | medium |
+| 6 | **Frequency shifter** | single-sideband shift / barber-pole, ring-mod, tempo-LFO sweep | yes (2 shifters) | optional (LFO) | [fxdsp](https://github.com/shakfu/nanodsp/tree/main/thirdparty/fxdsp) `FreqShifter`, `RingModulator` | low |
+| 7 | **Tape echo** | wow/flutter + saturation + bitcrush over a synced delay | yes (2 lines) | yes (sync) | nanodsp `tape_echo`/`lo_fi` over [DaisySP](https://github.com/shakfu/nanodsp/tree/main/thirdparty/DaisySP) delay | low-med |
 | 8 | **Drone bank** | additive/modal oscillator bank, slow evolving pad | yes (2 banks) | optional (LFO) | STK modal, madronalib generators | low-med |
 | 9 | **Euclidean delay** | multi-tap delay whose taps sit on a Euclidean grid | yes (2 lines) | yes (subscribe) | `dsp/cpattern` + delay line | low |
-| 10 | **Spectral freeze** | STFT freeze/blur of the live input, pad = capture | yes (2 freezes) | no | signalsmith STFT, nanodsp `spectral_freeze` | high |
+| 10 | **Spectral freeze** | STFT freeze/blur of the live input, pad = capture | yes (2 freezes) | no | [signalsmith](https://github.com/shakfu/nanodsp/tree/main/thirdparty/signalsmith) STFT | high |
+| 11 | **Grain cloud** | polyphonic grain cloud (per-grain pitch/pan/position), the granular the looper *isn't* | yes (2 clouds) | optional | GrainflowLib | med-high |
 
 "Cost" is rough per-sample CPU + memory + integration effort, low to high. Tiers below group them.
 
@@ -47,7 +48,7 @@ The bare-metal budget (see [Feasibility](#feasibility-the-shared-constraints)) r
 
 **Why it fits.** Karplus-Strong is about the cheapest expressive voice there is (a delay line + one-pole damping filter). It is natively pitched, so `cv_voct` / `handle_midi_note` make it a playable modular/MIDI voice with no extra UI. Two decks are two voices without contortion; the edrums focus-swap trick could expand to a 4-note chord later.
 
-**DSP.** DaisySP `String` / `Pluck` (already in the pinned `bleeptools` fork) or STK `Modal`/`Plucked` for the bell/bar timbres (proven in nanodsp's physical-modeling module). Excitation = noise burst, input audio, or impulse. Damping = one-pole in the loop. Optional body resonance = 1-2 biquads (`dsp/biquad` exists).
+**DSP.** DaisySP `String` / `Pluck` (already in the pinned `bleeptools` fork) or STK `Modal`/`Plucked` for the bell/bar timbres (wrapped in nanodsp over [DaisySP](https://github.com/shakfu/nanodsp/tree/main/thirdparty/DaisySP) / [STK](https://github.com/shakfu/nanodsp/tree/main/thirdparty/stk)). Excitation = noise burst, input audio, or impulse. Damping = one-pole in the loop. Optional body resonance = 1-2 biquads (`dsp/biquad` exists).
 
 **Control map (per deck).**
 
@@ -70,7 +71,7 @@ The bare-metal budget (see [Feasibility](#feasibility-the-shared-constraints)) r
 
 **Why it fits.** Two oscillators is the canonical complex-oscillator pair; the platform's two decks map onto it 1:1, and the crossfader becomes the timbre/balance control. CV/gate and the transport drive the LPGs rhythmically. All the DSP is cheap and per-sample.
 
-**DSP.** DaisySP `Oscillator` (band-limited) or PolyBLEP; fxdsp antialiased `wavefold` (1st/2nd-order antiderivative, in nanodsp's saturation module — important, naive folding aliases badly); DaisySP `Lpg`. FM is a single multiply-add into the phase increment.
+**DSP.** DaisySP `Oscillator` (band-limited) or PolyBLEP; [fxdsp](https://github.com/shakfu/nanodsp/tree/main/thirdparty/fxdsp) antialiased `wavefold` (1st/2nd-order antiderivative — important, naive folding aliases badly); DaisySP `Lpg`. FM is a single multiply-add into the phase increment.
 
 **Control map (per deck).**
 
@@ -93,7 +94,7 @@ The bare-metal budget (see [Feasibility](#feasibility-the-shared-constraints)) r
 
 **Why it fits.** Cheap (a Hilbert transform via an all-pass network + a complex multiply by an oscillator), processes the live input so it needs no synth, and the two decks give a natural stereo/dual treatment. Transport sync makes the barber-pole LFO musical.
 
-**DSP.** fxdsp `frequency_shifter` and `ring_modulator` (both in nanodsp's composed/fxdsp modules). The Hilbert is an IIR all-pass pair — a handful of biquad-cost sections per sample.
+**DSP.** [fxdsp](https://github.com/shakfu/nanodsp/tree/main/thirdparty/fxdsp) `FreqShifter` and `RingModulator` (wrapped by nanodsp's `freq_shift` / `ring_mod`). The Hilbert is an IIR all-pass pair — a handful of biquad-cost sections per sample.
 
 **Control map (per deck).**
 
@@ -120,7 +121,7 @@ The bare-metal budget (see [Feasibility](#feasibility-the-shared-constraints)) r
 
 **Why it fits.** Reuses two existing platform investments: the step-sequencer pad layer and the transport tick subscription. The VA filter's self-oscillating resonance is the headline control. CV/MIDI in for live playing when the sequencer is off.
 
-**DSP.** vafilters Moog/Diode ladder (Faust-derived, in nanodsp) or DaisySP `MoogLadder`/`Svf`; PolyBLEP or DaisySP oscillators for the alias-free saw/square; DaisySP `Adsr`. All per-sample-cheap; the only watch-item is the ladder's oversampling if you want clean high resonance.
+**DSP.** [vafilters](https://github.com/shakfu/nanodsp/tree/main/thirdparty/vafilters) Moog/Diode ladder (Faust-derived, wrapped in nanodsp) or DaisySP `MoogLadder`/`Svf`; PolyBLEP or DaisySP oscillators for the alias-free saw/square; DaisySP `Adsr`. All per-sample-cheap; the only watch-item is the ladder's oversampling if you want clean high resonance.
 
 **Control map (per deck).**
 
@@ -143,7 +144,7 @@ The bare-metal budget (see [Feasibility](#feasibility-the-shared-constraints)) r
 
 **Why it fits.** Direct evolution of `delay` (which already borrows SDRAM, tempo-syncs, and has a pitch shifter on the wet tap). The new parts are cheap modulators and a saturator on a signal that already exists. The `delay` doc itself lists "ping-pong / cross-feedback" and "lo-fi mode" as wanted.
 
-**DSP.** Reuse the delay line + pitch shifter already in `delay_engine`; add fxdsp/DaisySP saturation, a slow random LFO for wow/flutter (modulate the read pointer), DaisySP `bitcrush`/sample-rate reduce. nanodsp's `tape_echo` and `lofi` composed effects are the reference chain.
+**DSP.** Reuse the delay line + pitch shifter already in `delay_engine`; add fxdsp/DaisySP saturation, a slow random LFO for wow/flutter (modulate the read pointer), DaisySP `bitcrush`/sample-rate reduce. nanodsp's [`tape_echo`](https://github.com/shakfu/nanodsp/blob/main/src/nanodsp/effects/composed.py) and [`lo_fi`](https://github.com/shakfu/nanodsp/blob/main/src/nanodsp/effects/composed.py) are the reference chain (recipe), composed over [DaisySP](https://github.com/shakfu/nanodsp/tree/main/thirdparty/DaisySP) + [fxdsp](https://github.com/shakfu/nanodsp/tree/main/thirdparty/fxdsp).
 
 **Control map (per deck).**
 
@@ -166,7 +167,7 @@ The bare-metal budget (see [Feasibility](#feasibility-the-shared-constraints)) r
 
 **Why it fits.** A clean, classic use of two decks as two signal roles, and the per-deck knob banks naturally split into "carrier shaping" (A) and "modulator/analysis" (B). Plays the live stereo input.
 
-**DSP.** nanodsp `vocoder` / `formant_filter` reference; on-target it is N bandpass biquad pairs (analysis + synthesis) plus envelope followers — 12-16 bands is a few hundred biquads per sample, the heaviest of Tier B but within an H7 block if band count is tuned.
+**DSP.** nanodsp [`vocoder`](https://github.com/shakfu/nanodsp/blob/main/src/nanodsp/effects/composed.py) / [`formant_filter`](https://github.com/shakfu/nanodsp/blob/main/src/nanodsp/effects/composed.py) are the reference (recipe), built from [signalsmith](https://github.com/shakfu/nanodsp/tree/main/thirdparty/signalsmith) biquads; on-target it is N bandpass biquad pairs (analysis + synthesis) plus envelope followers — 12-16 bands is a few hundred biquads per sample, the heaviest of Tier B but within an H7 block if band count is tuned.
 
 **Control map.** Deck A (carrier): PITCH = osc pitch, SIZE = carrier waveform/noise mix, POS = carrier brightness. Deck B (modulator): SIZE = band count/resolution, POS = formant shift, ENV = envelope-follower attack/release, SOS = sibilance/high-band passthrough. Crossfader = dry/vocoded.
 
@@ -178,7 +179,7 @@ The bare-metal budget (see [Feasibility](#feasibility-the-shared-constraints)) r
 
 **Why it fits.** A lush "always-on" texture engine that processes the live input. An optional gated mode (`CapTransport`) syncs the gate length to tempo for rhythmic-reverb / gated-verb effects.
 
-**DSP.** madronalib FDN presets (room/hall/plate/chamber/cathedral) are the reference; on-target an 8x8 Hadamard FDN with damping one-poles + a crossfading pitch-shift tap in the loop. Memory: a few hundred ms of delay lines in SDRAM. nanodsp `shimmer_reverb` / `gated_reverb` are the composed references.
+**DSP.** madronalib FDN presets (room/hall/plate/chamber/cathedral) are the reference; on-target an 8x8 Hadamard FDN with damping one-poles + a crossfading pitch-shift tap in the loop. Memory: a few hundred ms of delay lines in SDRAM. nanodsp [`shimmer_reverb`](https://github.com/shakfu/nanodsp/blob/main/src/nanodsp/effects/composed.py) / [`gated_reverb`](https://github.com/shakfu/nanodsp/blob/main/src/nanodsp/effects/composed.py) are the composed references (recipe), built on [madronalib](https://github.com/shakfu/nanodsp/tree/main/thirdparty/madronalib) FDN.
 
 **Control map (per deck).**
 
@@ -219,6 +220,37 @@ The bare-metal budget (see [Feasibility](#feasibility-the-shared-constraints)) r
 
 ---
 
+### 11. Grain cloud (GrainflowLib)
+
+**Concept.** A *second* granular engine — but a genuinely different model from the existing one. The shipping `granular` engine, despite its name, is a **dual tape-loop scanner**: even its cloud-like Drift mode runs a single voice with up to six overlapping windows that **share one pitch, one start position, one speed** (the "spray" is start-position jitter only). It cannot do per-grain pitch, per-grain pan, or dense polyphony. A grain-cloud engine fills exactly that gap: dozens of independent grains, each with its own pitch/transpose, buffer position, pan, duration, direction, and per-grain randomization — a synthesizer-style grain cloud rather than a looper. Two decks = two clouds (or one cloud + its modulator), morphed by the crossfader.
+
+**Why a second granular is justified.** The two are different instruments, not variants. Anything else here would be a tape looper; this is the one engine that turns a recorded buffer into a true polyphonic cloud — scattering grains with independent transposition and spatialisation, glisson (per-grain pitch glide), and probabilistic density. It reuses the platform's recording/SD/buffer machinery (`CapRecording | CapTapeStorage`) the same way granular does, so the capture side is solved.
+
+**DSP source.** [GrainflowLib](https://github.com/shakfu/nanodsp/tree/main/thirdparty/GrainflowLib) — a header-only C++17 grain-cloud engine (~3,380 lines, 12 headers). Architecture: a `gf_grain_collection<T, Blocksize, SigType>` owns a fixed array of `gf_grain` instances distributed across streams; each grain resets on the zero-crossing of an external grain-clock signal and reads its source via a traversal phasor, with sample-accurate FM (pitch) and AM (amplitude) inputs. Per-grain parameters (`gf_param_name`, ~23 of them): `rate`/`transpose`, `glisson`, `delay`, `window`, `space`, `density`, `direction`, `amplitude`, `start_point`/`stop_point`, `vibrato_*`, `stream`, each with `base + random + offset·grain_id`. This is the model the existing engine lacks.
+
+**Control map (per deck = per cloud).**
+
+| Knob | `ParamId` | Function |
+|---|---|---|
+| POS | `Pos` | cloud centre position in the buffer |
+| SIZE | `Size` | position spray (spread of grain start points) |
+| PITCH | `Speed` | grain transpose (centre = unity; CV/MIDI) |
+| ENV | `Env` | grain duration / window |
+| MODFREQ | `set_mod_speed` | grain density (grains/sec; transport-syncable) |
+| MOD_AMT | `ModAmp` | pitch spray + pan spray (per-grain randomization depth) |
+| SOS | `Mix` | dry/wet (or grain count / cloud level) |
+| Alt+PITCH | `Aux` | direction (fwd/back/random) / glisson / quantize-to-semitone |
+
+**Capabilities.** `CapRecording | CapTapeStorage | CapDualDeck | CapOwnDisplay | CapAux` (+ `CapTransport` if grain density locks to tempo).
+
+**Cost: medium-high.** The DSP loop is heap-free and STL-free in `process()`, which is the important part. The porting work and risks:
+
+- **Pre-allocate, don't resize.** The grain array (`std::unique_ptr<gf_grain[]>`) and a per-grain `std::unique_ptr<phasor>` vibrato must become fixed at `init()` (max grain count, `Blocksize = 96`). One `throw()` in `param_set` to remove (`-fno-exceptions`). Verify `std::atomic<bool>` is lock-free on the M7 (it is).
+- **Cut the `AudioFile.h` dependency** and feed the existing SDRAM buffer through the `gf_i_buffer_reader` seam (it exists for exactly this — clean).
+- **The real gate is SDRAM access, not CPU.** A cloud does *scattered* reads (each grain reads a different buffer position with interpolation), the opposite of the looper's few contiguous playheads. The H7's SDRAM rewards bursts and punishes random access; N grains scattering reads per 96-sample block is the make-or-break number, and the desktop profile does not tell you it. **Benchmark N scattered grain reads/block headless in `host/` before committing** — that single measurement decides feasibility and the max grain count.
+
+**Alternative framing — extend instead of import.** Rather than port GrainflowLib wholesale (template-heavy, an external model to maintain), give the existing `Window` per-window pitch/pan/position and let Drift spawn many of them. That recovers ~80% of the cloud character, stays in the in-house Vox/Window idiom, and reuses everything already there — at the cost of glisson, multi-stream spatialisation, and the rich randomization model. **Decision rule:** port GrainflowLib if the goal is a deep, distinct cloud instrument *and* the SDRAM benchmark passes; extend the existing Vox/Window if you want cloud-ish texture cheaply. Either way the first step is the same benchmark.
+
 ## Tier C — ambitious / research
 
 ### 10. Spectral freeze and smear
@@ -227,7 +259,7 @@ The bare-metal budget (see [Feasibility](#feasibility-the-shared-constraints)) r
 
 **Why it fits the *concept*, with caveats.** Hugely expressive and on-brand for a sampling/looping instrument, and the two-deck + crossfader morph is ideal. The caveat is purely budgetary (below).
 
-**DSP.** signalsmith-dsp STFT (the backbone of nanodsp's spectral module): overlap-add, phase handling, freeze, blur. The H7 has the FFT muscle (CMSIS-DSP / ARM FFT) for, say, a 512/1024-point real FFT at modest overlap, but it must be fit into the 96-sample block budget with care — STFT is block-based and bursty, the opposite of the steady per-sample DSP the rest of the engines use.
+**DSP.** [signalsmith-dsp](https://github.com/shakfu/nanodsp/tree/main/thirdparty/signalsmith) STFT (the backbone of nanodsp's spectral module): overlap-add, phase handling, freeze, blur. The H7 has the FFT muscle (CMSIS-DSP / ARM FFT) for, say, a 512/1024-point real FFT at modest overlap, but it must be fit into the 96-sample block budget with care — STFT is block-based and bursty, the opposite of the steady per-sample DSP the rest of the engines use.
 
 **Cost: high.** The real work is engineering an FFT that coexists with a 96-sample/2 ms audio block without overrunning — likely processing one hop across several audio blocks, double-buffered in SDRAM. Worth prototyping headless (`host/`) first. Treat as a milestone, not a quick win.
 
