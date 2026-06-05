@@ -1,6 +1,6 @@
 # Granular — dual granular looper / sampler
 
-`ENGINE=granular` (default) · `src/engine/granular_engine.{h,cpp}` + `src/engine/granular/` (~50 files) · class `GranularEngine`
+`ENGINE=granular` (default) · `src/engine/granular/` (~50 files: adapter `granular_engine.{h,cpp}` + DSP) · class `GranularEngine`
 
 The original instrument and the default build: a two-deck granular looper/sampler with recording, overdub, feedback, a per-deck step sequencer, FX, and CV/MIDI. This is the largest engine; this page is an orientation. Deeper material lives in `docs/architecture.md`, `docs/engine-layout.md`, and the refactor-history docs.
 
@@ -44,4 +44,4 @@ For the exhaustive control reference, the device's user manual is the authority 
 
 ## Files
 
-`src/engine/granular_engine.{h,cpp}` (the `IEngine` wrapper) + `src/engine/granular/` (the private DSP: `core`, `deck`, `generator`, `vox`, `buffer`, `track`, `fx*`, `modulator`, `panner`, `detector`, `click`, ...). Build is the default (`ENGINE=granular`, `make engine-granular`). Note: the platform (`hw/ui/memory/transport`) must never include `engine/granular/` — enforced by `make check-boundary`.
+`src/engine/granular/`: the `IEngine` wrapper `granular_engine.{h,cpp}` plus the private DSP (`core`, `deck`, `generator`, `vox`, `buffer`, `track`, `fx*`, `modulator`, `panner`, `detector`, `click`, ...). Build is the default (`ENGINE=granular`, `make engine-granular`). Note: the platform (`hw/ui/memory/transport`) must never include `engine/granular/` — enforced by `make check-boundary`.

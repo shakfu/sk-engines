@@ -23,7 +23,7 @@ A navigational map of the source tree for developers adding or changing features
 
 ## `src/engine/` - the platform/engine contract + the engines
 
-The contract headers the platform talks to (`iengine.h`, `engine_context.h`, `itimesource.h`, `engine_params.h`, `display_model.h`, `engine_leds.h`, `mode.h`, `deck_ref.h`, `color.h`, `led.ring.h`, `engine_select.h`, `granular_engine.h`) live at the top of `src/engine/`; each engine has its own subdirectory (`granular/`, `delay/`, `passthrough/`). See [engine-layout.md](engine-layout.md) for the full contract map and how the boundary is enforced.
+The contract headers the platform talks to (`iengine.h`, `engine_context.h`, `itimesource.h`, `engine_params.h`, `display_model.h`, `engine_leds.h`, `mode.h`, `deck_ref.h`, `color.h`, `led.ring.h`, `engine_select.h`) live at the top of `src/engine/`; each engine (including its `IEngine` adapter, e.g. `granular/granular_engine.{h,cpp}`) has its own subdirectory (`granular/`, `delay/`, `passthrough/`, `edrums/`). See [engine-layout.md](engine-layout.md) for the full contract map and how the boundary is enforced.
 
 ## `src/dsp/` - engine-agnostic DSP primitives
 

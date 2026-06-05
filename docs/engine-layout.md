@@ -23,7 +23,7 @@ How the firmware's files split between the fixed **platform**, the **contract**,
 
 ### Granular engine
 
-`src/engine/granular_engine.{h,cpp}` + **all of `src/engine/granular/`** (`core`, `deck`, `generator`, `vox`, `buffer`, `fx*`, `track`, `panner`, `modulator`, `detector`, `follower`, `biquad`, `adenv`, `click`, `cpattern`, plus their headers and `mode.h`/`speed.map.h`/etc.). `src/engine/granular/` is the granular engine's private DSP (relocated from `src/core/` in Phase 5 R3, 2026-06-03). The clock (`driver`/`synclock`/`tempo`/`divider`) was split out to `src/transport/` + `src/dsp/` when transport became a shared platform service; granular `Core` now subscribes to the platform `Transport`'s ticks.
+**All of `src/engine/granular/`**: the `IEngine` adapter `granular_engine.{h,cpp}` (class `GranularEngine`) plus the private DSP (`core`, `deck`, `generator`, `vox`, `buffer`, `fx*`, `track`, `panner`, `modulator`, `detector`, `follower`, `biquad`, `adenv`, `click`, `cpattern`, plus their headers and `mode.h`/`speed.map.h`/etc.). The DSP was relocated from `src/core/` in Phase 5 R3 (2026-06-03); the adapter joined it under `granular/` to match the per-engine subdir convention (`delay/`, `edrums/`, `passthrough/` all keep their `*_engine.*` beside their DSP). The clock (`driver`/`synclock`/`tempo`/`divider`) was split out to `src/transport/` + `src/dsp/` when transport became a shared platform service; granular `Core` now subscribes to the platform `Transport`'s ticks.
 
 ### Passthrough engine
 
@@ -48,7 +48,7 @@ The `ENGINE` variable selects the define **and** the sources, so each build comp
 ```make
 ifeq ($(ENGINE), granular)
   C_DEFS += -DSPK_ENGINE_GRANULAR
-  ENGINE_SOURCES = src/engine/granular_engine.cpp $(wildcard src/engine/granular/*.cpp)
+  ENGINE_SOURCES = $(wildcard src/engine/granular/*.cpp)   # adapter + DSP, all under granular/
 else ifeq ($(ENGINE), passthrough)
   C_DEFS += -DSPK_ENGINE_PASSTHROUGH
   ENGINE_SOURCES =                       # header-only

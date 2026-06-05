@@ -8,7 +8,7 @@
 // so this is the single place the firmware names a concrete engine. See docs/architecture.md.
 
 #if defined(SPK_ENGINE_GRANULAR)
-  #include "engine/granular_engine.h"
+  #include "engine/granular/granular_engine.h"
   namespace spotykach { using ActiveEngine = GranularEngine; }
 #elif defined(SPK_ENGINE_PASSTHROUGH)
   #include "engine/passthrough/passthrough_engine.h"

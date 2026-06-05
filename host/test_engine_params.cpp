@@ -16,7 +16,7 @@
 
 #include "engine/granular/core.h"
 #include "engine/granular/mode.h"
-#include "engine/granular_engine.h"
+#include "engine/granular/granular_engine.h"
 #include "engine/passthrough/passthrough_engine.h"
 #include "engine/display_model.h"
 #include "transport/transport.h"

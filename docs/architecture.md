@@ -142,7 +142,7 @@ Once `CoreUI`/`Storage` hold only `IEngine&`/`IEngine*`, the concrete engine typ
 ENGINE ?= granular
 ifeq ($(ENGINE), granular)
   C_DEFS += -DSPK_ENGINE_GRANULAR
-  ENGINE_SOURCES = src/engine/granular_engine.cpp $(wildcard src/engine/granular/*.cpp)
+  ENGINE_SOURCES = $(wildcard src/engine/granular/*.cpp)   # adapter + DSP, all under granular/
 else ifeq ($(ENGINE), passthrough)
   C_DEFS += -DSPK_ENGINE_PASSTHROUGH
   ENGINE_SOURCES = src/engine/passthrough_engine.cpp
@@ -156,7 +156,7 @@ CPP_SOURCES += $(ENGINE_SOURCES) $(wildcard src/engine/shared/*.cpp)
 ```cpp
 #pragma once
 #if defined(SPK_ENGINE_GRANULAR)
-  #include "engine/granular_engine.h"
+  #include "engine/granular/granular_engine.h"
   namespace spotykach { using ActiveEngine = GranularEngine; }
 #elif defined(SPK_ENGINE_PASSTHROUGH)
   #include "engine/passthrough_engine.h"

@@ -1,6 +1,6 @@
 // SYNTHUX ACADEMY /////////////////////////////////////////
 // SPOTYKACH ///////////////////////////////////////////////
-#include "engine/granular_engine.h"
+#include "engine/granular/granular_engine.h"
 #include "engine/granular/mode.h"
 #include "engine/granular/event.h"
 #include "config.h"

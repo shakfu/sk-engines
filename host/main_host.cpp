@@ -22,7 +22,7 @@
 
 #include "engine/granular/core.h"
 #include "engine/granular/mode.h"
-#include "engine/granular_engine.h"
+#include "engine/granular/granular_engine.h"
 #include "transport/transport.h"
 
 #include "host_setup.h"
