@@ -1,6 +1,6 @@
 # sk-engines: A Spotykach (platform/engine fork)
 
-A fork of the official [Synthux Academy Spotykach](https://synthux.academy/store/spotykach) firmware, re-architected into a fixed hardware/UI **platform** that hosts a swappable DSP **engine**. The board and its whole interaction language — multi-function knobs with pickup, ring feedback, pad gestures, transport, SD-card sample storage, CV/gate, MIDI — stay fixed; a firmware variant swaps only the parameters and DSP. The dual-deck granular looper is the reference engine (and remains the default build); a tempo-synced stereo delay, a dual Euclidean drum machine, and a minimal stereo passthrough ship as additional, non-granular engines that demonstrate the api. The clock/transport is itself a shared platform service, so any engine can lock to the same internal/TS4/MIDI clock. The platform is decoupled from any one engine: `src/hw/`, `src/ui/`, `src/memory/`, and `src/transport/` include zero granular headers, and the build enforces it (see `make check-boundary`).
+A fork of the official [Synthux Academy Spotykach](https://synthux.academy/store/spotykach) firmware, re-architected into a fixed hardware/UI **platform** that hosts a swappable DSP **engine**. The board and its whole interaction language — multi-function knobs with pickup, ring feedback, pad gestures, transport, SD-card sample storage, CV/gate, MIDI — stay fixed; a firmware variant swaps only the parameters and DSP. The dual-deck granular looper is the reference engine (and remains the default build); a tempo-synced stereo delay, a four-drum Euclidean drum machine, and a minimal stereo passthrough ship as additional, non-granular engines that demonstrate the api. The clock/transport is itself a shared platform service, so any engine can lock to the same internal/TS4/MIDI clock. The platform is decoupled from any one engine: `src/hw/`, `src/ui/`, `src/memory/`, and `src/transport/` include zero granular headers, and the build enforces it (see `make check-boundary`).
 
 This began as a feature-extension fork of the upstream firmware and grew into the platform/engine separation above, so future instruments can reuse the board and the interaction language rather than rewrite them. See [`docs/architecture.md`](docs/architecture.md) for the design and how to add an engine.
 
@@ -39,7 +39,7 @@ The firmware is a fixed hardware/UI **platform** that hosts a swappable DSP **en
 
 - `make -j8 ENGINE=delay` — a tempo-synced stereo delay (musical divisions, feedback, pitch-shifted taps).
 
-- `make -j8 ENGINE=edrums` — a dual Euclidean drum machine (synthesized voices, polymeter, live model select).
+- `make -j8 ENGINE=edrums` — a four-drum Euclidean drum machine (two drums per deck, Rev-pad swaps the editable one; synthesized voices, polymeter, live model select).
 
 - `make -j8 ENGINE=passthrough` — a minimal stereo-passthrough variant.
 

@@ -2,7 +2,7 @@
 
 `ENGINE=edrums` · `src/engine/edrums/edrums_engine.{h,cpp}` · class `EdrumsEngine`
 
-A drum machine whose hits are placed by **Euclidean rhythms** and voiced by **synthesized** drums (no samples). It is the first engine to *sequence* off the shared platform transport — it subscribes to the clock's ticks rather than just reading tempo. Status: **scaffold** (works on hardware; this doc is both the as-built record and the design/roadmap for improving it).
+A drum machine whose hits are placed by **Euclidean rhythms** and voiced by **synthesized** drums (no samples). It is the first engine to *sequence* off the shared platform transport — it subscribes to the clock's ticks rather than just reading tempo. Status: **working** — four drums (two per deck), confirmed on hardware and covered by the headless slot test (`make -C host test-edrums`); this doc is the as-built record plus the design/roadmap for improving it.
 
 **Four drums, two editable at a time.** Each of the two decks holds **two drums** (a "slot" pair), and all four sequence and sound at once. The platform stays two-deck: a deck's knobs and ring address whichever of its two drums is **focused**, and the **Rev pad** swaps the focus. The other drum keeps playing in the background. So you build a four-piece kit but only ever edit two voices at a moment — see [Four drums](#four-drums-two-per-deck).
 
