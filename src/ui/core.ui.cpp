@@ -101,6 +101,19 @@ void CoreUI::_init_values()
     mv(ParamId::Tempo)[DeckRef::A].set(tempo_abs_to_norm(120.f));
 }
 
+// Re-seed one deck's per-knob pickup cache from the engine after it repointed the deck at a different
+// underlying target (edrums' Rev-pad drum swap). MValue::set() stores the value WITHOUT marking the
+// pot active, so the pot must be moved to within the pickup threshold of the new value before it
+// catches - i.e. clean takeover with no jumps. Only the continuous params a sequencer engine reads
+// are re-seeded; categorical config and the global params are unaffected by a swap.
+void CoreUI::_reseed_focus(const DeckRef::Ref ref)
+{
+    for (ParamId id : { ParamId::Pos, ParamId::Size, ParamId::Env, ParamId::Speed,
+                        ParamId::Mix, ParamId::ModAmp, ParamId::ModSpeed, ParamId::Aux }) {
+        mv(id)[ref].set(_engine.param(id, ref));
+    }
+}
+
 void CoreUI::process() 
 {
     if (_state == State::launching) return;
@@ -118,6 +131,13 @@ void CoreUI::process()
         _reset_changing_value_id();
         _apply.set();
         _state = State::ready;
+    }
+
+    // An engine can repoint a deck's knobs at a different underlying target (edrums' Rev-pad drum
+    // swap). When it reports one, re-seed that deck's pickup cache from the engine so the pots catch
+    // the new target's values without jumping. Polled after pad handling, before the pot-apply pass.
+    for (auto ref : { DeckRef::A, DeckRef::B }) {
+        if (_engine.take_param_reseed(ref)) _reseed_focus(ref);
     }
 
     _tap_hold.process();

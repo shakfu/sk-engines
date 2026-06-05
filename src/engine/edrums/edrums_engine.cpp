@@ -115,33 +115,54 @@ void EdrumsEngine::init(const EngineContext& ctx)
     _transport->set_on_tick(std::bind(&EdrumsEngine::_on_tick, this, _1));
 
     const float sr = ctx.sample_rate;
-    // Deck A defaults to the Kick model, deck B to the Snare model (Alt+PITCH changes them live).
-    _track[DeckRef::A].voice.init(sr, 55.f,  0 /*kick*/,  0x9e3779b9u);
-    _track[DeckRef::B].voice.init(sr, 200.f, 1 /*snare*/, 0x6d2b79f5u);
+    // Four drums = two decks x two slots, all playing. Slot 0 is the boot-active (editable) drum;
+    // slot 1 is the swap-in. Deck A = kick/tom (low spine), deck B = snare/hat (backbeat). All slots
+    // are fully seeded here so the three the platform never applies to still sound from the first bar.
+    //                d            slot  model         seed         pos    pitch  decay
+    _init_slot(DeckRef::A, 0, sr, 0 /*kick */, 0x9e3779b9u, 0.30f, 0.50f, 0.50f);
+    _init_slot(DeckRef::A, 1, sr, 4 /*tom  */, 0x85ebca6bu, 0.30f, 0.40f, 0.55f);
+    _init_slot(DeckRef::B, 0, sr, 1 /*snare*/, 0x6d2b79f5u, 0.45f, 0.50f, 0.50f);
+    _init_slot(DeckRef::B, 1, sr, 3 /*hat  */, 0xc2b2ae35u, 0.50f, 0.82f, 0.30f);
+}
 
-    // Default densities. Pos is the one knob the platform seeds FROM the engine (_init_values reads
-    // param(Pos)), so seed the cache; the live onsets are re-derived from it over the pattern length.
-    _param[static_cast<size_t>(ParamId::Pos)][DeckRef::A] = 0.30f; // ~5 onsets over 16
-    _param[static_cast<size_t>(ParamId::Pos)][DeckRef::B] = 0.45f; // ~7 onsets over 16
-    _apply_density(DeckRef::A);
-    _apply_density(DeckRef::B);
+// Fully seed one drum so it sounds independently of the platform's knob apply (which only writes the
+// active slot). Mirrors what set_param would do for Pos/Size/Env/Speed/Mix/ModAmp/ModSpeed/Aux, and
+// caches each norm so a slot swap can re-seed the platform's knobs from param(). Pos is the value the
+// platform reads back at boot (active slot only); the rest the platform overwrites for slot 0 with its
+// own UI defaults (Size=1, Speed/Mix=.5, Env=0), which match the values used here -> no boot transient.
+void EdrumsEngine::_init_slot(DeckRef::Ref d, int slot, float sr, int model, uint32_t seed,
+                              float pos, float pitch, float decay)
+{
+    auto& t = _track[d][slot];
+    t.voice.init(sr, 60.f, model, seed); // base_hz is set by set_pitch below; 60 is a placeholder
+    t.pattern.set_length(16);            // SIZE=1.0 default (2 + round(1*14))
+    t.pattern.set_shift(0.f);            // ENV=0 default (no rotation)
+    t.voice.set_pitch(pitch);
+    t.voice.set_decay(decay);
 
-    // Probability defaults to 100% (every onset fires). The platform seeds the MOD_AMT knob from
-    // param(ModAmp), so pre-seed it to 1.0 -> full clockwise = 100% as expected.
-    _param[static_cast<size_t>(ParamId::ModAmp)][DeckRef::A] = 1.0f;
-    _param[static_cast<size_t>(ParamId::ModAmp)][DeckRef::B] = 1.0f;
+    using PI = ParamId;
+    auto P = [](PI id) { return static_cast<size_t>(id); };
+    _param[P(PI::Pos)][d][slot]      = pos;
+    _param[P(PI::Size)][d][slot]     = 1.0f;
+    _param[P(PI::Env)][d][slot]      = 0.0f;
+    _param[P(PI::Speed)][d][slot]    = pitch;
+    _param[P(PI::Mix)][d][slot]      = decay;
+    _param[P(PI::ModAmp)][d][slot]   = 1.0f;  // 100% of onsets fire
+    _param[P(PI::ModSpeed)][d][slot] = 0.0f;  // MODFREQ idx 0 -> 1/16 (div 1)
+    _param[P(PI::Aux)][d][slot]      = static_cast<float>(model) / (kModelCount - 1); // inverse of set_param's round
 
-    // Default model selection (Alt+PITCH knob is seeded from param(Aux)): A = Kick (0), B = Snare (1).
-    _param[static_cast<size_t>(ParamId::Aux)][DeckRef::A] = 0.0f;
-    _param[static_cast<size_t>(ParamId::Aux)][DeckRef::B] = 0.25f; // round(0.25*4) = 1
+    _prob[d][slot]  = 1.0f;
+    _div[d][slot]   = 1;
+    _model[d][slot] = static_cast<uint8_t>(model);
+    _apply_density(d, slot);
 }
 
 // Re-derive the onset count from the stored POS fraction over the CURRENT pattern length, so density
 // stays proportional when SIZE changes the length.
-void EdrumsEngine::_apply_density(DeckRef::Ref d)
+void EdrumsEngine::_apply_density(DeckRef::Ref d, int slot)
 {
-    auto& p = _track[d].pattern;
-    const float frac = _param[static_cast<size_t>(ParamId::Pos)][d];
+    auto& p = _track[d][slot].pattern;
+    const float frac = _param[static_cast<size_t>(ParamId::Pos)][d][slot];
     p.set_onsets(static_cast<uint8_t>(std::round(frac * p.steps())));
 }
 
@@ -150,21 +171,26 @@ void EdrumsEngine::_apply_density(DeckRef::Ref d)
 // realigns both decks (step phase + pattern position) to the bar.
 void EdrumsEngine::_on_tick(const TransportTick& e)
 {
+    // All four drums sequence here, independent of which slot is focused: focus only gates editing and
+    // the ring display, never the audio. Each drum steps at its own _div (polymeter) over its own
+    // length. A grid reset realigns every drum (step phase + pattern position) to the bar.
     if (e.reset) {
         _step_tick = 0;
-        _track[DeckRef::A].pattern.reset();
-        _track[DeckRef::B].pattern.reset();
+        for (DeckRef::Ref d : { DeckRef::A, DeckRef::B })
+            for (int s = 0; s < kSlots; s++) _track[d][s].pattern.reset();
     }
     if (!e.tick) return;
 
     for (DeckRef::Ref d : { DeckRef::A, DeckRef::B }) {
-        if (_div[d] == 0 || (_step_tick % _div[d]) != 0) continue;
-        if (_track[d].pattern.trigger()) {
-            const bool fire = _prob[d] >= 1.f || _rand01(_track[d].prob_rng) < _prob[d];
-            if (fire) {
-                _pan[d] = _rand01(_track[d].prob_rng); // random pan for the Generative routing mode
-                _track[d].voice.trigger();
-                _flash[d] = kFlashFrames;
+        for (int s = 0; s < kSlots; s++) {
+            if (_div[d][s] == 0 || (_step_tick % _div[d][s]) != 0) continue;
+            if (_track[d][s].pattern.trigger()) {
+                const bool fire = _prob[d][s] >= 1.f || _rand01(_track[d][s].prob_rng) < _prob[d][s];
+                if (fire) {
+                    _pan[d][s] = _rand01(_track[d][s].prob_rng); // random pan for the Generative routing mode
+                    _track[d][s].voice.trigger();
+                    _flash[d][s] = kFlashFrames;
+                }
             }
         }
     }
@@ -176,18 +202,31 @@ void EdrumsEngine::process(const float* const* /*in*/, float** out, size_t size)
     // A drum machine ignores the audio input. The routing switch picks how the two voices reach the
     // two outputs: Stereo = both summed to both (a mono drum bus), DoubleMono = A->left / B->right,
     // Generative = each hit randomly panned. SoftLimit keeps the summed bus in range.
+    // Four voices now reach the bus. Stereo = all four summed to both outs (a mono drum bus);
+    // DoubleMono = deck A's two slots -> left, deck B's two -> right; Generative = each hit randomly
+    // panned. kBusTrim scales before SoftLimit so four simultaneous voices don't sit in constant
+    // limiting the way the old two-voice sum avoided.
     for (size_t i = 0; i < size; i++) {
-        const float a = _track[DeckRef::A].voice.process();
-        const float b = _track[DeckRef::B].voice.process();
+        const float a0 = _track[DeckRef::A][0].voice.process();
+        const float a1 = _track[DeckRef::A][1].voice.process();
+        const float b0 = _track[DeckRef::B][0].voice.process();
+        const float b1 = _track[DeckRef::B][1].voice.process();
         float l, r;
         switch (_route) {
-            case Route::DoubleMono:       l = a; r = b; break;
-            case Route::GenerativeStereo: l = a * (1.f - _pan[DeckRef::A]) + b * (1.f - _pan[DeckRef::B]);
-                                          r = a * _pan[DeckRef::A]       + b * _pan[DeckRef::B];       break;
-            case Route::Stereo: default:  l = a + b; r = a + b; break;
+            case Route::DoubleMono:
+                l = a0 + a1; r = b0 + b1; break;
+            case Route::GenerativeStereo:
+                l = a0 * (1.f - _pan[DeckRef::A][0]) + a1 * (1.f - _pan[DeckRef::A][1])
+                  + b0 * (1.f - _pan[DeckRef::B][0]) + b1 * (1.f - _pan[DeckRef::B][1]);
+                r = a0 * _pan[DeckRef::A][0] + a1 * _pan[DeckRef::A][1]
+                  + b0 * _pan[DeckRef::B][0] + b1 * _pan[DeckRef::B][1];
+                break;
+            case Route::Stereo: default: {
+                const float sum = a0 + a1 + b0 + b1; l = sum; r = sum;
+            } break;
         }
-        out[0][i] = daisysp::SoftLimit(l);
-        out[1][i] = daisysp::SoftLimit(r);
+        out[0][i] = daisysp::SoftLimit(l * kBusTrim);
+        out[1][i] = daisysp::SoftLimit(r * kBusTrim);
     }
 }
 
@@ -203,25 +242,53 @@ bool EdrumsEngine::set_config(ConfigId id, DeckRef::Ref /*deck*/, int value)
     return false;
 }
 
+// Rev pad (reverse=true): swap which of the deck's two drums is active (editable + shown). The other
+// keeps playing - focus never gates audio. Flag a re-seed so the platform repoints that deck's knob
+// pickup at the newly-focused drum's stored params (otherwise the next knob touch would jump it). The
+// plain Play pad (reverse=false) has no role here. Return false to suppress the platform's "empty"
+// flash: a synth drum engine has no buffer to be empty.
+bool EdrumsEngine::on_play_pad(DeckRef::Ref deck, bool reverse)
+{
+    if (reverse) {
+        const auto d = _safe(deck);
+        _active_slot[d] ^= 1;
+        _reseed_pending[d] = true;
+    }
+    return false;
+}
+
+// One-shot: report (and clear) whether the deck's active drum just changed, so the platform re-seeds
+// its MValue cache for that deck exactly once per swap.
+bool EdrumsEngine::take_param_reseed(DeckRef::Ref deck)
+{
+    const auto d = _safe(deck);
+    const bool pending = _reseed_pending[d];
+    _reseed_pending[d] = false;
+    return pending;
+}
+
+// All edits target the deck's ACTIVE slot, so the knobs only ever touch the focused drum; the
+// backgrounded slot keeps its stored params (and keeps playing).
 void EdrumsEngine::set_param(ParamId id, DeckRef::Ref deck, float v)
 {
     const auto d = _safe(deck);
-    _param[static_cast<size_t>(id)][d] = v;
+    const int  s = _active_slot[d];
+    _param[static_cast<size_t>(id)][d][s] = v;
     switch (id) {
-        case ParamId::Pos:   _apply_density(d); break;                                 // density (onsets)
+        case ParamId::Pos:   _apply_density(d, s); break;                              // density (onsets)
         case ParamId::Size: {                                                          // pattern length
             const uint8_t len = static_cast<uint8_t>(2 + std::lround(v * 14.f));        // 2..16 steps
-            _track[d].pattern.set_length(len);
-            _apply_density(d);                                                          // keep density proportional
+            _track[d][s].pattern.set_length(len);
+            _apply_density(d, s);                                                       // keep density proportional
         } break;
-        case ParamId::Env:   _track[d].pattern.set_shift(v); break;                    // rotation
-        case ParamId::Speed: _track[d].voice.set_pitch(v);   break;                    // pitch + noise colour
-        case ParamId::Mix:   _track[d].voice.set_decay(v);   break;                    // decay
-        case ParamId::ModAmp: _prob[d] = std::clamp(v, 0.f, 1.f); break;               // probability an onset fires
+        case ParamId::Env:   _track[d][s].pattern.set_shift(v); break;                 // rotation
+        case ParamId::Speed: _track[d][s].voice.set_pitch(v);   break;                 // pitch + noise colour
+        case ParamId::Mix:   _track[d][s].voice.set_decay(v);   break;                 // decay
+        case ParamId::ModAmp: _prob[d][s] = std::clamp(v, 0.f, 1.f); break;            // probability an onset fires
         case ParamId::Aux: {                                                           // Alt+PITCH -> model
             const int mdl = std::clamp(static_cast<int>(std::lround(v * (kModelCount - 1))), 0, kModelCount - 1);
-            _track[d].voice.set_model(mdl);
-            if (mdl != _model[d]) { _model[d] = static_cast<uint8_t>(mdl); _model_show[d] = kModelShowFrames; }
+            _track[d][s].voice.set_model(mdl);
+            if (mdl != _model[d][s]) { _model[d][s] = static_cast<uint8_t>(mdl); _model_show[d][s] = kModelShowFrames; }
         } break;
         default: break;                                                                // edrums ignores the rest
     }
@@ -229,45 +296,66 @@ void EdrumsEngine::set_param(ParamId id, DeckRef::Ref deck, float v)
 
 float EdrumsEngine::param(ParamId id, DeckRef::Ref deck) const
 {
-    return _param[static_cast<size_t>(id)][_safe(deck)];
+    const auto d = _safe(deck);
+    return _param[static_cast<size_t>(id)][d][_active_slot[d]];
 }
 
-// MODFREQ knob -> clock division (ticks per step). value 0..1 -> {1/16, 1/8, 1/4}.
+// MODFREQ knob -> clock division (ticks per step). value 0..1 -> {1/16, 1/8, 1/4}. The norm is cached
+// into _param[ModSpeed] so a slot swap can re-seed the platform's MODFREQ knob (it is not otherwise
+// stored, since set_mod_speed writes the derived division directly).
 void EdrumsEngine::set_mod_speed(DeckRef::Ref deck, float value, bool /*sync*/)
 {
     const auto d = _safe(deck);
+    const int  s = _active_slot[d];
     int idx = static_cast<int>(std::clamp(value, 0.f, 1.f) * 3.f);
     if (idx > 2) idx = 2;
-    _div[d] = kDivTable[idx];
+    _div[d][s] = kDivTable[idx];
+    _param[static_cast<size_t>(ParamId::ModSpeed)][d][s] = value;
 }
 
 void EdrumsEngine::render(DisplayModel& m)
 {
     m.clear();
-    static const uint32_t kColor[2] = { 0xff5500, 0x00b0ff }; // A amber, B cyan
+    // Per-(deck,slot) colours in two hue families, so deck identity AND which drum is focused both read
+    // at a glance: deck A warm (amber / red-orange), deck B cool (cyan / violet). The ring + Play LED
+    // show the focused drum; the Rev LED carries the backgrounded drum's colour.
+    static const uint32_t kColor[DeckRef::Count][kSlots] = {
+        { 0xff5500, 0xff1a00 }, // A: slot 0 amber, slot 1 red-orange
+        { 0x00b0ff, 0x7a5cff }, // B: slot 0 cyan,  slot 1 violet
+    };
     for (int c = 0; c < 2; c++) {
+        const int sl  = _active_slot[c];
+        const int inv = sl ^ 1;                 // the backgrounded slot
+        const uint32_t col = kColor[c][sl];
+
         // Just after an Alt+PITCH model change, show the model number (model+1 white dots) for a moment.
-        if (_model_show[c] > 0) {
-            _model_show[c]--;
+        if (_model_show[c][sl] > 0) {
+            _model_show[c][sl]--;
             m.ring[c].set_point_hex_color(0xffffff);
-            for (uint8_t i = 0; i <= _model[c]; i++) m.ring[c].set_point(static_cast<uint8_t>(i * 3), 1.f);
+            for (uint8_t i = 0; i <= _model[c][sl]; i++) m.ring[c].set_point(static_cast<uint8_t>(i * 3), 1.f);
             m.ring[c].set_updated();
-            m.play[c] = { kColor[c], _flash[c] > 0 ? 1.f : 0.15f };
-            if (_flash[c] > 0) _flash[c]--;
-            continue;
         }
-        auto& tr = _track[c];
-        m.ring[c].set_point_hex_color(kColor[c]);
-        const uint8_t steps = tr.pattern.steps();
-        const uint8_t pos   = tr.pattern.position();
-        for (uint8_t s = 0; s < steps; s++) {
-            float b = tr.pattern.step_is_onset(s) ? 0.5f : 0.06f;   // onset lit, rest dim
-            if (s == pos) b = 1.f;                                  // playhead
-            const uint8_t led = static_cast<uint8_t>(static_cast<uint16_t>(s) * 32u / steps); // length fills the ring
-            m.ring[c].set_point(led, b);
+        else {
+            auto& tr = _track[c][sl];
+            m.ring[c].set_point_hex_color(col);
+            const uint8_t steps = tr.pattern.steps();
+            const uint8_t pos   = tr.pattern.position();
+            for (uint8_t s = 0; s < steps; s++) {
+                float b = tr.pattern.step_is_onset(s) ? 0.5f : 0.06f;   // onset lit, rest dim
+                if (s == pos) b = 1.f;                                  // playhead
+                const uint8_t led = static_cast<uint8_t>(static_cast<uint16_t>(s) * 32u / steps); // length fills the ring
+                m.ring[c].set_point(led, b);
+            }
+            m.ring[c].set_updated();
         }
-        m.ring[c].set_updated();
-        m.play[c] = { kColor[c], _flash[c] > 0 ? 1.f : 0.15f };    // flash on a hit
-        if (_flash[c] > 0) _flash[c]--;
+
+        // Play LED = focused drum's colour, full on its hits. Rev LED = backgrounded drum's colour, a
+        // dim steady presence (so you always see the other drum is there and which it is) that brightens
+        // on its own hits. Decrement both flashes here - the backgrounded slot's flash is set in
+        // _on_tick regardless of focus, so consuming it here keeps it from stalling.
+        m.play[c] = { col,               _flash[c][sl]  > 0 ? 1.f : 0.15f };
+        m.rev[c]  = { kColor[c][inv],    _flash[c][inv] > 0 ? 1.f : 0.12f };
+        if (_flash[c][sl]  > 0) _flash[c][sl]--;
+        if (_flash[c][inv] > 0) _flash[c][inv]--;
     }
 }

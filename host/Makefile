@@ -26,11 +26,14 @@ DSP_SRC     = $(wildcard $(ROOT)/src/dsp/*.cpp)
 ENGINE_SRC  = $(wildcard $(ROOT)/src/engine/*.cpp)
 DAISYSP_SRC = $(wildcard $(DAISYSP)/*/*.cpp)
 LIB_SRC     = $(CORE_SRC) $(DSP_SRC) $(ENGINE_SRC) $(DAISYSP_SRC)
+# The edrums engine lives under src/engine/edrums/ (outside the wildcards above); add it for its test.
+EDRUMS_SRC  = $(ROOT)/src/engine/edrums/edrums_engine.cpp
 
-SRC        = main_host.cpp $(LIB_SRC)
-TEST       = $(BUILD)/test_engine_params
+SRC          = main_host.cpp $(LIB_SRC)
+TEST         = $(BUILD)/test_engine_params
+TEST_EDRUMS  = $(BUILD)/test_edrums_slots
 
-.PHONY: all clean run test
+.PHONY: all clean run test test-edrums
 all: $(TARGET)
 
 $(TARGET): $(SRC) | $(BUILD)
@@ -39,14 +42,23 @@ $(TARGET): $(SRC) | $(BUILD)
 $(TEST): test_engine_params.cpp $(LIB_SRC) | $(BUILD)
 	$(CXX) $(CXXFLAGS) test_engine_params.cpp $(LIB_SRC) -o $@
 
+$(TEST_EDRUMS): test_edrums_slots.cpp $(LIB_SRC) $(EDRUMS_SRC) | $(BUILD)
+	$(CXX) $(CXXFLAGS) test_edrums_slots.cpp $(LIB_SRC) $(EDRUMS_SRC) -o $@
+
 $(BUILD):
 	mkdir -p $(BUILD)
 
 run: $(TARGET)
 	./$(TARGET)
 
+# NOTE: the granular `test` / `run` targets (test_engine_params.cpp, main_host.cpp) are stale against
+# the post-transport-decoupling GranularEngine - they still call the removed transport_* API and do
+# not build. `test-edrums` is self-contained (it injects a stub ITransport) and is the maintained one.
 test: $(TEST)
 	./$(TEST)
+
+test-edrums: $(TEST_EDRUMS)
+	./$(TEST_EDRUMS)
 
 clean:
 	rm -rf $(BUILD)

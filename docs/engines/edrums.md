@@ -1,8 +1,10 @@
-# Edrums — dual Euclidean drum machine
+# Edrums — four-drum Euclidean drum machine
 
 `ENGINE=edrums` · `src/engine/edrums/edrums_engine.{h,cpp}` · class `EdrumsEngine`
 
-A two-track drum machine whose hits are placed by **Euclidean rhythms** and voiced by **synthesized** drums (no samples). It is the first engine to *sequence* off the shared platform transport — it subscribes to the clock's ticks rather than just reading tempo. Status: **scaffold** (works on hardware; this doc is both the as-built record and the design/roadmap for improving it).
+A drum machine whose hits are placed by **Euclidean rhythms** and voiced by **synthesized** drums (no samples). It is the first engine to *sequence* off the shared platform transport — it subscribes to the clock's ticks rather than just reading tempo. Status: **scaffold** (works on hardware; this doc is both the as-built record and the design/roadmap for improving it).
+
+**Four drums, two editable at a time.** Each of the two decks holds **two drums** (a "slot" pair), and all four sequence and sound at once. The platform stays two-deck: a deck's knobs and ring address whichever of its two drums is **focused**, and the **Rev pad** swaps the focus. The other drum keeps playing in the background. So you build a four-piece kit but only ever edit two voices at a moment — see [Four drums](#four-drums-two-per-deck).
 
 ---
 
@@ -12,11 +14,25 @@ A two-track drum machine whose hits are placed by **Euclidean rhythms** and voic
 
 - The pattern is a grid of steps; some steps are *onsets* (hits) distributed as evenly as possible (the Euclidean property). On each clock step the track advances one grid slot and, on an onset, fires its voice.
 
-- Both tracks step off the same transport clock, so the rhythm locks to the instrument's tempo and clock source (internal / TS4 / MIDI). `e.reset` realigns both patterns to the bar.
+- All four drums step off the same transport clock, so the rhythm locks to the instrument's tempo and clock source (internal / TS4 / MIDI). `e.reset` realigns every pattern to the bar.
+
+## Four drums: two per deck
+
+The two physical decks each carry **two drums** in a slot pair (`_track[deck][slot]`, slot 0/1). All four always sequence (their own length, density, division) and always sound — focus never gates audio.
+
+- **What focus changes:** only which drum a deck's seven knobs and its ring address, and which one the platform's knob-pickup cache tracks. The backgrounded drum holds its stored parameters and keeps playing.
+
+- **The swap gesture:** tapping a deck's **Rev pad** toggles that deck's focus between its two drums. On a swap the engine asks the platform to re-seed that deck's knob pickup from the newly-focused drum's values, so the pots take over cleanly (a knob does nothing until moved to the new drum's value, then catches — no jumps).
+
+- **Why two-at-a-time:** the panel has two of everything (two rings, two knob banks, two Rev pads). Mapping deck→slot inside the engine keeps the whole platform two-deck and the `IEngine` contract unchanged; the only addition is a one-shot "re-seed requested" poll the platform already honours generically.
+
+- **Seeing the background drum:** the ring shows the focused drum's pattern in its colour; the **Rev LED** carries the backgrounded drum's colour (dim steady, brightening on its hits), so you always see the other drum is there and which it is. Colours are per `(deck, slot)`: deck A warm (slot 0 amber, slot 1 red-orange), deck B cool (slot 0 cyan, slot 1 violet).
+
+Defaults form a usable four-piece kit: deck A = **Kick** (slot 0) + **Tom** (slot 1), deck B = **Snare** (slot 0) + **Hat** (slot 1).
 
 ## Audio: the synthesized voice
 
-Each deck has one `Voice` (a small abstraction so sample playback could replace it later behind the same `trigger()` / `process()` seam). The voice is:
+Each drum has one `Voice` (a small abstraction so sample playback could replace it later behind the same `trigger()` / `process()` seam) — four in all. The voice is:
 
 - **Body** — a sine (`dsp/LUTSinOsc`) with a fast (~25 ms) downward **pitch sweep** on trigger (`freq = base_hz · (1 + pitch_env·3)`, `pitch_env` decaying) — the classic drum "thump".
 
@@ -38,7 +54,7 @@ The voice has **5 models**, selected live by holding **Alt** and turning **PITCH
 | 3 | Closed hat | high-band noise, very short |
 | 4 | Tom | pitched body, mild drop |
 
-Defaults: **deck A = Kick**, **deck B = Snare**.
+Defaults, per drum: deck A = **Kick** (slot 0) + **Tom** (slot 1); deck B = **Snare** (slot 0) + **Hat** (slot 1). Each slot is fully seeded at init (length, density, pitch, decay, model), so the two background drums sound from the first bar without waiting on a knob move.
 
 > Why a knob and not a load-pad: synth model switching is instantaneous and free, so it applies live > — the select-then-load ceremony is only needed for expensive operations (sample loading), and is > reserved for that (see roadmap). The same Alt+PITCH control will select sample slots later, the only > difference being a deferred/debounced load instead of an instant apply.
 
@@ -48,12 +64,12 @@ The sequencer triggers run in the transport-tick callback (the audio-block conte
 
 ### Output routing (the hardware routing switch, control 26)
 
-The 3-position routing switch picks how the two voices reach the two outputs (via `set_config(Route)`, mirroring granular's int mapping so the panel's L/C/R read the same); a final `SoftLimit` keeps the summed bus in range:
+The 3-position routing switch picks how the four voices reach the two outputs (via `set_config(Route)`, mirroring granular's int mapping so the panel's L/C/R read the same). A pre-limiter trim then a final `SoftLimit` keep the summed bus in range — four simultaneous voices sum hotter than the original two, so the trim avoids constant limiting:
 
 | Switch | `Route` | Edrums behavior |
 |---|---|---|
-| Centre | `Stereo` | both voices **summed to both outputs** (a mono drum bus) — the conventional default |
-| Left | `DoubleMono` | deck A → left, deck B → right (the split) |
+| Centre | `Stereo` | all four voices **summed to both outputs** (a mono drum bus) — the conventional default |
+| Left | `DoubleMono` | deck A's two drums → left, deck B's two → right (the split) |
 | Right | `GenerativeStereo` | each hit randomly panned across the stereo field |
 
 `route()` reports the mode for the panel's L/C/R LED.
@@ -87,7 +103,7 @@ The platform gives each deck 7 knobs (see [README](README.md#knobs-how-a-physica
 | **MODFREQ** | `set_mod_speed` | **clock division** — 1/16, 1/8, 1/4 (per deck) |
 | **Alt + PITCH** | `Aux` | **drum model** select (live; see below) |
 
-Density is stored as a fraction and re-derived over the active length, so changing SIZE keeps the relative fill. `POS` and `MOD_AMT` are engine-seeded (the platform reads `param(Pos)` / `param(ModAmp)` for their initial values), so init pre-seeds them: density A≈5/16, B≈7/16, and probability 100% (so the knob defaults to "every onset fires" with full clockwise = 100%). The display draws each deck's pattern over the active length (the length fills the 32-LED ring; onset lit, playhead bright; A amber, B cyan) with a play-LED flash on each hit.
+All seven knobs act on the deck's **focused** drum; the **Rev pad** swaps focus to the other drum (see [Four drums](#four-drums-two-per-deck)). Density is stored as a fraction and re-derived over the active length, so changing SIZE keeps the relative fill. `POS` and `MOD_AMT` are engine-seeded (the platform reads `param(Pos)` / `param(ModAmp)` for their initial values), so init pre-seeds them: density A≈5/16, B≈7/16, and probability 100% (so the knob defaults to "every onset fires" with full clockwise = 100%). The display draws the focused drum's pattern over the active length (the length fills the 32-LED ring; onset lit, playhead bright) in that drum's colour, with a play-LED flash on each hit; the Rev LED carries the backgrounded drum's colour. Colours are per `(deck, slot)`: A slot 0 amber / slot 1 red-orange, B slot 0 cyan / slot 1 violet.
 
 ### Polymeter
 
@@ -141,6 +157,8 @@ Yes, possible and cheap via `TransportTick.index` (a monotonic 16th counter): a 
 
 - **P2 — voice depth.** DONE: PITCH→noise bandpass; **5 selectable drum models** (kick/snare/clap/hat/ tom) live via Alt+PITCH (`CapAux`/`ParamId::Aux`); the Clap is a **multi-burst** voice (re-arms the amp env 3× ~11 ms apart); a model change briefly shows the **model number** (model+1 white dots) on the ring. Still open: per-voice accent/velocity; per-model voice tuning.
 
+- **P4 — four drums (two per deck).** DONE: each deck holds two drums (slot pair); all four sequence and sound; the **Rev pad** swaps which drum a deck edits/shows; the platform re-seeds the deck's knob pickup on a swap (clean takeover, no jumps); per-`(deck, slot)` colours; the **Rev LED** shows the backgrounded drum. Contract cost: one defaulted `IEngine::take_param_reseed`. Still open: a panel cue that a deck *has* a second drum beyond the Rev-LED colour; possibly Alt+Rev to reach further banks. Tuning: the `kBusTrim` (0.6) and the two hue families are first guesses, to confirm by ear/eye on hardware.
+
 - **P3 — timing.** Triggers land on the audio-block boundary (~2 ms quantization, set in the tick callback). For tighter feel, schedule the sample-offset within the block.
 
 - **Later.** More division values (currently 3: 1/16, 1/8, 1/4) incl. triplets; sample playback behind the `Voice` seam (SD/Card path); per-step ratchet/roll; swing (the transport `Divider` supports it); pattern save/recall.
@@ -164,5 +182,7 @@ Yes, possible and cheap via `TransportTick.index` (a monotonic 16th counter): a 
 - `src/dsp/cpattern.{h,cpp}` — the Euclidean pattern generator (edrums-only).
 
 - `src/dsp/lutsinosc.h` — the sine body.
+
+- `host/test_edrums_slots.cpp` — headless test of the slot model (focus swap, slot independence, the re-seed one-shot, finite four-voice output). Run: `make -C host test-edrums`.
 
 - Build: `engine_select.h` (`SPK_ENGINE_EDRUMS`), `Makefile` (`ENGINE=edrums`, `make engine-edrums`).

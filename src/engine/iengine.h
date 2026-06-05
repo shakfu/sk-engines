@@ -53,6 +53,13 @@ public:
     virtual float param(ParamId, DeckRef::Ref) const { return 0.f; }
     virtual void  set_mod_speed(DeckRef::Ref, float value, bool sync) {}
 
+    // Re-seed request. An engine whose deck->value mapping can change underfoot (e.g. edrums' Rev-pad
+    // drum swap repoints a deck's knobs at a different drum) sets this; the platform polls it each loop
+    // and, when true, re-seeds its MValue pickup cache from param() for that deck. Without it the next
+    // knob touch would snap the newly-focused target to the stale knob value. Returns true ONCE per
+    // change and self-clears. Default false: engines with a fixed deck->value mapping need nothing.
+    virtual bool  take_param_reseed(DeckRef::Ref) { return false; }
+
     // --- Categorical config (item 3a-0): switch-position writes the platform used to make
     //     directly on Core. The engine maps the selector int to its enums and owns side effects.
     //     set_config returns true iff the value CHANGED (only Mode uses this, so the platform can

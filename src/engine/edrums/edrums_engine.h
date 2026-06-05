@@ -46,6 +46,9 @@ public:
     bool  set_config(ConfigId id, DeckRef::Ref deck, int value) override;    // routing switch -> output mode
     Route route() const override { return _route; }                         // mode L/C/R LED
 
+    bool  on_play_pad(DeckRef::Ref deck, bool reverse) override;       // Rev pad swaps the deck's active drum
+    bool  take_param_reseed(DeckRef::Ref deck) override;              // platform polls this after a swap
+
     void render(DisplayModel& m) override;
 
 private:
@@ -95,26 +98,41 @@ private:
 
     static DeckRef::Ref _safe(DeckRef::Ref d) { return d < DeckRef::Count ? d : DeckRef::A; }
 
-    void  _on_tick(const TransportTick& e);   // transport sink: step patterns, trigger voices
-    void  _apply_density(DeckRef::Ref d);     // re-derive onsets from the stored POS fraction + length
+    void  _on_tick(const TransportTick& e);          // transport sink: step patterns, trigger voices
+    void  _apply_density(DeckRef::Ref d, int slot);  // re-derive onsets from the stored POS fraction + length
+    // Fully seed one drum (voice + pattern + param cache) so it sounds without waiting on the platform.
+    // Slot 1 of each deck is never touched by the platform's knob apply (which only writes the active
+    // slot), so it must be self-sufficient from init; slot 0 is seeded the same way for symmetry.
+    void  _init_slot(DeckRef::Ref d, int slot, float sr, int model, uint32_t seed,
+                     float pos, float pitch, float decay);
     static float _rand01(uint32_t& rng) { rng = rng * 1664525u + 1013904223u; return static_cast<float>(rng >> 8) * (1.f / 16777216.f); }
 
+    // Four drums = two decks x two slots (item: 4-drum edrums). The platform stays 2-deck (DeckRef);
+    // the slot lives only here. Both slots of a deck always sequence and sound; the Rev pad toggles
+    // which slot _active_slot points at - that slot is the one the knobs edit and the ring shows.
+    static constexpr int     kSlots           = 2;
     static constexpr int     kModelCount      = 5;  // kick / snare / clap / closed-hat / tom
     static constexpr uint8_t kFlashFrames     = 6;  // play-LED hold (~render frames) after a hit
     static constexpr uint8_t kModelShowFrames = 45; // ring shows the model number for ~0.7 s after a change
     static constexpr uint8_t kDivTable[3] = { 1, 2, 4 }; // MODFREQ -> ticks/step: 1/16, 1/8, 1/4
+    static constexpr float   kBusTrim = 0.6f;       // pre-limiter trim: 4 voices sum hotter than 2 did
+
+    // Active drum per deck: _track[deck][_active_slot[deck]] is the one the knobs edit + the ring shows.
+    int _slot(DeckRef::Ref d) const { return _active_slot[_safe(d)]; }
 
     ITransport* _transport = nullptr;          // platform clock (subscribe + tempo), injected at init
-    Track    _track[DeckRef::Count];
+    Track    _track[DeckRef::Count][kSlots];
     Route    _route = Route::Stereo;            // routing switch: Stereo=mono-sum, DoubleMono=A|B split, Generative=random pan
     uint32_t _step_tick = 0;                    // shared step counter (reset on e.reset); div phase
-    uint8_t  _div[DeckRef::Count]   = { 1, 1 };       // ticks per step per deck (MODFREQ)
-    float    _prob[DeckRef::Count]  = { 1.f, 1.f };   // probability an onset fires per deck (MOD_AMT)
-    float    _pan[DeckRef::Count]   = { 0.5f, 0.5f }; // per-deck pan, randomized per hit in Generative mode
-    uint8_t  _flash[DeckRef::Count] = { 0, 0 };       // per-deck play-LED hit flash, decayed in render()
-    uint8_t  _model[DeckRef::Count]      = { 0, 1 };   // current model index per deck (A=kick, B=snare)
-    uint8_t  _model_show[DeckRef::Count] = { 0, 0 };   // frames remaining to show the model number on the ring
-    float    _param[static_cast<size_t>(ParamId::Count)][DeckRef::Count] = {};
+    uint8_t  _active_slot[DeckRef::Count]    = { 0, 0 }; // Rev pad toggles; selects the editable/shown slot
+    bool     _reseed_pending[DeckRef::Count] = { false, false }; // set on swap; platform polls to re-seed knobs
+    uint8_t  _div[DeckRef::Count][kSlots]   = { { 1, 1 }, { 1, 1 } };       // ticks per step per drum (MODFREQ)
+    float    _prob[DeckRef::Count][kSlots]  = { { 1.f, 1.f }, { 1.f, 1.f } }; // probability an onset fires (MOD_AMT)
+    float    _pan[DeckRef::Count][kSlots]   = { { 0.5f, 0.5f }, { 0.5f, 0.5f } }; // per-drum pan (Generative mode)
+    uint8_t  _flash[DeckRef::Count][kSlots] = { { 0, 0 }, { 0, 0 } };       // per-drum play-LED hit flash
+    uint8_t  _model[DeckRef::Count][kSlots]      = { { 0, 4 }, { 1, 3 } };  // A: kick/tom, B: snare/hat
+    uint8_t  _model_show[DeckRef::Count][kSlots] = { { 0, 0 }, { 0, 0 } };  // frames left to show the model number
+    float    _param[static_cast<size_t>(ParamId::Count)][DeckRef::Count][kSlots] = {};
 };
 
 };

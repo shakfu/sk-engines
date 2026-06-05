@@ -65,6 +65,7 @@ private:
     };
 
     void _init_values();
+    void _reseed_focus(const DeckRef::Ref); // re-seed a deck's knob pickup after an engine drum swap
 
     void _process_ui_queue();
     void _process_switches();
