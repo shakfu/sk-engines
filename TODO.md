@@ -12,7 +12,7 @@ session.
 |---|------|--------|------|--------|--------|
 | P1 | Mono-input: answer the normalling question | trivial | n/a | a fact | unblocks/kills P1-code |
 | P2 | Refactor delay engine onto shared primitives | med | med-high | **hardware flash** | none (primitives now in `dsp/`) |
-| P3 | Evaluate converting the build to CMake | high | high | parity + flash | strategic intent |
+| P3 | Convert the build to CMake (spike done; flash-gated) | high | high | flash (host parity met) | strategic intent |
 
 Hardware-batch note: P2, the mono-input *software fallback* (if P1 says "not normalled"), and the
 still-outstanding Phase-5 R4a granular-path flash-verify are all hardware-gated - do them together
@@ -54,6 +54,11 @@ Lowest priority: a deliberate spike, not a task, and explicitly *not worth it fo
 doing only if committing to the compiler-enforced boundary + multi-engine growth. Do it as a spike
 on a branch, NOT a blind migration of a working hardware-critical boot path.
 
+**Status: spike done 2026-06-05 (branch `spike/cmake-build`, unmerged, host-only).** A working CMake
+build was produced for the granular and passthrough engines; the boot-path risk collapsed from
+"unknown" to one known define. The only remaining gate is the hardware flash. See "Spike results"
+below.
+
 Nothing requires Make - the only hard dependency is libDaisy's build infrastructure, which ships
 both CMake and Make paths (`lib/libDaisy/cmake/DaisyProject.cmake`, `lib/DaisySP/CMakeLists.txt`).
 That CMake support is inherited from electro-smith upstream, not a `bleeptools`/infrasonicaudio
@@ -73,19 +78,64 @@ What CMake would buy this project specifically:
 
 - One build system for firmware + host (currently two separate Makefiles).
 
-Gating unknowns / gaps to resolve in the spike (do NOT migrate before confirming):
+### Spike results (2026-06-05, branch `spike/cmake-build`)
 
-- **Boot path parity.** This project uses `APP_TYPE=BOOT_SRAM` + the custom `alt_sram.lds` + the
-  SRAM bootloader. `DaisyProject.cmake` supports a custom linker script (`CUSTOM_LINKER_SCRIPT`) and
-  SRAM storage (`DAISY_STORAGE=sram`), so the linker side looks covered - but `BOOT_SRAM`
-  startup/vector parity vs `DAISY_STORAGE=sram` is unverified.
+The spike is a single root `CMakeLists.txt` that drives libDaisy's upstream `DaisyProject.cmake`.
+Each former gating unknown is now resolved or characterized:
 
-- **No `program-dfu`/`program-boot` in the CMake** - recreate as `add_custom_target`s wrapping
-  `dfu-util`.
+- **Boot path: resolved, and smaller than feared.** `BOOT_APP` is the only boot-relevant compile
+  define and it appears in exactly one file - `startup_stm32h750xx.c:1550`, where `#ifndef BOOT_APP`
+  gates the `SystemInit()` call. The Make build defines it (via `APP_TYPE=BOOT_SRAM`) so a bootloaded
+  app skips the second `SystemInit()` the SRAM bootloader already ran. `DaisyProject.cmake` does
+  **not** define it when `CUSTOM_LINKER_SCRIPT` is set, so a naive port re-runs `SystemInit()` and
+  likely will not boot. Fix is one line: `target_compile_definitions(daisy PRIVATE BOOT_APP)` (safe -
+  the macro is referenced nowhere else). `DAISY_STORAGE=sram` is not used; we pass
+  `CUSTOM_LINKER_SCRIPT=alt_sram.lds` directly.
 
-- The fork's CMake path is not exercised today (Make is the proven path).
+- **Two more traps a blind migration hits (both fixed in the spike):**
+  - `USE_HAL_DRIVER`/`USE_FULL_LL_DRIVER` are global `C_DEFS` in Make but only **PRIVATE** on the
+    daisy CMake lib, so they never reach app TUs. Without `USE_HAL_DRIVER` the force-included
+    `stm32h7xx.h` skips the HAL chain that drops `<stddef.h>` (`::size_t`) into global scope, and
+    headers using bare `size_t` (e.g. `detector.h:11`) fail to compile. Must add both to the firmware
+    target.
+  - `hid/midi_util.cpp` (`daisy::MidiTxMessage`) is in libDaisy's **Make** module list but absent
+    from its `CMakeLists.txt` `add_library(daisy ...)` - the fork's CMake path was never exercised, so
+    the app fails to link. Patched via `target_sources(daisy ...)` without editing the submodule.
+    (`per/pwm.cpp` is likewise Make-only but unused - the app drives PWM through the HAL TIM API, not
+    `daisy::Pwm` - so it is correctly omitted.)
 
-Acceptance for adopting it: a CMake build whose `.map` / `arm-none-eabi-objdump` output matches the
-Make build's (codegen parity, since correctness is only verifiable by flashing), then a hardware
-flash test. If it passes, adopt with a thin wrapper `Makefile` so `make` / `make program-dfu` muscle
-memory survives, and unify the host build. If the boot path fights it, stay on Make.
+- **`program-dfu`/`program-boot`: done** as `add_custom_target`s wrapping `dfu-util`, emitting
+  byte-identical invocations to Make (QSPI `0x90040000:leave`, PID `df11`). `program-dfu` also DEPENDS
+  on the firmware target (build-then-flash in one step, slightly better than Make), and a `POST_BUILD`
+  objcopy emits the `.bin` (DaisyProject does not by default). It cannot put the board into DFU mode -
+  same physical hold-Reset limitation as Make.
+
+- **Parity achieved: memory map exact, codegen ~1%, byte-identical objdump NOT reachable.** With opt
+  levels matched per domain (libDaisy/DaisySP at `-O3/gnu++14`, app at `-O2/c++17 -fshort-enums`),
+  every boot-critical address is identical (vector table `0x24000000`, `.text` start `0x24000298`,
+  `.bss` `0x2402e800`, all sram1/sdram/qspi regions) and `.bss` is byte-identical. `.text` lands within
+  +1.0% (186420 vs 184556 B) and `.data` +972 B. The residual cannot be closed without patching the
+  vendored libDaisy `CMakeLists.txt` (Make's lib TUs also carry codegen-neutral `-fasm`/`-Wno-register`
+  and compile C at `gnu11`). **Note:** `-fshort-enums` is app-only in the Make build (libDaisy/DaisySP
+  do not use it) - an ABI asymmetry that ships and is hardware-proven, replicated here for parity.
+
+- **Other claimed benefits validated:** `compile_commands.json` falls out natively (no `bear`); the
+  multi-engine matrix works as separate cached build dirs (`build-cmake/<engine>/`), retiring the
+  `.engine-stamp` hack.
+
+- **Thin Make frontend prototyped** (`Makefile.cmake`): preserves the muscle-memory commands (`make`,
+  `make ENGINE=passthrough`, `make program-dfu`, `make engine-edrums`, `make clean`, `make DEBUG=1`)
+  by delegating to CMake, with one cached build dir per engine and the grep boundary-guard carried
+  over. On adoption it is renamed to `Makefile`. Verified end-to-end host-side (build + engine switch +
+  DFU command); kept as a separate file on the spike branch so the proven `Makefile` stays intact.
+
+- **Incidental Make bug found (independent of CMake):** `Makefile:52` sets `C_USR_FLAGS` but libDaisy's
+  core Makefile reads `C_USER_FLAGS` (with the E), so `-ffast-math -funroll-loops` are silently dropped
+  - the live firmware has neither. Fix the typo or delete the dead config.
+
+**Revised acceptance** (the original "`.map`/objdump matches" bar is unreachable across two build
+systems that compile the library halves with different flags; do not chase byte-identity): adopt iff
+a hardware flash of the CMake `.bin` boots and passes an audio/IO smoke test on the bench, with the
+memory-map + bss parity above as the host-side precondition (met). On pass, adopt by renaming the
+prototyped `Makefile.cmake` over `Makefile` so `make` / `make program-dfu` muscle memory survives, and
+unify the host build. If the boot path fights it on hardware, stay on Make.
