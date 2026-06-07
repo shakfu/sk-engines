@@ -173,6 +173,13 @@ void CoreUI::process()
         _draw_alt(ref);
         _draw_play(ref, blink);
     }
+    // Push the Alt+PITCH selector-held state so a CapAux own-display engine can show its Aux selector
+    // the whole time Alt is held (per deck: Alt down AND that deck's PITCH is not claimed by an fx touch).
+    if (_aux_select) {
+        const bool alt = _touched.test(Alt);
+        _engine.set_aux_active(DeckRef::A, alt && !(_touched.test(FluxA) || _touched.test(GritA)));
+        _engine.set_aux_active(DeckRef::B, alt && !(_touched.test(FluxB) || _touched.test(GritB)));
+    }
     if (_engine_owns_display) _engine.render(_display);
 
     if (_apply.test(Hardware::CTRL_POS_A)) {

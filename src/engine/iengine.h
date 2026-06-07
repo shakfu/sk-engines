@@ -60,6 +60,12 @@ public:
     // change and self-clears. Default false: engines with a fixed deck->value mapping need nothing.
     virtual bool  take_param_reseed(DeckRef::Ref) { return false; }
 
+    // UI hint: the Alt+PITCH (Aux) selector is currently held for this deck (Alt down on a CapAux
+    // engine, and that deck's PITCH is not claimed by an fx touch). The platform pushes it each loop so
+    // an own-display engine can show its Aux selector the whole time Alt is held, not just on a change.
+    // Default no-op: engines that don't draw an Aux selector ignore it.
+    virtual void  set_aux_active(DeckRef::Ref, bool active) {}
+
     // --- Categorical config (item 3a-0): switch-position writes the platform used to make
     //     directly on Core. The engine maps the selector int to its enums and owns side effects.
     //     set_config returns true iff the value CHANGED (only Mode uses this, so the platform can

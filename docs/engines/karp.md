@@ -83,12 +83,14 @@ The display (`render`) draws, per deck: a mode-coloured energy meter (Reel yello
 purple), a white **pitch dot** whose ring position equals `pitch_n` (a live readout used as a
 diagnostic), a play-LED flash on each trigger, and the mode L/C/R indicators.
 
-**Model selector (Alt+PITCH).** Changing the Rings model has no dedicated hardware indicator, so on a
-change `render` briefly (~0.7 s, `kModelShowFrames`) draws the five model options as evenly-spaced
-points around the ring - the selected model bright, the rest dim - in place of the pitch dot. A
-per-deck `model_show` countdown, tripped in `set_param(Aux)` only when the model actually changes,
-gates it. This mirrors edrums' model-number flash; the host test asserts the selector lights more
-points than the lone pitch dot and reverts after the window.
+**Model selector (Alt+PITCH).** The Rings model has no dedicated hardware indicator, so **while Alt is
+held** `render` draws the five model options as evenly-spaced points around the ring - the selected
+model bright, the rest dim - in place of the pitch dot, the whole time (not just on a change). The
+platform pushes the held state each loop via the defaulted `IEngine::set_aux_active(deck, active)` hook
+(`core.ui.cpp`, before the `render` call): for a `CapAux` engine it sends `Alt down && that deck's PITCH
+not claimed by an fx touch`. karp stores it per deck (`aux_held`) and shows the selector accordingly;
+other engines ignore the no-op default. The host test asserts the selector lights while held (more
+points than the lone pitch dot), persists across frames, and clears on release.
 
 ### Level note
 

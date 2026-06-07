@@ -32,7 +32,6 @@ struct KarpEngine::Impl {
     enum class Mode : uint8_t { Reel = 0, Slice = 1, Drift = 2 };
     static constexpr int     kModels      = 5;  // modal / symp.string / string / FM / string+reverb
     static constexpr uint8_t kFlashFrames = 6;
-    static constexpr uint8_t kModelShowFrames = 45; // ring shows the Alt+PITCH model selector ~0.7 s after a change
     static constexpr size_t  kReverbWords = 32768;
 
     struct Deck {
@@ -54,7 +53,7 @@ struct KarpEngine::Impl {
         uint32_t rng = 0xC0FFEEu;
         float    reel_lp = 0.f, level = 0.f;
         uint8_t  flash = 0;
-        uint8_t  model_show = 0;   // frames left to draw the Alt+PITCH model selector on the ring
+        bool     aux_held = false;   // platform: Alt+PITCH model-select is held -> draw the selector
     };
 
     ITransport* transport = nullptr;
@@ -237,7 +236,6 @@ struct KarpEngine::Impl {
             case ParamId::Mix:    dk.mix_n    = v;           break;
             case ParamId::Aux: {
                 const int m = std::min(std::max(static_cast<int>(v * (kModels - 1) + 0.5f), 0), kModels - 1);
-                if (m != dk.model) dk.model_show = kModelShowFrames; // flash the model selector on a change
                 dk.model = m; apply(d);
             } break;
             default: break;
@@ -247,6 +245,8 @@ struct KarpEngine::Impl {
     float param(ParamId id, DeckRef::Ref deckr) const {
         return param_cache[static_cast<size_t>(id)][safe(deckr)];
     }
+
+    void set_aux_active(DeckRef::Ref deckr, bool held) { deck[safe(deckr)].aux_held = held; }
 
     void set_mod_speed(DeckRef::Ref deckr, float v) {
         const auto d = safe(deckr);
@@ -297,11 +297,10 @@ struct KarpEngine::Impl {
             m.ring[d].set_hex_color(col);
             if (level > 1e-3f) m.ring[d].set_segment(0.f, level * 0.999f);
             m.ring[d].set_point_hex_color(0xffffff);
-            if (dk.model_show > 0) {
-                // Alt+PITCH model selector: show all kModels options evenly spaced around the ring with
-                // the selected model bright and the rest dim - so both the choices and the current pick
-                // are visible. Replaces the pitch dot for the brief show window after a change.
-                dk.model_show--;
+            if (dk.aux_held) {
+                // Alt+PITCH model selector: while Alt is held, show all kModels options evenly spaced
+                // around the ring with the selected model bright and the rest dim - so both the choices
+                // and the current pick are visible. Replaces the pitch dot for as long as Alt is held.
                 for (int k = 0; k < kModels; k++)
                     m.ring[d].set_point(static_cast<uint8_t>(3 + k * 6), k == dk.model ? 1.f : 0.12f);
             } else {
@@ -337,6 +336,7 @@ void KarpEngine::process(const float* const* in, float** out, size_t size)
 void  KarpEngine::set_param(ParamId id, DeckRef::Ref d, float v) { if (_p) _p->set_param(id, d, v); }
 float KarpEngine::param(ParamId id, DeckRef::Ref d) const        { return _p ? _p->param(id, d) : 0.f; }
 void  KarpEngine::set_mod_speed(DeckRef::Ref d, float v, bool)   { if (_p) _p->set_mod_speed(d, v); }
+void  KarpEngine::set_aux_active(DeckRef::Ref d, bool held)      { if (_p) _p->set_aux_active(d, held); }
 bool  KarpEngine::set_config(ConfigId id, DeckRef::Ref d, int v) { return _p ? _p->set_config(id, d, v) : false; }
 
 DeckRef::Ref KarpEngine::handle_midi_note(uint8_t ch, uint8_t note)
