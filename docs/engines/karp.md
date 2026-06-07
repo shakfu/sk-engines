@@ -83,6 +83,13 @@ The display (`render`) draws, per deck: a mode-coloured energy meter (Reel yello
 purple), a white **pitch dot** whose ring position equals `pitch_n` (a live readout used as a
 diagnostic), a play-LED flash on each trigger, and the mode L/C/R indicators.
 
+**Model selector (Alt+PITCH).** Changing the Rings model has no dedicated hardware indicator, so on a
+change `render` briefly (~0.7 s, `kModelShowFrames`) draws the five model options as evenly-spaced
+points around the ring - the selected model bright, the rest dim - in place of the pitch dot. A
+per-deck `model_show` countdown, tripped in `set_param(Aux)` only when the model actually changes,
+gates it. This mirrors edrums' model-number flash; the host test asserts the selector lights more
+points than the lone pitch dot and reverts after the window.
+
 ### Level note
 
 Reel's external-exciter path is ~4x quieter than Rings' internal plucker, so the Reel trigger burst is

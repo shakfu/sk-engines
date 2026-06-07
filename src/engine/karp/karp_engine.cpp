@@ -32,6 +32,7 @@ struct KarpEngine::Impl {
     enum class Mode : uint8_t { Reel = 0, Slice = 1, Drift = 2 };
     static constexpr int     kModels      = 5;  // modal / symp.string / string / FM / string+reverb
     static constexpr uint8_t kFlashFrames = 6;
+    static constexpr uint8_t kModelShowFrames = 45; // ring shows the Alt+PITCH model selector ~0.7 s after a change
     static constexpr size_t  kReverbWords = 32768;
 
     struct Deck {
@@ -53,6 +54,7 @@ struct KarpEngine::Impl {
         uint32_t rng = 0xC0FFEEu;
         float    reel_lp = 0.f, level = 0.f;
         uint8_t  flash = 0;
+        uint8_t  model_show = 0;   // frames left to draw the Alt+PITCH model selector on the ring
     };
 
     ITransport* transport = nullptr;
@@ -235,6 +237,7 @@ struct KarpEngine::Impl {
             case ParamId::Mix:    dk.mix_n    = v;           break;
             case ParamId::Aux: {
                 const int m = std::min(std::max(static_cast<int>(v * (kModels - 1) + 0.5f), 0), kModels - 1);
+                if (m != dk.model) dk.model_show = kModelShowFrames; // flash the model selector on a change
                 dk.model = m; apply(d);
             } break;
             default: break;
@@ -293,10 +296,19 @@ struct KarpEngine::Impl {
             if (level > 1.f) level = 1.f;
             m.ring[d].set_hex_color(col);
             if (level > 1e-3f) m.ring[d].set_segment(0.f, level * 0.999f);
-            int pled = static_cast<int>(dk.pitch_n * 31.f + 0.5f);
-            pled = pled < 0 ? 0 : (pled > 31 ? 31 : pled);
             m.ring[d].set_point_hex_color(0xffffff);
-            m.ring[d].set_point(static_cast<uint8_t>(pled), 1.f);
+            if (dk.model_show > 0) {
+                // Alt+PITCH model selector: show all kModels options evenly spaced around the ring with
+                // the selected model bright and the rest dim - so both the choices and the current pick
+                // are visible. Replaces the pitch dot for the brief show window after a change.
+                dk.model_show--;
+                for (int k = 0; k < kModels; k++)
+                    m.ring[d].set_point(static_cast<uint8_t>(3 + k * 6), k == dk.model ? 1.f : 0.12f);
+            } else {
+                int pled = static_cast<int>(dk.pitch_n * 31.f + 0.5f);
+                pled = pled < 0 ? 0 : (pled > 31 ? 31 : pled);
+                m.ring[d].set_point(static_cast<uint8_t>(pled), 1.f);
+            }
             m.ring[d].set_updated();
             m.play[d] = { col, dk.flash > 0 ? 1.f : 0.12f };
             if (dk.flash > 0) dk.flash--;

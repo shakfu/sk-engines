@@ -244,6 +244,30 @@ int main() {
         check(ccw_peak < def_peak * 0.25f,  "ENV fully CCW is far quieter (brightness 0 -> ~silent)");
     }
 
+    // --- 9. Alt+PITCH model change shows a multi-point model selector on the ring (then reverts) ----
+    // The model selector previously had no visual. render() now draws all 5 model options around the
+    // ring (selected bright, rest dim) for ~0.7 s after a change, replacing the lone pitch dot. With a
+    // fresh engine and no trigger the only lit ring points are the pitch dot (1) or that selector (5),
+    // so counting lit points cleanly tells them apart.
+    {
+        KarpEngine v; v.init(ctx);
+        DisplayModel disp;
+        auto count_lit = [&] {
+            v.render(disp);
+            int n = 0;
+            disp.ring[DeckRef::A].apply([&](uint8_t, uint32_t, float b) { if (b > 0.03f) ++n; });
+            return n;
+        };
+        const int baseline = count_lit();              // model_show == 0 -> just the pitch dot
+        v.set_param(ParamId::Aux, DeckRef::A, 1.0f);   // string (2) -> string+reverb (4): a real change
+        const int during = count_lit();                // selector window active
+        for (int f = 0; f < 60; f++) v.render(disp);   // exhaust the ~45-frame show window
+        const int after = count_lit();
+        check(during > baseline, "Alt+PITCH model change lights the model selector (more than the lone pitch dot)");
+        check(during >= 5,       "selector shows all 5 model options");
+        check(after  <= baseline, "selector reverts to the pitch dot after the show window");
+    }
+
     if (g_failures == 0) { std::printf("OK: all karp checks passed\n"); return 0; }
     std::printf("FAILED: %d check(s)\n", g_failures);
     return 1;
