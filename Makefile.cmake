@@ -8,8 +8,11 @@
 #   make -f Makefile.cmake clean
 #   make -f Makefile.cmake DEBUG=1          # config toggles pass straight through
 #
-# On adoption this file is renamed to `Makefile` (replacing the current one) and the `-f` drops away;
-# the recursive calls below use $(THIS) so they keep working under either name.
+# Both build systems coexist: the root `Makefile` stays the canonical, hardware-proven build (output in
+# `build/`); this CMake path is an opt-in alternative (output in `build-cmake/<engine>/`). Renaming this
+# file to `Makefile` to make CMake the default is a *deferred* option, not done - it would only be worth
+# it once the CMake build has been flashed and trusted as much as the Make one. The recursive calls below
+# use $(THIS) so they keep working under either name if that rename ever happens.
 #
 # Each engine gets its own cached build dir (build-cmake/<engine>), so switching engines never forces
 # a reconfigure-in-place or a clean -- this is what retires the old `.engine-stamp` clean/rebuild hack.
