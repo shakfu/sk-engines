@@ -67,16 +67,27 @@ void CoreUI::_init_values()
         // Engine-derived seeds (start position + fx state) come from the engine's pre-seeded
         // param cache; the rest are the platform's UI-default pickup starting points.
         mv(ParamId::Pos)[ref].set(_engine.param(ParamId::Pos, ref));
-        mv(ParamId::Size)[ref].set(1.f);
+        // Engine-seeded (like Pos/ModSpeed): the SIZE default comes from each engine's cache. karp
+        // seeds 0.5 (its damping is very sensitive near the top, so centre the knob); granular and
+        // delay seed 1.0 to keep their prior default; edrums seeds its own 1.0 per slot.
+        mv(ParamId::Size)[ref].set(_engine.param(ParamId::Size, ref));
         mv(ParamId::Speed)[ref].set(.5f);
         mv(ParamId::Mix)[ref].set(.5f);
         mv(ParamId::Feedback)[ref].set(kDefaultFeedback);
-        mv(ParamId::Env)[ref].set(0.f);
+        // Engine-seeded (like Pos/Size/ModSpeed): the ENV default comes from each engine's cache. karp
+        // seeds 0.5 - its ENV drives Rings brightness, and at 0 the excitation is filtered to silence, so
+        // a 0 default booted the voice silent-on-trigger. granular/edrums/delay return 0.0 (their prior
+        // default: granular's amplitude envelope off at fully-CCW, per the manual).
+        mv(ParamId::Env)[ref].set(_engine.param(ParamId::Env, ref));
         mv(ParamId::EnvSize)[ref].set(1.f);
         mv(ParamId::Win)[ref].set(.2f);
         mv(ParamId::PolySlice)[ref].set(.51f);
 
-        mv(ParamId::ModSpeed)[ref].set(.3f);
+        // Engine-seeded (like Pos/ModAmp/Aux): the MODFREQ/"cycle" default comes from each engine's
+        // cache, not a shared literal. karp seeds 0 so its Slice arp / Drift scatter starts OFF (a
+        // non-zero default free-ran the arp from boot); granular seeds 0.3 to keep its prior default;
+        // edrums seeds its own 0.0 (1/16 div).
+        mv(ParamId::ModSpeed)[ref].set(_engine.param(ParamId::ModSpeed, ref));
         // Engine-seeded (like Pos): granular's param(ModAmp) is 0 (unchanged), but edrums seeds it to
         // 1.0 so its MOD_AMT->probability knob defaults to 100%.
         mv(ParamId::ModAmp)[ref].set(_engine.param(ParamId::ModAmp, ref));
@@ -223,7 +234,11 @@ void CoreUI::process()
             _engine.set_param(ParamId::Aux, DeckRef::A, mv(ParamId::Aux)[DeckRef::A].value());
         }
         else {
-            auto speed_a = mv(ParamId::Speed)[DeckRef::A].value();
+            // PITCH is absolute (in_value = raw pot), NOT pickup-gated (value): a pitch knob should map
+            // straight to pitch. With pickup, Speed stayed pinned at its 0.5 seed until the pot was
+            // swept exactly through centre, so on a melodic engine the knob appeared dead. The pickup
+            // still guards the OTHER PITCH layers (Flux/Grit intensity, Aux) above.
+            auto speed_a = mv(ParamId::Speed)[DeckRef::A].in_value();
             if (!_aux_select && _pitch_quantized.test(DeckRef::A)) {
                 speed_a = snapped_speed(speed_a);
             }
@@ -241,7 +256,8 @@ void CoreUI::process()
             _engine.set_param(ParamId::Aux, DeckRef::B, mv(ParamId::Aux)[DeckRef::B].value());
         }
         else {
-            auto speed_b = mv(ParamId::Speed)[DeckRef::B].value();
+            // PITCH is absolute (raw pot), not pickup-gated - see the deck-A note above.
+            auto speed_b = mv(ParamId::Speed)[DeckRef::B].in_value();
             if (!_aux_select && _pitch_quantized.test(DeckRef::B)) {
                 speed_b = snapped_speed(speed_b);
             }

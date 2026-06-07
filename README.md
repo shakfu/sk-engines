@@ -1,8 +1,20 @@
 # sk-engines: A Spotykach (platform/engine fork)
 
-A fork of the official [Synthux Academy Spotykach](https://synthux.academy/store/spotykach) firmware, re-architected into a fixed hardware/UI **platform** that hosts a swappable DSP **engine**. The board and its whole interaction language — multi-function knobs with pickup, ring feedback, pad gestures, transport, SD-card sample storage, CV/gate, MIDI — stay fixed; a firmware variant swaps only the parameters and DSP. The dual-deck granular looper is the reference engine (and remains the default build); a tempo-synced stereo delay, a four-drum Euclidean drum machine, and a minimal stereo passthrough ship as additional, non-granular engines that demonstrate the api. The clock/transport is itself a shared platform service, so any engine can lock to the same internal/TS4/MIDI clock. The platform is decoupled from any one engine: `src/hw/`, `src/ui/`, `src/memory/`, and `src/transport/` include zero granular headers, and the build enforces it (see `make check-boundary`).
+A fork of the official [Synthux Academy Spotykach](https://synthux.academy/store/spotykach) firmware, restructured as a fixed hardware/UI **platform** with a swappable DSP **engine** architecture.
 
-This began as a feature-extension fork of the upstream firmware and grew into the platform/engine separation above, so future instruments can reuse the board and the interaction language rather than rewrite them. See [`docs/architecture.md`](docs/architecture.md) for the design and how to add an engine.
+The hardware and interaction model remain constant across firmware variants: multi-function encoders with pickup behavior and LED ring feedback, pad gestures, transport controls, SD-card sample storage, CV/gate I/O, and MIDI support. Individual firmware builds replace only the DSP engine and its parameter set. Clocking and transport are also provided as shared platform services, allowing any engine to synchronize to the same internal, TS4, or MIDI clock sources.
+
+The platform is intentionally decoupled from any specific engine. Core subsystems in `src/hw/`, `src/ui/`, `src/memory/`, and `src/transport/` contain no engine-specific dependencies, and build-time checks enforce this separation (`make check-boundary`).
+
+Current engines include:
+
+1. A dual-deck granular looper (the reference and default engine)
+2. A tempo-synchronized stereo delay
+3. A four-voice Euclidean drum machine
+4. A resonator/plucked-string instrument based on the Mutable Instruments Rings DSP
+5. A minimal stereo passthrough engine demonstrating the platform API
+
+Originally started as a feature-extension fork of the upstream firmware, the project evolved into a platform/engine architecture that enables new instruments to reuse the existing hardware and interaction language rather than reimplement them. See [`docs/architecture.md`](docs/architecture.md) for an overview of the design and instructions for creating new engines.
 
 ## Setup
 
@@ -41,9 +53,13 @@ The firmware is a fixed hardware/UI **platform** that hosts a swappable DSP **en
 
 - `make -j8 ENGINE=edrums` — a four-drum Euclidean drum machine (two drums per deck, Rev-pad swaps the editable one; synthesized voices, polymeter, live model select).
 
+- `make -j8 ENGINE=karp` — a resonator/pluck voice on the Mutable Instruments Rings DSP (modal / sympathetic-string / string / FM / string+reverb models on Alt+PITCH; three excite modes — discrete plucks, live-input resonator, scatter cloud). Vendored Rings/stmlib live under `src/engine/karp/thirdparty/`.
+
 - `make -j8 ENGINE=passthrough` — a minimal stereo-passthrough variant.
 
 Switching `ENGINE` does not require `make clean`. Other build flags: `DEBUG=1` (enables UART logging) and `LOFI_INT16=1` (16-bit loop buffer, doubling record time). See [`docs/architecture.md`](docs/architecture.md) for the platform/engine design and [`docs/engines/`](docs/engines/) for a per-engine reference (and how to add a new engine).
+
+There is also an **opt-in CMake build** (an in-progress alternative; the `make` build above stays canonical): `make -f Makefile.cmake ENGINE=<engine>` configures and builds via CMake, with output in `build-cmake/<engine>/` instead of `build/`. It mirrors the same commands (`program-dfu`, `engine-<name>`, `DEBUG=1`, `LOFI_INT16=1`) and caches each engine in its own dir, so switching engines never forces a rebuild.
 
 ### Editor tooling (clangd)
 
@@ -67,7 +83,7 @@ The bootloader version used in this project enables USB DFU firmware updating fr
 
 `make program-dfu` flashes whatever is currently in `build/` (it does not rebuild). To flash a non-default engine, build it first in the same step, e.g. `make ENGINE=passthrough && make program-dfu`.
 
-For convenience there are one-shot targets that **clean + build + flash** a variant (put the device in DFU mode first, as in step 3): `make engine-granular` (the looper), `make engine-delay`, `make engine-edrums`, and `make engine-passthrough`.
+For convenience there are one-shot targets that **clean + build + flash** a variant (put the device in DFU mode first, as in step 3): `make engine-granular` (the looper), `make engine-delay`, `make engine-edrums`, `make engine-karp`, and `make engine-passthrough`.
 
 Once finished, the device will automatically boot the new firmware. This can "brick" (temporarily) the device and require reinstallation of either the bootloader, the firmware binary, or both.
 
