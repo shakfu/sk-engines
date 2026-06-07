@@ -12,7 +12,7 @@
 
 namespace spotykach {
 
-// karp - a dual resonator / pluck voice (engine #1 in docs/engine-ideas.md), built on the Mutable
+// reso - a dual resonator / pluck voice (engine #1 in docs/engine-ideas.md), built on the Mutable
 // Instruments *Rings* DSP (thirdparty/rings) - the gold-standard physical-modelling resonator (modal
 // bodies, sympathetic strings, plucked strings, FM). Each deck wraps one rings::Part (mono).
 //
@@ -25,14 +25,14 @@ namespace spotykach {
 // Knob map (per deck): PITCH = note, SIZE = damping (decay), POS = position, ENV = brightness,
 // MOD_AMT = structure, SOS = dry/wet, MODFREQ = Drift density / Slice arp rate, Alt+PITCH = model.
 //
-// PIMPL: all Rings/stmlib types live in karp_engine.cpp. The header must stay free of them because the
+// PIMPL: all Rings/stmlib types live in reso_engine.cpp. The header must stay free of them because the
 // composition root (app.cpp, via engine_select.h) includes it, and stmlib.h declares a global
 // `namespace impl` that collides with app.cpp's `impl` instance. The Impl object (and the two ~108 KB
 // Parts + 64 KB reverb buffers it owns) is placement-new'd in the injected SDRAM arena at init().
-class KarpEngine : public IEngine {
+class ResoEngine : public IEngine {
 public:
-    KarpEngine() = default;
-    ~KarpEngine() override = default;
+    ResoEngine() = default;
+    ~ResoEngine() override = default;
 
     void init(const EngineContext& ctx) override;
     void prepare() override {}
@@ -57,9 +57,9 @@ public:
     void render(DisplayModel& m) override;
 
 private:
-    NOCOPY(KarpEngine)
+    NOCOPY(ResoEngine)
 
-    struct Impl;        // defined in karp_engine.cpp (owns the Rings DSP)
+    struct Impl;        // defined in reso_engine.cpp (owns the Rings DSP)
     Impl* _p = nullptr; // placement-new'd in the arena at init()
 };
 

@@ -1,4 +1,4 @@
-// Headless test for the karp engine (dual Karplus-Strong string voice; docs/engine-ideas.md #1).
+// Headless test for the reso engine (dual Karplus-Strong string voice; docs/engine-ideas.md #1).
 //
 // Exercised through the public IEngine surface only:
 //   1. Param round-trip (set_param/param) and the reel/slice/drift switch (set_config Mode) reporting
@@ -14,7 +14,7 @@
 #include <functional>
 #include <vector>
 
-#include "engine/karp/karp_engine.h"
+#include "engine/reso/reso_engine.h"
 #include "engine/display_model.h"
 #include "engine/itransport.h"
 #include "host_setup.h"
@@ -30,7 +30,7 @@ void check(bool cond, const char* msg) {
 bool approx(float a, float b, float eps = 1e-4f) { return std::fabs(a - b) < eps; }
 
 // Capture the left output for `blocks` blocks after skipping `skip` (the attack), zero input.
-std::vector<float> capture(KarpEngine& e, int skip, int blocks) {
+std::vector<float> capture(ResoEngine& e, int skip, int blocks) {
     float il[host::kBlock] = {0}, ir[host::kBlock] = {0}, ol[host::kBlock], orr[host::kBlock];
     const float* in[2] = { il, ir }; float* out[2] = { ol, orr };
     for (int b = 0; b < skip; b++) e.process(in, out, host::kBlock);
@@ -54,7 +54,7 @@ float zcr(const std::vector<float>& v) {
     return v.empty() ? 0.f : 1000.f * c / v.size();
 }
 
-// Minimal transport: karp only reads tempo() (for the Slice arp rate); the tick subscription is unused.
+// Minimal transport: reso only reads tempo() (for the Slice arp rate); the tick subscription is unused.
 struct StubTransport : ITransport {
     float               tempo() const override { return 120.f; }
     ClockSource::Source source() const override { return ClockSource::internal; }
@@ -66,7 +66,7 @@ struct StubTransport : ITransport {
 
 // Run `blocks` audio blocks with a zero input and return the peak |output| on the left channel.
 // `finite` is set false if any sample is non-finite.
-float run_peak(KarpEngine& e, int blocks, bool& finite) {
+float run_peak(ResoEngine& e, int blocks, bool& finite) {
     float in_l[host::kBlock] = {0}, in_r[host::kBlock] = {0};
     float out_l[host::kBlock], out_r[host::kBlock];
     const float* in_ptrs[2]  = { in_l, in_r };
@@ -93,7 +93,7 @@ int main() {
     EngineContext ctx = host::make_context(arena, time);
     ctx.transport = &transport;
 
-    KarpEngine e;
+    ResoEngine e;
     e.init(ctx);
 
     // --- 1. Param round-trip + mode switch reporting -------------------------------------------
@@ -124,7 +124,7 @@ int main() {
     check(late < early * 0.6f, "Slice voice decays (late peak well below early peak)");
 
     // --- 3. Reel: quiet when idle (no constant drone), sounds when triggered -------------------
-    KarpEngine reel;
+    ResoEngine reel;
     reel.init(ctx);
     reel.set_config(ConfigId::Mode, DeckRef::A, 1);  // Reel
     reel.set_param(ParamId::Mix,  DeckRef::A, 1.0f); // full wet
@@ -139,7 +139,7 @@ int main() {
     check(reel_hit > reel_idle * 4.f, "Reel is quiet until triggered (no constant drone)");
 
     // --- 4. Drift: scatter scheduler fires grains, stays finite --------------------------------
-    KarpEngine drift;
+    ResoEngine drift;
     drift.init(ctx);
     drift.set_config(ConfigId::Mode, DeckRef::A, 2); // Drift
     drift.set_param(ParamId::Mix, DeckRef::A, 1.0f);
@@ -150,7 +150,7 @@ int main() {
     check(drift_peak > 1e-3f, "Drift scatter produces output");
 
     // --- 5. handle_midi_note returns a real deck and plucks ------------------------------------
-    KarpEngine midi;
+    ResoEngine midi;
     midi.init(ctx);
     const DeckRef::Ref hit = midi.handle_midi_note(/*channel=*/0, /*note=*/60);
     check(hit == DeckRef::A, "MIDI note on channel 0 addresses deck A");
@@ -163,7 +163,7 @@ int main() {
     // A clean, pitched tone whose fundamental follows Speed - guards both the routing and a tone that
     // is actually pitched (not noise that masks the pitch).
     {
-        KarpEngine p; p.init(ctx);
+        ResoEngine p; p.init(ctx);
         p.set_param(ParamId::Mix, DeckRef::A, 1.0f);
         p.set_param(ParamId::Size, DeckRef::A, 0.7f);
         p.set_param(ParamId::Speed, DeckRef::A, 0.3f); p.on_gate_trigger(DeckRef::A);
@@ -182,7 +182,7 @@ int main() {
     // reading and making the PITCH knob dead. Guard both halves: the knob must still control pitch
     // while cv_voct(0) is hammered in, and a nonzero CV must TRANSPOSE the knob pitch, not replace it.
     {
-        KarpEngine p; p.init(ctx);
+        ResoEngine p; p.init(ctx);
         p.set_param(ParamId::Mix,  DeckRef::A, 1.0f);
         p.set_param(ParamId::Size, DeckRef::A, 0.7f);
         // Emulate read_cv() hammering cv_voct(0) (nothing patched) around each knob change + pluck.
@@ -193,7 +193,7 @@ int main() {
         check(hi > lo * 2.5f, "PITCH knob still controls pitch while V/Oct CV reads 0 (no clobber)");
 
         // +12 semitones of V/Oct CV transposes the same knob setting up ~1 octave.
-        KarpEngine q; q.init(ctx);
+        ResoEngine q; q.init(ctx);
         q.set_param(ParamId::Mix,   DeckRef::A, 1.0f);
         q.set_param(ParamId::Size,  DeckRef::A, 0.7f);
         q.set_param(ParamId::Speed, DeckRef::A, 0.4f);
@@ -207,7 +207,7 @@ int main() {
     // --- 7. The brightness knob (ENV -> Rings patch.brightness) changes the timbre ----------------
     {
         auto bright_zcr = [&](float env) {
-            KarpEngine m; m.init(ctx);
+            ResoEngine m; m.init(ctx);
             m.set_param(ParamId::Mix,  DeckRef::A, 1.0f);
             m.set_param(ParamId::Size, DeckRef::A, 0.7f);
             m.set_param(ParamId::Speed, DeckRef::A, 0.4f);
@@ -222,18 +222,18 @@ int main() {
 
     // --- 8. Default ENV plucks audibly; ENV fully CCW is silent-on-trigger ------------------------
     // ENV drives Rings brightness; at 0 the excitation is filtered to ~nothing, so a 0 default booted
-    // the voice silent when the trig pad was pressed. The platform now engine-seeds ENV, so karp's
+    // the voice silent when the trig pad was pressed. The platform now engine-seeds ENV, so reso's
     // default is its own 0.5. Guard that default ENV is audible and that ENV=0 is dramatically quieter.
-    // NOTE: the host arena is shared, so each KarpEngine's Impl overlaps the previous one - read a
+    // NOTE: the host arena is shared, so each ResoEngine's Impl overlaps the previous one - read a
     // deck's state before constructing the next engine. Capture `d`'s default + audio fully before `z`.
     {
-        KarpEngine d; d.init(ctx);
+        ResoEngine d; d.init(ctx);
         const float env_default = d.param(ParamId::Env, DeckRef::A);   // read before `z` reuses the arena
         d.set_param(ParamId::Mix, DeckRef::A, 1.0f);
         d.on_gate_trigger(DeckRef::A);
         bool fin1 = true; const float def_peak = run_peak(d, 30, fin1);
 
-        KarpEngine z; z.init(ctx);
+        ResoEngine z; z.init(ctx);
         z.set_param(ParamId::Mix, DeckRef::A, 1.0f);
         z.set_param(ParamId::Env, DeckRef::A, 0.0f);     // fully CCW
         z.on_gate_trigger(DeckRef::A);
@@ -251,7 +251,7 @@ int main() {
     // released. With a fresh engine and no trigger the only lit ring points are the pitch dot (1) or that
     // selector (5), so counting lit points cleanly tells them apart.
     {
-        KarpEngine v; v.init(ctx);
+        ResoEngine v; v.init(ctx);
         DisplayModel disp;
         auto count_lit = [&] {
             v.render(disp);
@@ -271,7 +271,7 @@ int main() {
         check(released <= idle, "selector clears when Alt is released");
     }
 
-    if (g_failures == 0) { std::printf("OK: all karp checks passed\n"); return 0; }
+    if (g_failures == 0) { std::printf("OK: all reso checks passed\n"); return 0; }
     std::printf("FAILED: %d check(s)\n", g_failures);
     return 1;
 }

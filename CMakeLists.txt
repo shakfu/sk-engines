@@ -44,10 +44,10 @@ set_target_properties(DaisySP PROPERTIES CXX_STANDARD 14)
 if(NOT DEFINED ENGINE)
     set(ENGINE granular)
 endif()
-# Per-engine extras (defaults; the karp branch overrides them for its vendored Rings/stmlib DSP).
+# Per-engine extras (defaults; the reso branch overrides them for its vendored Rings/stmlib DSP).
 set(ENGINE_INCLUDES "")            # extra -I roots for the firmware target
 set(ENGINE_DEFINES  "")            # extra compile definitions
-set(APP_OPT -O2)                   # app-TU opt level (overrides the inherited -O3); karp drops to -Os
+set(APP_OPT -O2)                   # app-TU opt level (overrides the inherited -O3); reso drops to -Os
 if(ENGINE STREQUAL granular)
     set(ENGINE_DEFINE SPK_ENGINE_GRANULAR)
     file(GLOB ENGINE_SOURCES CONFIGURE_DEPENDS src/engine/granular/*.cpp)
@@ -60,29 +60,29 @@ elseif(ENGINE STREQUAL delay)
 elseif(ENGINE STREQUAL edrums)
     set(ENGINE_DEFINE SPK_ENGINE_EDRUMS)
     set(ENGINE_SOURCES src/engine/edrums/edrums_engine.cpp)
-elseif(ENGINE STREQUAL karp)
-    set(ENGINE_DEFINE SPK_ENGINE_KARP)
-    # karp's DSP = Mutable Instruments Rings + its stmlib support library, vendored (trimmed to the used
-    # closure) under src/engine/karp/thirdparty/ and compiled into the firmware with the engine wrapper.
-    set(KARP_TP ${CMAKE_CURRENT_SOURCE_DIR}/src/engine/karp/thirdparty)
+elseif(ENGINE STREQUAL reso)
+    set(ENGINE_DEFINE SPK_ENGINE_RESO)
+    # reso's DSP = Mutable Instruments Rings + its stmlib support library, vendored (trimmed to the used
+    # closure) under src/engine/reso/thirdparty/ and compiled into the firmware with the engine wrapper.
+    set(RESO_TP ${CMAKE_CURRENT_SOURCE_DIR}/src/engine/reso/thirdparty)
     set(ENGINE_SOURCES
-        src/engine/karp/karp_engine.cpp
-        ${KARP_TP}/rings/dsp/part.cc
-        ${KARP_TP}/rings/dsp/string.cc
-        ${KARP_TP}/rings/dsp/resonator.cc
-        ${KARP_TP}/rings/dsp/fm_voice.cc
-        ${KARP_TP}/rings/resources.cc
-        ${KARP_TP}/stmlib/dsp/units.cc
-        ${KARP_TP}/stmlib/utils/random.cc
-        ${KARP_TP}/stmlib/dsp/atan.cc
+        src/engine/reso/reso_engine.cpp
+        ${RESO_TP}/rings/dsp/part.cc
+        ${RESO_TP}/rings/dsp/string.cc
+        ${RESO_TP}/rings/dsp/resonator.cc
+        ${RESO_TP}/rings/dsp/fm_voice.cc
+        ${RESO_TP}/rings/resources.cc
+        ${RESO_TP}/stmlib/dsp/units.cc
+        ${RESO_TP}/stmlib/utils/random.cc
+        ${RESO_TP}/stmlib/dsp/atan.cc
     )
-    set(ENGINE_INCLUDES ${KARP_TP})
+    set(ENGINE_INCLUDES ${RESO_TP})
     # stmlib's filters use M_PI, which strict -std=c++17 does not expose from <cmath> on arm-none-eabi.
     set(ENGINE_DEFINES M_PI=3.14159265358979323846)
-    # Rings (~30 KB of code+tables) overflows the 186 KB execution SRAM at -O2; build karp at -Os to fit.
+    # Rings (~30 KB of code+tables) overflows the 186 KB execution SRAM at -O2; build reso at -Os to fit.
     set(APP_OPT -Os)
 else()
-    message(FATAL_ERROR "Unknown ENGINE '${ENGINE}' - use granular, passthrough, delay, edrums, or karp")
+    message(FATAL_ERROR "Unknown ENGINE '${ENGINE}' - use granular, passthrough, delay, edrums, or reso")
 endif()
 
 # Source list = the Makefile's CPP_SOURCES, with the wildcard dirs expanded the same way.
@@ -153,7 +153,7 @@ endif()
 set_target_properties(${FIRMWARE_NAME} PROPERTIES CXX_STANDARD 17 CXX_EXTENSIONS OFF)
 
 # PARITY (app codegen flags): replicate the Make app TU flag set exactly. The trailing ${APP_OPT}
-# (-O2 default, -Os for karp -- whose Rings DSP overflows SRAM at -O2) overrides the inherited directory
+# (-O2 default, -Os for reso -- whose Rings DSP overflows SRAM at -O2) overrides the inherited directory
 # -O3 for app TUs only (last -O on the line wins). DaisyProject already supplies
 # -fno-exceptions/-fno-rtti/-fdata-sections/-ffunction-sections.
 #   NOTE on -fshort-enums: in the Make build this is an APP-ONLY flag (libDaisy and DaisySP do NOT use

@@ -19,9 +19,9 @@
 #elif defined(SPK_ENGINE_EDRUMS)
   #include "engine/edrums/edrums_engine.h"
   namespace spotykach { using ActiveEngine = EdrumsEngine; }
-#elif defined(SPK_ENGINE_KARP)
-  #include "engine/karp/karp_engine.h"
-  namespace spotykach { using ActiveEngine = KarpEngine; }
+#elif defined(SPK_ENGINE_RESO)
+  #include "engine/reso/reso_engine.h"
+  namespace spotykach { using ActiveEngine = ResoEngine; }
 #else
-  #error "No engine selected: build with ENGINE=granular (default), passthrough, delay, edrums, or karp"
+  #error "No engine selected: build with ENGINE=granular (default), passthrough, delay, edrums, or reso"
 #endif

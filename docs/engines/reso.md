@@ -1,7 +1,7 @@
-# karp engine
+# reso engine
 
 A dual resonator / pluck voice (engine #1 in `docs/engine-ideas.md`, "Resonator / Pluck"), built on
-the Mutable Instruments **Rings** DSP (`src/engine/karp/thirdparty/rings`) rather than a hand-rolled Karplus-Strong
+the Mutable Instruments **Rings** DSP (`src/engine/reso/thirdparty/rings`) rather than a hand-rolled Karplus-Strong
 loop. Each deck wraps one `rings::Part` (mono, polyphony 1): modal bodies, sympathetic strings,
 plucked strings, and an FM voice.
 
@@ -15,8 +15,8 @@ recorded under "Resolved: the PITCH-knob bug" at the end; read it before touchin
 ## Status at a glance
 
 - Implemented and integrated end to end (engine, build system, host test).
-- Host test suite passes: `make -C host test` -> `OK: all karp checks passed`.
-- Firmware links and fits: `make ENGINE=karp` -> SRAM_EXEC ~96% (183 KB / 186 KB), no overflow.
+- Host test suite passes: `make -C host test` -> `OK: all reso checks passed`.
+- Firmware links and fits: `make ENGINE=reso` -> SRAM_EXEC ~96% (183 KB / 186 KB), no overflow.
 - ARM compile of all Rings/stmlib sources is clean.
 - PITCH tracks on hardware (the original "knob does nothing" bug is fixed - see the end).
 - One open tuning item: the pluck attack is bright/percussive ("thomp"); the pitched fundamental is
@@ -65,12 +65,12 @@ right out. Output is soft-clipped.
 ### Knob defaults (engine-seeded)
 
 The platform seeds the SIZE/ENV/MODFREQ knob start positions from each engine's param cache (the same
-`param()`-seed mechanism as POS/MOD_AMT/Alt+PITCH), so karp carries sensible defaults without changing
+`param()`-seed mechanism as POS/MOD_AMT/Alt+PITCH), so reso carries sensible defaults without changing
 other engines:
 
 - **ENV = 0.5.** ENV drives Rings brightness, and at 0 the excitation filter collapses the pluck to
   near-silence - a 0 default made the voice silent when a pad was pressed. 0.5 boots it audible. (Note:
-  karp's ENV morphs brightness; it is not the granular amplitude-envelope-shape knob the manual
+  reso's ENV morphs brightness; it is not the granular amplitude-envelope-shape knob the manual
   describes for the same physical control.)
 - **SIZE = 0.5.** SIZE is `patch.damping`, whose decay (rt60) is steep near the top, so the knob is very
   sensitive there; 0.5 centres it in a usable range. (Was 1.0.)
@@ -88,7 +88,7 @@ held** `render` draws the five model options as evenly-spaced points around the 
 model bright, the rest dim - in place of the pitch dot, the whole time (not just on a change). The
 platform pushes the held state each loop via the defaulted `IEngine::set_aux_active(deck, active)` hook
 (`core.ui.cpp`, before the `render` call): for a `CapAux` engine it sends `Alt down && that deck's PITCH
-not claimed by an fx touch`. karp stores it per deck (`aux_held`) and shows the selector accordingly;
+not claimed by an fx touch`. reso stores it per deck (`aux_held`) and shows the selector accordingly;
 other engines ignore the no-op default. The host test asserts the selector lights while held (more
 points than the lone pitch dot), persists across frames, and clears on release.
 
@@ -102,8 +102,8 @@ is the Reel level knob if it needs nudging.
 
 ## Architecture (PIMPL)
 
-`KarpEngine` (`src/engine/karp/karp_engine.h`) exposes only the `IEngine` interface plus an opaque
-`struct Impl* _p`. All Rings/stmlib types live in `karp_engine.cpp` inside `struct KarpEngine::Impl`.
+`ResoEngine` (`src/engine/reso/reso_engine.h`) exposes only the `IEngine` interface plus an opaque
+`struct Impl* _p`. All Rings/stmlib types live in `reso_engine.cpp` inside `struct ResoEngine::Impl`.
 
 This is mandatory, not stylistic: `stmlib/stmlib.h` declares a global `namespace impl` (for its
 `STATIC_ASSERT` helper). The composition root `src/app.cpp` has a `static AppImpl impl;` instance, and
@@ -119,12 +119,12 @@ platform block is processed in four chunks of <=24.
 
 ## Build system
 
-Dependencies vendored under `src/engine/karp/thirdparty/` (colocated with the engine that owns them;
-the `KARP_TP`/`KARP_INC` make vars scope the sources and `-I` to the karp build only):
+Dependencies vendored under `src/engine/reso/thirdparty/` (colocated with the engine that owns them;
+the `RESO_TP`/`RESO_INC` make vars scope the sources and `-I` to the reso build only):
 - `rings` - Mutable Instruments Rings (only `dsp/` is used).
 - `stmlib` - Mutable support library (hard dependency of Rings).
 
-The vendored tree is **trimmed to the exact compile closure** - only the `.cc`/`.h` files karp actually
+The vendored tree is **trimmed to the exact compile closure** - only the `.cc`/`.h` files reso actually
 pulls in (computed from the compiler's own `.d` dependency output), plus `stmlib/LICENSE`/`README.md`.
 This is ~34 files / ~320 KB, down from the ~50 MB full checkouts (the bulk was `stmlib/third_party` and
 Rings' `hardware_design`/`drivers`/`ui`/`bootloader`, none of which the DSP needs). If you later add a
@@ -132,7 +132,7 @@ Rings model or stmlib helper that includes a header that was pruned, the build w
 "file not found"; re-fetch that file from upstream. Rings' MIT notice lives in each source-file header
 (retained by keeping the used files); stmlib keeps its top-level `LICENSE`.
 
-Compiled sources for karp (engine + Rings DSP + stmlib): `karp_engine.cpp`,
+Compiled sources for reso (engine + Rings DSP + stmlib): `reso_engine.cpp`,
 `rings/dsp/{part,string,resonator,fm_voice}.cc`, `rings/resources.cc`,
 `stmlib/dsp/{units,atan}.cc`, `stmlib/utils/random.cc`.
 
@@ -140,18 +140,18 @@ Three build gotchas, all handled:
 
 1. **`-DTEST` on host only.** stmlib gates its ARM `ssat`/`usat`/`vsqrt` asm behind `#ifndef TEST`;
    the desktop build must define `TEST` to use the portable C paths. The firmware build must NOT
-   define it (uses the asm). `host/Makefile` adds `-DTEST -I$(KARP_TP)`; the root `Makefile` adds
-   `$(KARP_INC)` (`-I src/engine/karp/thirdparty`) without `-DTEST`.
+   define it (uses the asm). `host/Makefile` adds `-DTEST -I$(RESO_TP)`; the root `Makefile` adds
+   `$(RESO_INC)` (`-I src/engine/reso/thirdparty`) without `-DTEST`.
 2. **`-DM_PI` on the ARM build.** stmlib's filters use `M_PI`, which strict `-std=c++17` does not
-   expose from `<cmath>` on `arm-none-eabi`. The karp branch of the root `Makefile` adds
+   expose from `<cmath>` on `arm-none-eabi`. The reso branch of the root `Makefile` adds
    `-DM_PI=3.14159265358979323846`.
-3. **`OPT = -Os` for karp only.** Rings (~30 KB of code+tables) overflows the 186 KB execution SRAM at
-   `-O2` (overflow ~5.4 KB). The karp branch sets `OPT = -Os`, which fits (~96%) and leaves other
+3. **`OPT = -Os` for reso only.** Rings (~30 KB of code+tables) overflows the 186 KB execution SRAM at
+   `-O2` (overflow ~5.4 KB). The reso branch sets `OPT = -Os`, which fits (~96%) and leaves other
    engines at `-O2`. (`-Os` was briefly suspected of miscompiling the pitch path; it does not - the
    pitch bug was elsewhere. A Rings-only `-O2` override was tried and reverted.)
 
-Registered in: `src/engine/engine_select.h`, root `Makefile` (`ENGINE=karp`, `engine-karp` flash
-target), `CMakeLists.txt`, `host/Makefile` (`test-karp`).
+Registered in: `src/engine/engine_select.h`, root `Makefile` (`ENGINE=reso`, `engine-reso` flash
+target), `CMakeLists.txt`, `host/Makefile` (`test-reso`).
 
 The Daisy core Makefile already compiles `.cc` (not just `.cpp`), and object names are flat-by-basename
 with no collisions among the Rings/stmlib files.
@@ -168,14 +168,14 @@ table-relocation needs proper LMA handling / a separate QSPI programming step, n
 
 ## Files
 
-- `src/engine/karp/karp_engine.h` - slim `IEngine` + opaque `Impl*` (no Rings includes).
-- `src/engine/karp/karp_engine.cpp` - `Impl` with the Rings wiring, modes, schedulers, control map.
-- `host/test_karp.cpp` - host tests (param round-trip, mode switch, Slice decay, Reel quiet-idle +
+- `src/engine/reso/reso_engine.h` - slim `IEngine` + opaque `Impl*` (no Rings includes).
+- `src/engine/reso/reso_engine.cpp` - `Impl` with the Rings wiring, modes, schedulers, control map.
+- `host/test_reso.cpp` - host tests (param round-trip, mode switch, Slice decay, Reel quiet-idle +
   sounds-on-trigger, Drift scatter, MIDI note, pitch-tracking, brightness control).
 - Build edits: root `Makefile`, `CMakeLists.txt`, `host/Makefile`, `src/engine/engine_select.h`.
 - Platform edit (affects all engines): `src/ui/core.ui.cpp` - see "absolute pitch" below.
 
-Nothing is committed. `src/engine/karp/thirdparty/{rings,stmlib}` are vendored copies (MIT); consider
+Nothing is committed. `src/engine/reso/thirdparty/{rings,stmlib}` are vendored copies (MIT); consider
 submodules or retaining their licenses.
 
 ---
@@ -205,7 +205,7 @@ cv_semis`, routed through every pluck site (knob, gate/pad via `trigger_here`, S
 Unpatched -> `cv_semis == 0` -> the knob alone controls pitch; patched -> CV transposes on top. It does
 not rewrite `dk.note` per block, so it never clobbers a trigger's arp/drift offset.
 
-**Regression test.** `host/test_karp.cpp` now calls `cv_voct()` around the pitch checks (the prior
+**Regression test.** `host/test_reso.cpp` now calls `cv_voct()` around the pitch checks (the prior
 tests never did, which is exactly why the bug was invisible on host): it asserts the knob still spans
 pitch while `cv_voct(0)` is hammered in, and that `cv_voct(+12)` transposes up ~1 octave.
 
@@ -216,14 +216,14 @@ path. Disproving those turned up three *real* but separate issues, all fixed:
 
 - **`-Os` miscompile - disproven.** A diagnostic that drove `dk.note` directly in `process()` produced a
   clean pitched sweep on device, so the note->frequency path was never frozen. The Rings-only `-O2`
-  override tried for this is reverted; karp is back to plain `-Os`.
+  override tried for this is reverted; reso is back to plain `-Os`.
 - **Input feed into Slice/Drift (real fix).** The internal-exciter modes were fed the live audio input,
   which Rings sums into the resonator on top of the pluck - layering a continuous unpitched drone over
   every note (audible on the live ADC, silent on the host's zero input). Now they feed silence; only
   Reel takes external input. This is the "much clearer pitch differentiation" improvement.
 - **Cycle default (real fix).** `MODFREQ`/`ModSpeed` ("cycle") was seeded to 0.3 by a shared literal in
   `core.ui.cpp`, above the Slice arp threshold, so the arp free-ran from boot (the "replucking"). The
-  seed is now engine-derived (like Pos/ModAmp/Aux): karp seeds 0 (arp off), granular carries its own
+  seed is now engine-derived (like Pos/ModAmp/Aux): reso seeds 0 (arp off), granular carries its own
   0.3 so it is unchanged, edrums keeps its 0.0.
 
 ### Still open (voicing, not a bug)
@@ -244,5 +244,5 @@ lowering the exciter brightness coupling or level if a softer attack is wanted.
 - Drift randomization uses the engine's own LCG; Slice arp reads `ITransport::tempo()`.
 - Two full `rings::Part` instances run every block; at `-Os` on the 480 MHz M7 there should be ample
   headroom, but CPU has not been measured on hardware (`Meter::cpu`).
-- Models 4/5 (FM, string+reverb) are wired via `Aux`; karp stays at `-Os` (fits ~96%), so there is no
+- Models 4/5 (FM, string+reverb) are wired via `Aux`; reso stays at `-Os` (fits ~96%), so there is no
   pressure to drop them for SRAM.

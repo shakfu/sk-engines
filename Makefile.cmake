@@ -1,4 +1,4 @@
-# Thin Make frontend over the CMake build (TODO P3 spike).
+# Thin Make frontend over the CMake build (WIP).
 #
 # Preserves the muscle-memory commands while CMake does the real work:
 #   make -f Makefile.cmake                  # configure + build the default (granular) engine
@@ -32,7 +32,7 @@ CMAKE_FLAGS += -DLOFI_INT16=1
 endif
 
 .PHONY: all build configure clean check-boundary program-dfu program-boot \
-        engine-granular engine-passthrough engine-delay engine-edrums engine-karp
+        engine-granular engine-passthrough engine-delay engine-edrums engine-reso
 
 all: build
 
@@ -76,5 +76,5 @@ engine-delay:
 	$(MAKE) -f $(THIS) ENGINE=delay build program-dfu
 engine-edrums:
 	$(MAKE) -f $(THIS) ENGINE=edrums build program-dfu
-engine-karp:
-	$(MAKE) -f $(THIS) ENGINE=karp build program-dfu
+engine-reso:
+	$(MAKE) -f $(THIS) ENGINE=reso build program-dfu

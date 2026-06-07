@@ -6,8 +6,8 @@
 
 CXX      ?= clang++
 ROOT      = ..
-# karp's vendored Rings/stmlib DSP, colocated under the engine and trimmed to the used closure.
-KARP_TP   = $(ROOT)/src/engine/karp/thirdparty
+# reso's vendored Rings/stmlib DSP, colocated under the engine and trimmed to the used closure.
+RESO_TP   = $(ROOT)/src/engine/reso/thirdparty
 BUILD     = build
 TARGET    = $(BUILD)/host_spotykach
 
@@ -17,9 +17,9 @@ DAISYSP   = $(ROOT)/lib/DaisySP/Source
 # must be on the include path. src/transport/ headers (transport.h) likewise pull siblings
 # (synclock.h/tempo.h) by bare name, so that dir is on the path too for TUs that include the transport.
 DAISYSP_INC = $(addprefix -I,$(wildcard $(DAISYSP)/*/))
-INCLUDES  = -Ishim -I$(ROOT)/src -I$(ROOT)/src/transport -I$(KARP_TP) -I. -I$(DAISYSP) $(DAISYSP_INC)
+INCLUDES  = -Ishim -I$(ROOT)/src -I$(ROOT)/src/transport -I$(RESO_TP) -I. -I$(DAISYSP) $(DAISYSP_INC)
 # -DTEST selects stmlib's portable C paths (the ARM ssat/usat asm is gated behind #ifndef TEST), so
-# the Rings DSP (under $(KARP_TP)) compiles on the desktop. Unused elsewhere in this repo.
+# the Rings DSP (under $(RESO_TP)) compiles on the desktop. Unused elsewhere in this repo.
 CXXFLAGS  = -std=c++17 -O2 -DTEST -Wall -Wno-unused-variable -Wno-unused-but-set-variable $(INCLUDES)
 
 CORE_SRC    = $(wildcard $(ROOT)/src/engine/granular/*.cpp)
@@ -34,22 +34,22 @@ TRANSPORT_SRC = $(wildcard $(ROOT)/src/transport/*.cpp)
 ENGINE_SRC  = $(wildcard $(ROOT)/src/engine/*.cpp)
 DAISYSP_SRC = $(wildcard $(DAISYSP)/*/*.cpp)
 LIB_SRC     = $(CORE_SRC) $(DSP_SRC) $(TRANSPORT_SRC) $(ENGINE_SRC) $(DAISYSP_SRC)
-# The edrums/karp engines live under src/engine/<name>/ (outside the wildcards above); add for tests.
+# The edrums/reso engines live under src/engine/<name>/ (outside the wildcards above); add for tests.
 EDRUMS_SRC  = $(ROOT)/src/engine/edrums/edrums_engine.cpp
-KARP_SRC    = $(ROOT)/src/engine/karp/karp_engine.cpp
-# karp's DSP is the Mutable Instruments Rings engine + its stmlib support library (under $(KARP_TP)).
-RINGS_SRC   = $(KARP_TP)/rings/dsp/part.cc $(KARP_TP)/rings/dsp/string.cc \
-              $(KARP_TP)/rings/dsp/resonator.cc $(KARP_TP)/rings/dsp/fm_voice.cc \
-              $(KARP_TP)/rings/resources.cc \
-              $(KARP_TP)/stmlib/dsp/units.cc $(KARP_TP)/stmlib/utils/random.cc \
-              $(KARP_TP)/stmlib/dsp/atan.cc
+RESO_SRC    = $(ROOT)/src/engine/reso/reso_engine.cpp
+# reso's DSP is the Mutable Instruments Rings engine + its stmlib support library (under $(RESO_TP)).
+RINGS_SRC   = $(RESO_TP)/rings/dsp/part.cc $(RESO_TP)/rings/dsp/string.cc \
+              $(RESO_TP)/rings/dsp/resonator.cc $(RESO_TP)/rings/dsp/fm_voice.cc \
+              $(RESO_TP)/rings/resources.cc \
+              $(RESO_TP)/stmlib/dsp/units.cc $(RESO_TP)/stmlib/utils/random.cc \
+              $(RESO_TP)/stmlib/dsp/atan.cc
 
 SRC          = main_host.cpp $(LIB_SRC)
 TEST         = $(BUILD)/test_engine_params
 TEST_EDRUMS  = $(BUILD)/test_edrums_slots
-TEST_KARP    = $(BUILD)/test_karp
+TEST_RESO    = $(BUILD)/test_reso
 
-.PHONY: all clean run test test-granular test-edrums test-karp
+.PHONY: all clean run test test-granular test-edrums test-reso
 all: $(TARGET)
 
 $(TARGET): $(SRC) | $(BUILD)
@@ -61,8 +61,8 @@ $(TEST): test_engine_params.cpp $(LIB_SRC) | $(BUILD)
 $(TEST_EDRUMS): test_edrums_slots.cpp $(LIB_SRC) $(EDRUMS_SRC) | $(BUILD)
 	$(CXX) $(CXXFLAGS) test_edrums_slots.cpp $(LIB_SRC) $(EDRUMS_SRC) -o $@
 
-$(TEST_KARP): test_karp.cpp $(LIB_SRC) $(KARP_SRC) $(RINGS_SRC) | $(BUILD)
-	$(CXX) $(CXXFLAGS) test_karp.cpp $(LIB_SRC) $(KARP_SRC) $(RINGS_SRC) -o $@
+$(TEST_RESO): test_reso.cpp $(LIB_SRC) $(RESO_SRC) $(RINGS_SRC) | $(BUILD)
+	$(CXX) $(CXXFLAGS) test_reso.cpp $(LIB_SRC) $(RESO_SRC) $(RINGS_SRC) -o $@
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -72,7 +72,7 @@ run: $(TARGET)
 
 # `test` runs both engine harnesses. Both inject the transport via EngineContext (granular drives the
 # real platform Transport; edrums uses a small stub ITransport) - the post-transport-decoupling way.
-test: test-granular test-edrums test-karp
+test: test-granular test-edrums test-reso
 
 test-granular: $(TEST)
 	./$(TEST)
@@ -80,8 +80,8 @@ test-granular: $(TEST)
 test-edrums: $(TEST_EDRUMS)
 	./$(TEST_EDRUMS)
 
-test-karp: $(TEST_KARP)
-	./$(TEST_KARP)
+test-reso: $(TEST_RESO)
+	./$(TEST_RESO)
 
 clean:
 	rm -rf $(BUILD)

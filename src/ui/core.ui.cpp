@@ -67,14 +67,14 @@ void CoreUI::_init_values()
         // Engine-derived seeds (start position + fx state) come from the engine's pre-seeded
         // param cache; the rest are the platform's UI-default pickup starting points.
         mv(ParamId::Pos)[ref].set(_engine.param(ParamId::Pos, ref));
-        // Engine-seeded (like Pos/ModSpeed): the SIZE default comes from each engine's cache. karp
+        // Engine-seeded (like Pos/ModSpeed): the SIZE default comes from each engine's cache. reso
         // seeds 0.5 (its damping is very sensitive near the top, so centre the knob); granular and
         // delay seed 1.0 to keep their prior default; edrums seeds its own 1.0 per slot.
         mv(ParamId::Size)[ref].set(_engine.param(ParamId::Size, ref));
         mv(ParamId::Speed)[ref].set(.5f);
         mv(ParamId::Mix)[ref].set(.5f);
         mv(ParamId::Feedback)[ref].set(kDefaultFeedback);
-        // Engine-seeded (like Pos/Size/ModSpeed): the ENV default comes from each engine's cache. karp
+        // Engine-seeded (like Pos/Size/ModSpeed): the ENV default comes from each engine's cache. reso
         // seeds 0.5 - its ENV drives Rings brightness, and at 0 the excitation is filtered to silence, so
         // a 0 default booted the voice silent-on-trigger. granular/edrums/delay return 0.0 (their prior
         // default: granular's amplitude envelope off at fully-CCW, per the manual).
@@ -84,7 +84,7 @@ void CoreUI::_init_values()
         mv(ParamId::PolySlice)[ref].set(.51f);
 
         // Engine-seeded (like Pos/ModAmp/Aux): the MODFREQ/"cycle" default comes from each engine's
-        // cache, not a shared literal. karp seeds 0 so its Slice arp / Drift scatter starts OFF (a
+        // cache, not a shared literal. reso seeds 0 so its Slice arp / Drift scatter starts OFF (a
         // non-zero default free-ran the arp from boot); granular seeds 0.3 to keep its prior default;
         // edrums seeds its own 0.0 (1/16 div).
         mv(ParamId::ModSpeed)[ref].set(_engine.param(ParamId::ModSpeed, ref));

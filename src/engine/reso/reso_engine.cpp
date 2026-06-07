@@ -1,6 +1,6 @@
 // SYNTHUX ACADEMY /////////////////////////////////////////
 // SPOTYKACH ///////////////////////////////////////////////
-#include "engine/karp/karp_engine.h"
+#include "engine/reso/reso_engine.h"
 
 #include "engine/arena.h"
 
@@ -28,7 +28,7 @@ inline float soft_clip(float x) {
 } // namespace
 
 // All Rings/stmlib types are confined to this Impl (see the PIMPL note in the header).
-struct KarpEngine::Impl {
+struct ResoEngine::Impl {
     enum class Mode : uint8_t { Reel = 0, Slice = 1, Drift = 2 };
     static constexpr int     kModels      = 5;  // modal / symp.string / string / FM / string+reverb
     static constexpr uint8_t kFlashFrames = 6;
@@ -319,8 +319,8 @@ struct KarpEngine::Impl {
     }
 };
 
-// --- KarpEngine: thin forwarders to Impl (which lives in the SDRAM arena) ------------------------
-void KarpEngine::init(const EngineContext& ctx)
+// --- ResoEngine: thin forwarders to Impl (which lives in the SDRAM arena) ------------------------
+void ResoEngine::init(const EngineContext& ctx)
 {
     Arena ar(ctx.arena);
     void* mem = ar.alloc<uint8_t>(sizeof(Impl), alignof(Impl));
@@ -328,23 +328,23 @@ void KarpEngine::init(const EngineContext& ctx)
     _p->setup(ctx, ar);
 }
 
-void KarpEngine::process(const float* const* in, float** out, size_t size)
+void ResoEngine::process(const float* const* in, float** out, size_t size)
 {
     if (_p) _p->process(in, out, size);
 }
 
-void  KarpEngine::set_param(ParamId id, DeckRef::Ref d, float v) { if (_p) _p->set_param(id, d, v); }
-float KarpEngine::param(ParamId id, DeckRef::Ref d) const        { return _p ? _p->param(id, d) : 0.f; }
-void  KarpEngine::set_mod_speed(DeckRef::Ref d, float v, bool)   { if (_p) _p->set_mod_speed(d, v); }
-void  KarpEngine::set_aux_active(DeckRef::Ref d, bool held)      { if (_p) _p->set_aux_active(d, held); }
-bool  KarpEngine::set_config(ConfigId id, DeckRef::Ref d, int v) { return _p ? _p->set_config(id, d, v) : false; }
+void  ResoEngine::set_param(ParamId id, DeckRef::Ref d, float v) { if (_p) _p->set_param(id, d, v); }
+float ResoEngine::param(ParamId id, DeckRef::Ref d) const        { return _p ? _p->param(id, d) : 0.f; }
+void  ResoEngine::set_mod_speed(DeckRef::Ref d, float v, bool)   { if (_p) _p->set_mod_speed(d, v); }
+void  ResoEngine::set_aux_active(DeckRef::Ref d, bool held)      { if (_p) _p->set_aux_active(d, held); }
+bool  ResoEngine::set_config(ConfigId id, DeckRef::Ref d, int v) { return _p ? _p->set_config(id, d, v) : false; }
 
-DeckRef::Ref KarpEngine::handle_midi_note(uint8_t ch, uint8_t note)
+DeckRef::Ref ResoEngine::handle_midi_note(uint8_t ch, uint8_t note)
 {
     return _p ? _p->handle_midi_note(ch, note) : DeckRef::Count;
 }
-void KarpEngine::cv_voct(DeckRef::Ref d, float v)        { if (_p) _p->cv_voct(d, v); }
-void KarpEngine::on_gate_trigger(DeckRef::Ref d)         { if (_p) _p->trigger_here(d); }
-bool KarpEngine::on_play_pad(DeckRef::Ref d, bool)       { if (_p) _p->trigger_here(d); return false; }
-void KarpEngine::on_seq_trigger(DeckRef::Ref d)          { if (_p) _p->trigger_here(d); }
-void KarpEngine::render(DisplayModel& m)                 { if (_p) _p->render(m); }
+void ResoEngine::cv_voct(DeckRef::Ref d, float v)        { if (_p) _p->cv_voct(d, v); }
+void ResoEngine::on_gate_trigger(DeckRef::Ref d)         { if (_p) _p->trigger_here(d); }
+bool ResoEngine::on_play_pad(DeckRef::Ref d, bool)       { if (_p) _p->trigger_here(d); return false; }
+void ResoEngine::on_seq_trigger(DeckRef::Ref d)          { if (_p) _p->trigger_here(d); }
+void ResoEngine::render(DisplayModel& m)                 { if (_p) _p->render(m); }
