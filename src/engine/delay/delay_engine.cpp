@@ -128,6 +128,11 @@ void DelayEngine::init(const EngineContext& ctx)
     // The delay time syncs to this clock (read-only); the platform owns it.
     _transport = ctx.transport;
 
+    // SIZE (musical division) is now engine-seeded by the platform; carry delay's prior 1.0 default so
+    // its startup division is unchanged (was a shared 1.0 literal in core.ui).
+    _param[static_cast<size_t>(ParamId::Size)][DeckRef::A] = 1.0f;
+    _param[static_cast<size_t>(ParamId::Size)][DeckRef::B] = 1.0f;
+
     // Sub-allocate two delay lines from the platform's opaque SDRAM arena. Each tap is sized to hold
     // the longest division at the slowest tempo (~6 s), dwarfed by the 48 MB arena.
     Arena arena(ctx.arena);

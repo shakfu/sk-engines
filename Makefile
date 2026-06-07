@@ -28,8 +28,26 @@ ENGINE_SOURCES = src/engine/delay/delay_engine.cpp
 else ifeq ($(ENGINE), edrums)
 C_DEFS += -DSPK_ENGINE_EDRUMS
 ENGINE_SOURCES = src/engine/edrums/edrums_engine.cpp
+else ifeq ($(ENGINE), karp)
+C_DEFS += -DSPK_ENGINE_KARP
+# stmlib's filters use M_PI, which strict -std=c++17 does not expose from <cmath> on arm-none-eabi.
+C_DEFS += -DM_PI=3.14159265358979323846
+# The Rings DSP (~30K of code+tables) overflows the 186K execution SRAM at -O2. Build karp at -Os to
+# fit; the M7 at 480 MHz has ample headroom (Rings shipped on a 168 MHz F4). Scoped to this engine.
+OPT = -Os
+# karp's DSP is the Mutable Instruments Rings engine + its stmlib support library, vendored (trimmed to
+# the used closure) under src/engine/karp/thirdparty/. KARP_INC scopes that include to the karp build
+# (referenced from C_INCLUDES below; empty for other engines). The .cc files compile on-target WITHOUT
+# -DTEST, so stmlib uses its Cortex-M ssat/usat fast paths.
+KARP_TP  = src/engine/karp/thirdparty
+KARP_INC = -I$(KARP_TP)
+ENGINE_SOURCES = src/engine/karp/karp_engine.cpp \
+	$(KARP_TP)/rings/dsp/part.cc $(KARP_TP)/rings/dsp/string.cc \
+	$(KARP_TP)/rings/dsp/resonator.cc $(KARP_TP)/rings/dsp/fm_voice.cc \
+	$(KARP_TP)/rings/resources.cc \
+	$(KARP_TP)/stmlib/dsp/units.cc $(KARP_TP)/stmlib/utils/random.cc $(KARP_TP)/stmlib/dsp/atan.cc
 else
-$(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', or 'edrums')
+$(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', 'edrums', or 'karp')
 endif
 
 USE_FATFS = 1
@@ -48,7 +66,7 @@ APP_TYPE = BOOT_SRAM
 LDSCRIPT = alt_sram.lds
 BOOT_BIN = bootloader-spotykach-v2.bin
 
-C_INCLUDES = -Isrc/ -Ilib/
+C_INCLUDES = -Isrc/ -Ilib/ $(KARP_INC)
 C_USR_FLAGS = -ffast-math -funroll-loops
 C_DEFS += -DINFS_LOG_TARGET=daisy::LOGGER_EXTERNAL
 
@@ -99,7 +117,7 @@ all: check-boundary
 
 # One-shot variant flash: clean -> build -> flash over DFU. Put the device in DFU mode first
 # (hold Reset ~3s until the bottom pad LEDs breathe white), then `make granular` / `make passthrough`.
-.PHONY: engine-granular engine-passthrough engine-delay engine-edrums
+.PHONY: engine-granular engine-passthrough engine-delay engine-edrums engine-karp
 engine-granular:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=granular
@@ -119,6 +137,11 @@ engine-edrums:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=edrums
 	$(MAKE) ENGINE=edrums program-dfu
+
+engine-karp:
+	$(MAKE) clean
+	$(MAKE) -j8 ENGINE=karp
+	$(MAKE) ENGINE=karp program-dfu
 
 # Vendored Daisy archives. The core Makefile's link step (-ldaisy -ldaisysp) needs these built, but a
 # fresh checkout has source-only submodules, so a bare `make` used to fail at link with "cannot find

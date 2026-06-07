@@ -11,9 +11,13 @@ Companion reading: `docs/engines/README.md` (the contract + the shared knob voca
 The platform is opinionated. An engine that fights its shape is awkward to play; one that leans into it gets a polished instrument almost for free. The recurring affordances:
 
 - **Two of everything.** Two decks, two knob banks, two rings, two Rev/Seq/Fx pad sets, a crossfader between them. The strongest ideas are *natively two-voiced*: A and B are two synth voices, two delay lines, two filters, or carrier-vs-modulator. `edrums` even folds four drums into the two decks via Rev-pad focus swap (`take_param_reseed`) — that pattern generalises to any "more voices than decks" engine.
+
 - **A shared clock.** The transport (`ITransport`) is a platform service every engine can *read* (tempo) or *subscribe* to (ticks). Anything rhythmic — sequenced synth, tempo-synced modulation, arpeggiator, rhythmic delay — gets bar-locked sync, MIDI/CV clock-in, and tap tempo for free (`CapTransport`).
+
 - **Seven continuous controls per deck, plus an Alt selector.** The default knob column gives `Pos/Env/Size/Speed/ModSpeed/ModAmp/Mix` with no modifier; `CapAux` claims Alt+PITCH as a categorical selector (edrums uses it for drum-model select). That is enough for a fairly deep voice without inventing new gestures.
+
 - **CV/gate + MIDI note in.** `cv_voct`, `handle_midi_note`, `on_gate_trigger` make pitched/triggered engines (synth voices, physical models) playable from a modular rig or keyboard. `process_cv` gives two CV/LFO *outputs* back to the rack.
+
 - **Own display.** `CapOwnDisplay` lets an engine paint the rings/LEDs directly (`DisplayModel`) instead of the granular `*_leds` query path — the right choice for any non-granular engine.
 
 The bare-metal budget (see [Feasibility](#feasibility-the-shared-constraints)) rewards cheap-per-sample DSP: one-pole filters, biquads, delay lines, table oscillators, Karplus-Strong. It punishes per-block FFTs and long convolutions unless they are kept small and amortised.
@@ -24,7 +28,7 @@ The bare-metal budget (see [Feasibility](#feasibility-the-shared-constraints)) r
 
 | # | Engine | One-liner | Native 2-voice? | Transport | Primary DSP source | Cost |
 |---|---|---|---|---|---|---|
-| 1 | **Resonator** | dual physical-model voice (string/mallet/modal), pluck or live-exciter | yes (2 voices) | optional (arp) | DaisySP `String`/`Pluck`, STK modal | low |
+| 1 | **Resonator / Pluck** | dual Karplus-Strong voice; reel/slice/drift switch applies continuous / plucked / scattered excitation | yes (2 voices, 4-6 via focus) | per-mode (strum/drift) | DaisySP `String`/`Pluck`, STK `Plucked`/modal | low |
 | 2 | **Ladder synth** | dual VA voice: band-limited osc + Moog ladder + env, sequenced | yes (2 voices) | yes (seq) | vafilters / DaisySP `MoogLadder`, PolyBLEP | low-med |
 | 3 | **West-coast** | complex osc: wavefold + lowpass-gate, FM between the two decks | yes (2 osc) | optional | DaisySP `Oscillator`, fxdsp wavefold, DaisySP `Lpg` | low |
 | 4 | **Vocoder** | deck A carrier x deck B modulator, channel-bank or formant | inherent (A/B roles) | no | nanodsp `vocoder`/`formant_filter` over [signalsmith](https://github.com/shakfu/nanodsp/tree/main/thirdparty/signalsmith) biquads | medium |
@@ -42,28 +46,58 @@ The bare-metal budget (see [Feasibility](#feasibility-the-shared-constraints)) r
 
 ## Tier A — cheap, high-fit, build these first
 
-### 1. Resonator (physical-model voice)
+### 1. Resonator / Pluck (string-model voice, three modes)
 
-**Concept.** Each deck is one resonant voice — a plucked/struck string or a modal bar/bell — excited either by an internal impulse (Rev pad = pluck, or a Euclidean trigger off the transport) or, more interestingly, by the **live audio input** fed into the resonator's delay loop. The latter turns the instrument into a tuned resonant body you "play" by feeding it any signal: the Spotykach as a pair of sympathetic strings. Two decks = a two-note chord, or one string per channel.
+**Concept.** One pitched physical-model voice per deck, built on a single shared kernel — a delay-line + one-pole-damping loop (Karplus-Strong / digital waveguide). The same kernel covers a *fed* resonant body and a *plucked* string; only how the loop is excited and read differs. So rather than two engines, this is **one engine whose three voicing modes are chosen by the reel/slice/drift switch** — the 3-position L/C/R mode selector that sits idle on every non-granular engine (edrums and `delay` already repurpose it). The switch picks the *excitation behaviour*; the existing `Aux` model-select (string / mallet / bell / bar / membrane) picks the *material*, orthogonally. Two axes over one cheap kernel — a richer instrument than either source idea alone, for the same DSP.
 
-**Why it fits.** Karplus-Strong is about the cheapest expressive voice there is (a delay line + one-pole damping filter). It is natively pitched, so `cv_voct` / `handle_midi_note` make it a playable modular/MIDI voice with no extra UI. Two decks are two voices without contortion; the edrums focus-swap trick could expand to a 4-note chord later.
+The three modes are not a metaphor for the switch's labels — they *are* those labels, applied one layer up. Granular reels/slices/drifts a *recorded buffer*; this engine reels/slices/drifts the *excitation feeding the string*. Same three playback paradigms (continuous tape / discrete sampler / evolving granular), same mono/poly/texture character they already imply, only the object changes from buffer to exciter:
 
-**DSP.** DaisySP `String` / `Pluck` (already in the pinned `bleeptools` fork) or STK `Modal`/`Plucked` for the bell/bar timbres (wrapped in nanodsp over [DaisySP](https://github.com/shakfu/nanodsp/tree/main/thirdparty/DaisySP) / [STK](https://github.com/shakfu/nanodsp/tree/main/thirdparty/stk)). Excitation = noise burst, input audio, or impulse. Damping = one-pole in the loop. Optional body resonance = 1-2 biquads (`dsp/biquad` exists).
+**Reel — sympathetic body (continuous excitation).** The "play it by feeding audio" idea: the **live audio input** (or an internal noise/bow source) drives the loop continuously, so the string rings as long as energy flows in — a tuned resonant body, the Spotykach as a pair of sympathetic strings. Monophonic per deck (as Reel is mono); two decks = two sympathetic strings tuned to a chord, fed any signal.
 
-**Control map (per deck).**
+| Knob | `ParamId` | Function |
+|---|---|---|
+| PITCH | `Speed` | tune (also `cv_voct` / MIDI note) |
+| SIZE | `Size` | ring time / loop Q (decay) |
+| POS | `Pos` | excitation position / brightness |
+| ENV | `Env` | excitation source (internal noise/bow <-> live input) |
+| MOD_AMT | `ModAmp` | body resonance / inharmonicity |
+| MODFREQ | `set_mod_speed` | vibrato rate |
+| SOS | `Mix` | dry/wet (input vs resonator) |
+| Alt+PITCH | `Aux` | material: string / mallet / bell / bar / membrane |
+
+**Slice — pluck / strum (triggered, polyphonic).** The extended Karplus-Strong (Jaffe-Smith EKS) pluck: a filtered noise/impulse burst into the loop, with a **pick-position comb** for the characteristic notch, a pluck-hardness lowpass, and a dynamic-level filter so harder plucks are brighter. Discrete plucks from the Rev pad / gate / MIDI note; up to 3-voice (as Slice is up-to-3 poly), or 4-6 via the edrums focus-swap. "Independent pitch" carries over from granular Slice but means something specific here: each voice holds *its own* pitch, set per-trigger — by the MIDI note, a per-step value, or CV at trigger time — not by a polyphonic knob. The `PITCH` knob sets the tonic/transpose for the manually-played or focused voice; the others retain the pitch they were struck at, so a held chord or a running arp keeps distinct notes while you retune the front voice. A transport-locked **strum/arpeggiate** rolls the decks; per-string detune gives a 12-string/chorus shimmer.
 
 | Knob | `ParamId` | Function |
 |---|---|---|
 | PITCH | `Speed` | pitch (also `cv_voct` / MIDI note) |
 | SIZE | `Size` | decay / sustain (loop damping) |
-| POS | `Pos` | excitation position / brightness (pluck point) |
-| ENV | `Env` | excitation type (noise <-> input audio blend) |
-| SOS | `Mix` | dry/wet (resonator vs input) |
-| MOD_AMT | `ModAmp` | body resonance amount / inharmonicity |
-| MODFREQ | `set_mod_speed` | vibrato / LFO-to-pitch rate |
-| Alt+PITCH | `Aux` | model select (string / mallet / bell / bar / drum membrane) |
+| POS | `Pos` | pick position (comb notch) |
+| ENV | `Env` | pluck hardness (dynamic brightness) |
+| MOD_AMT | `ModAmp` | per-string detune (12-string) + inharmonicity / stiffness |
+| MODFREQ | `set_mod_speed` | strum / arp rate (transport-synced) |
+| SOS | `Mix` | mix / string level |
+| Alt+PITCH | `Aux` | single / strum / arp; string set (nylon / steel / harp / koto) |
 
-**Capabilities.** `CapDualDeck | CapOwnDisplay | CapAux` (+ `CapTransport` if you add a built-in arp/euclidean trigger). **Cost: low.** Strongest first candidate — minimal DSP, immediately expressive, and `Aux` model-select reuses the exact seam edrums already proved.
+**Drift — scatter / modal (evolving texture).** The granular analogue, in the excitation domain: tiny re-plucks **sprayed in time** with randomized pitch/pan/timing (grains *of excitation* rather than of a buffer), or a high-Q **modal bank**, slowly drifting under the LFO/CV machinery. Two decks = two evolving resonance clouds, crossfade-morphed — the ambient/drone use-case, folding in the spirit of the old "drone bank" idea while staying on the string-model kernel.
+
+| Knob | `ParamId` | Function |
+|---|---|---|
+| PITCH | `Speed` | root pitch |
+| SIZE | `Size` | spread / inharmonicity |
+| POS | `Pos` | partial tilt / scatter centre |
+| ENV | `Env` | re-excite window / grain duration |
+| MOD_AMT | `ModAmp` | randomization depth (pitch + pan spray) |
+| MODFREQ | `set_mod_speed` | drift / re-excite density (transport-syncable) |
+| SOS | `Mix` | level / wet |
+| Alt+PITCH | `Aux` | scale-chord, or bank type: modal vs scattered-pluck; material |
+
+**Why fold the two ideas.** All three modes are the *same* delay-line + one-pole loop; only the excitation front-end changes (continuous input, pick burst, sprayed re-trigger). That is the opposite of the second-granular case (#11), where the cloud needed a genuinely different architecture and so stays a separate engine. Here a single engine is strictly less code than two, and it claims an otherwise-idle top-level gesture (the mode switch). Karplus-Strong is the cheapest expressive voice there is, natively pitched, so `cv_voct` / `handle_midi_note` make all three modes playable from a modular rig or keyboard with no extra UI.
+
+**Legend — why the silkscreen stays honest.** The L/C/R silkscreen reads "Reel/Slice/Drift", and here those words are *literally correct*, not a borrowed mnemonic: each names the playback paradigm applied to the string's excitation — continuous (Reel), triggered (Slice), scattered/granular (Drift). So the printed word, the only physically fixed element, still describes what the switch does. The colour legend (yellow/blue/purple) is not fixed — it is the engine-driven WS2812 mode LED (`route()` already reports the position), so it can be repainted per mode; but since position (L/C/R) already carries the identity and those hues act as a cross-engine position constant, leaving them is the cheaper, more coherent choice. Optionally flash a one-shot mode glyph on the ring at switch-time (the edrums model-number readout pattern) for confirmation. Capabilities are static per engine, so advertise the union and let each mode ignore what it does not use.
+
+**DSP (shared).** DaisySP `String` / `Pluck` (in the pinned `bleeptools` fork) or STK `Plucked` / `Twang` / `Modal` (wrapped in nanodsp over [DaisySP](https://github.com/shakfu/nanodsp/tree/main/thirdparty/DaisySP) / [STK](https://github.com/shakfu/nanodsp/tree/main/thirdparty/stk)). Loop damping = one-pole; fine tuning = a one-section fractional-delay allpass; pick-position comb = a single feedforward delay (Slice); body resonance = 1-2 biquads (`dsp/biquad` exists); sympathetic coupling = sum a fraction of one deck's loop into the other. Only the excitation front-end changes per mode; everything is per-sample-cheap.
+
+**Capabilities.** `CapDualDeck | CapOwnDisplay | CapAux | CapTransport`. **Cost: low.** Strongest first candidate — minimal DSP, immediately expressive, reuses the edrums `Aux` model-select seam *and* the idle mode switch, and folds two roadmap ideas into one engine with a free 3-way gesture.
 
 ### 3. West-coast complex oscillator
 
@@ -246,7 +280,9 @@ The bare-metal budget (see [Feasibility](#feasibility-the-shared-constraints)) r
 **Cost: medium-high.** The DSP loop is heap-free and STL-free in `process()`, which is the important part. The porting work and risks:
 
 - **Pre-allocate, don't resize.** The grain array (`std::unique_ptr<gf_grain[]>`) and a per-grain `std::unique_ptr<phasor>` vibrato must become fixed at `init()` (max grain count, `Blocksize = 96`). One `throw()` in `param_set` to remove (`-fno-exceptions`). Verify `std::atomic<bool>` is lock-free on the M7 (it is).
+
 - **Cut the `AudioFile.h` dependency** and feed the existing SDRAM buffer through the `gf_i_buffer_reader` seam (it exists for exactly this — clean).
+
 - **The real gate is SDRAM access, not CPU.** A cloud does *scattered* reads (each grain reads a different buffer position with interpolation), the opposite of the looper's few contiguous playheads. The H7's SDRAM rewards bursts and punishes random access; N grains scattering reads per 96-sample block is the make-or-break number, and the desktop profile does not tell you it. **Benchmark N scattered grain reads/block headless in `host/` before committing** — that single measurement decides feasibility and the max grain count.
 
 **Alternative framing — extend instead of import.** Rather than port GrainflowLib wholesale (template-heavy, an external model to maintain), give the existing `Window` per-window pitch/pan/position and let Drift spawn many of them. That recovers ~80% of the cloud character, stays in the in-house Vox/Window idiom, and reuses everything already there — at the cost of glisson, multi-stream spatialisation, and the rich randomization model. **Decision rule:** port GrainflowLib if the goal is a deep, distinct cloud instrument *and* the SDRAM benchmark passes; extend the existing Vox/Window if you want cloud-ish texture cheaply. Either way the first step is the same benchmark.
@@ -270,9 +306,13 @@ The bare-metal budget (see [Feasibility](#feasibility-the-shared-constraints)) r
 Every idea above is gated by the same platform realities (see `docs/architecture.md`):
 
 - **Hard real-time, no heap on the audio path.** `process()` runs in the audio ISR on a 96-sample block (~2 ms at 48 kHz). All buffers come from the injected SDRAM `arena` at `init()`; nothing allocates per block. This favours fixed-size DSP (delay lines, filter banks, oscillators) and rules out anything that wants to `malloc` mid-stream.
+
 - **CPU budget is per-sample-cheap, not per-block-cheap.** One-pole filters, biquads, table oscillators, Karplus-Strong loops, and Hadamard FDNs are comfortable. The expensive engines are the band-heavy (vocoder) and the block-bursty (spectral) — both need their work-per-block explicitly bounded and measured.
+
 - **SDRAM, not unlimited.** `EngineBuffers` is currently granular-shaped; a non-granular engine sub-allocates from the engine arena the way `delay` does (it borrows ~6 s of delay line). Reverb tails, multi-tap delays, and STFT double-buffers all live here and compete — budget memory up front.
+
 - **The contract grows reluctantly.** edrums added exactly one method (`take_param_reseed`) to support four voices. Prefer ideas expressible through the existing `IEngine` surface (params, `Aux`, pads, CV, transport, `render`); if an idea needs a new contract method, that is a design cost to weigh, not a free move.
+
 - **Validate headless first.** The `host/` harness runs engines off-target (e.g. `make -C host test-edrums`). Any non-trivial DSP — especially the vocoder and spectral engines — should be proven there (finite output, correct response) before it touches hardware.
 
 A practical implication: prototype the DSP in nanodsp (offline, fast to iterate, already has these algorithms), confirm the sound, *then* port the kernel to a fixed-point/fixed-buffer real-time form here. nanodsp is the lab; sk-engines is the instrument.
@@ -281,10 +321,14 @@ A practical implication: prototype the DSP in nanodsp (offline, fast to iterate,
 
 ## Suggested order
 
-1. **Resonator (#1)** — lowest cost, immediately expressive, reuses the `Aux` model-select seam. Best proof that the platform hosts a pitched physical-model voice.
+1. **Resonator / Pluck (#1)** — lowest cost, immediately expressive, reuses the `Aux` model-select seam *and* the idle reel/slice/drift mode switch. Best proof that the platform hosts a pitched physical-model voice. Build the **Slice** (pluck/strum) mode first as the headline; **Reel** (sympathetic body) and **Drift** (scatter/modal) then reuse the same loop kernel for almost nothing — three voicing modes over one cheap DSP core.
+
 2. **West-coast (#3)** or **Frequency shifter (#6)** — both cheap and distinctive; #3 if you want a synth, #6 if you want an input effect.
+
 3. **Tape echo (#7)** — forks the working `delay` engine, so high value per effort.
+
 4. **Ladder synth (#2)** — the most complete standalone instrument once the sequencer UI is in.
+
 5. **Spectral freeze (#10)** — only after the cheap wins land, as a deliberate research milestone.
 
 These are hypotheses to shoot down, not a roadmap. The open question for each is the same: does it play well within the two-deck / seven-knob / shared-clock grammar, or is it fighting it? The ones that fit (resonator, west-coast, vocoder's two-role split) are worth more than algorithmically fancier ideas that don't.

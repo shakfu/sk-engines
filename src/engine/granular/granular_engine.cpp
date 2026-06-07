@@ -25,6 +25,11 @@ void GranularEngine::init(const EngineContext& ctx)
         _param_cache[static_cast<size_t>(ParamId::FluxMix)][ref]       = fx.flux_mix();
         _param_cache[static_cast<size_t>(ParamId::FluxIntensity)][ref] = fx.flux_intensity();
         _param_cache[static_cast<size_t>(ParamId::FluxFb)][ref]        = fx.flux_fb();
+        // Preserve granular's prior MODFREQ default (was a shared 0.3 literal in core.ui; now that the
+        // cycle knob is engine-seeded, granular must carry its own default so its behaviour is unchanged).
+        _param_cache[static_cast<size_t>(ParamId::ModSpeed)][ref]      = 0.3f;
+        // Likewise SIZE: was a shared 1.0 literal, now engine-seeded - carry granular's own 1.0 default.
+        _param_cache[static_cast<size_t>(ParamId::Size)][ref]          = 1.0f;
     }
 }
 

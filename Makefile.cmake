@@ -29,7 +29,7 @@ CMAKE_FLAGS += -DLOFI_INT16=1
 endif
 
 .PHONY: all build configure clean check-boundary program-dfu program-boot \
-        engine-granular engine-passthrough engine-delay engine-edrums
+        engine-granular engine-passthrough engine-delay engine-edrums engine-karp
 
 all: build
 
@@ -73,3 +73,5 @@ engine-delay:
 	$(MAKE) -f $(THIS) ENGINE=delay build program-dfu
 engine-edrums:
 	$(MAKE) -f $(THIS) ENGINE=edrums build program-dfu
+engine-karp:
+	$(MAKE) -f $(THIS) ENGINE=karp build program-dfu
