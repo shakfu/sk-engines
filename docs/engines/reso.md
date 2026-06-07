@@ -85,6 +85,7 @@ This is mandatory, not stylistic: `stmlib/stmlib.h` declares a global `namespace
 ## Build system
 
 Dependencies vendored under `src/engine/reso/thirdparty/` (colocated with the engine that owns them; the `RESO_TP`/`RESO_INC` make vars scope the sources and `-I` to the reso build only):
+
 - `rings` - Mutable Instruments Rings (only `dsp/` is used).
 
 - `stmlib` - Mutable support library (hard dependency of Rings).

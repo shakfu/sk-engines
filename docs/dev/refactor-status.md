@@ -97,6 +97,7 @@ Categories 2-3 are exactly what roadmap item 3's `MValue` → `ParamId` toolkit 
 - **Round 2.5 — transport/topology.** `GranularEngine` exposes `transport_leds`/`deck_leds`/`mix`/ `route`; the ISR `_draw_leds`, `_draw_launching`, and `_show_key_intervals` read those, and the `clock_*_color` helpers take state instead of `Driver&`. **`_draw_ring` is now the sole remaining `_core.` reader in `core.ui.leds.cpp`** — Round 3 (the ring steady-state) is cleanly isolated.
 
   Note: "LEDs off `core()`" is not the same as "the `core()` hatch is removed". `core.ui.cpp`/ `pads`/`midi` still call `_core.` for transport, switch-config writes, and deck-state readbacks (see the three categories under "Still coupled"), kept by design pending the transport-ownership decision (see roadmap).
+
 - **Round 3 — the ring steady-state (completes the LED migration).** `GranularEngine` gained `render_ring(LEDRing&, ref, breathe_brightness) -> RingGeometry`, drawing the empty/recording/ playing segment + playheads + heads and returning the geometry the platform's transient overlays (`_show_value(pos)`, the size-change arc, overdub head) render against. `_draw_ring` keeps its exclusive-overlay priority chain + the always-tail `MValue` value-displays; the steady-state arms collapsed to one `render_ring` call. Byte-faithful port; `render_ring` is `optimize("Os")`-tagged. **`core.ui.leds.cpp` is now `_core.`-free.**
 
 ### Grounding sketch (done) — `DisplayModel` + `PassthroughEngine` (host-only)
