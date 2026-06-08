@@ -10,67 +10,88 @@
 using namespace spotykach;
 
 void StreamDeck::init(const Mem& m) {
-    _play_ring.init(m.play_ring, m.play_ring_bytes);
-    _record_ring.init(m.record_ring, m.record_ring_bytes);
-    _play.init(&_play_ring, m.scratch, m.scratch_bytes);
-    _record.init(&_record_ring, m.scratch, m.scratch_bytes);  // play XOR record -> shared scratch
-}
-
-bool StreamDeck::start_play(const char* path) {
-    if (_mode.load(std::memory_order_acquire) != Mode::idle || _finalizing) return false;
-    if (!_file.open_read(path)) return false;
-    if (!_reader.begin(&_file)) { _file.close(); return false; }   // not a valid WAV
-    _play.start(&_reader);
-    _mode.store(Mode::play, std::memory_order_release);            // ISR may now consume
-    return true;
-}
-
-bool StreamDeck::start_record(const char* path) {
-    if (_mode.load(std::memory_order_acquire) != Mode::idle || _finalizing) return false;
-    if (!_file.open_write(path)) return false;
-    if (!_writer.begin(&_file)) { _file.close(); return false; }   // placeholder header failed
-    _record.start(&_writer);
-    _mode.store(Mode::record, std::memory_order_release);          // ISR may now produce
-    return true;
-}
-
-void StreamDeck::stop() {
-    const Mode m = _mode.load(std::memory_order_acquire);
-    if (m == Mode::play) {
-        _mode.store(Mode::idle, std::memory_order_release);        // ISR stops consuming
-        _file.close();
-    } else if (m == Mode::record) {
-        _record.stop();                                           // request end-of-record (flush + patch)
-        _mode.store(Mode::idle, std::memory_order_release);        // ISR stops producing immediately...
-        _finalizing = true;                                       // ...main loop flushes the tail below
+    _d[0].ring.init(m.ring_a, m.ring_a_bytes);
+    _d[1].ring.init(m.ring_b, m.ring_b_bytes);
+    for (auto& d : _d) {
+        d.play.init(&d.ring, m.scratch, m.scratch_bytes);     // play XOR record per deck -> one ring,
+        d.record.init(&d.ring, m.scratch, m.scratch_bytes);   // and one scratch shared across decks
     }
+}
+
+bool StreamDeck::start_play(DeckRef::Ref deck, const char* path) {
+    Deck& d = _d[deck];
+    if (d.mode.load(std::memory_order_acquire) != Mode::idle || d.finalizing) return false;
+    if (!d.file.open_read(path)) return false;
+    if (!d.reader.begin(&d.file)) { d.file.close(); return false; }   // not a valid WAV
+    d.play.start(&d.reader);
+    d.mode.store(Mode::play, std::memory_order_release);             // ISR may now consume
+    return true;
+}
+
+bool StreamDeck::start_record(DeckRef::Ref deck, const char* path) {
+    Deck& d = _d[deck];
+    if (d.mode.load(std::memory_order_acquire) != Mode::idle || d.finalizing) return false;
+    if (!d.file.open_write(path)) return false;
+    if (!d.writer.begin(&d.file, 1)) { d.file.close(); return false; }  // mono header; placeholder failed
+    d.record.start(&d.writer);
+    d.mode.store(Mode::record, std::memory_order_release);          // ISR may now produce
+    return true;
+}
+
+void StreamDeck::stop(DeckRef::Ref deck) {
+    Deck& d = _d[deck];
+    const Mode m = d.mode.load(std::memory_order_acquire);
+    if (m == Mode::play) {
+        d.mode.store(Mode::idle, std::memory_order_release);       // ISR stops consuming
+        d.file.close();
+    } else if (m == Mode::record) {
+        d.record.stop();                                          // request end-of-record (flush + patch)
+        d.mode.store(Mode::idle, std::memory_order_release);       // ISR stops producing immediately...
+        d.finalizing = true;                                      // ...main loop flushes the tail below
+    }
+}
+
+void StreamDeck::set_loop(DeckRef::Ref deck, bool loop) {
+    _d[deck].play.set_loop(loop);   // honored on the next play EOF (pump rewinds instead of finishing)
+}
+
+uint32_t StreamDeck::loop_frames(DeckRef::Ref deck) const {
+    const Deck& d = _d[deck];
+    if (d.mode.load(std::memory_order_acquire) != Mode::play) return 0;
+    return d.reader.data_bytes() / static_cast<uint32_t>(sizeof(float));  // mono float: 4 bytes/frame
 }
 
 void StreamDeck::process() {
-    const Mode m = _mode.load(std::memory_order_acquire);
+    for (auto& d : _d) _pump(d);   // service each deck's slow SD I/O sequentially (shared scratch)
+}
+
+void StreamDeck::_pump(Deck& d) {
+    const Mode m = d.mode.load(std::memory_order_acquire);
     if (m == Mode::play) {
-        _play.pump();
-        if (_play.finished()) {                                   // file reached EOF + drained
-            _mode.store(Mode::idle, std::memory_order_release);
-            _file.close();
+        d.play.pump();
+        if (d.play.finished()) {                                  // file reached EOF + drained
+            d.mode.store(Mode::idle, std::memory_order_release);
+            d.file.close();
         }
     } else if (m == Mode::record) {
-        _record.pump();                                           // drain captured audio to SD
+        d.record.pump();                                          // drain captured audio to SD
     }
-    if (_finalizing) {
-        _record.pump();                                           // flush the tail; finalize() patches header
-        if (_record.finished()) { _file.close(); _finalizing = false; }
+    if (d.finalizing) {
+        d.record.pump();                                          // flush the tail; finalize() patches header
+        if (d.record.finished()) { d.file.close(); d.finalizing = false; }
     }
 }
 
-uint32_t StreamDeck::play_consume(uint8_t* dst, uint32_t n) {
-    if (_mode.load(std::memory_order_acquire) != Mode::play) return 0;
-    return _play.consume(dst, n);   // zero-fills any shortfall (silence)
+uint32_t StreamDeck::play_consume(DeckRef::Ref deck, uint8_t* dst, uint32_t n) {
+    Deck& d = _d[deck];
+    if (d.mode.load(std::memory_order_acquire) != Mode::play) return 0;
+    return d.play.consume(dst, n);   // zero-fills any shortfall (silence)
 }
 
-uint32_t StreamDeck::record_produce(const uint8_t* src, uint32_t n) {
-    if (_mode.load(std::memory_order_acquire) != Mode::record) return 0;
-    return _record.produce(src, n);
+uint32_t StreamDeck::record_produce(DeckRef::Ref deck, const uint8_t* src, uint32_t n) {
+    Deck& d = _d[deck];
+    if (d.mode.load(std::memory_order_acquire) != Mode::record) return 0;
+    return d.record.produce(src, n);
 }
 
 #endif // SPK_ENGINE_TAPE

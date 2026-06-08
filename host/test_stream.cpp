@@ -273,6 +273,38 @@ int main() {
         check(play.underruns() == 0, "end-to-end playback has no underruns");
     }
 
+    // --- 9. Looping: PlayStream rewinds the WAV at EOF and repeats the body seamlessly --------------
+    {
+        const auto body = ramp(5 * kBlock + 137);
+        MemFile file;
+        WavStreamWriter w; w.begin(&file);
+        for (uint32_t pi = 0; pi < body.size(); ) {
+            uint32_t c = std::min<uint32_t>(kBlock, (uint32_t)body.size() - pi);
+            w.write(body.data() + pi, c); pi += c;
+        }
+        w.finalize();
+
+        file.cur = 0;
+        WavStreamReader r; check(r.begin(&file), "loop: reader opens the WAV");
+        check(r.data_bytes() == body.size(), "loop: reader reports body length for loop sizing");
+
+        uint8_t rb[2048]; SpscRing ring; ring.init(rb, sizeof(rb));
+        uint8_t sc[256];
+        PlayStream play; play.init(&ring, sc, sizeof(sc)); play.start(&r);
+        play.set_loop(true);
+
+        // Read ~2.5 loops' worth; it must equal the body tiled (rewind wraps cleanly) and never finish.
+        const uint32_t want = body.size() * 2 + body.size() / 2;
+        std::vector<uint8_t> out; uint8_t blk[kBlock]; uint32_t guard = 0;
+        while (out.size() < want && guard++ < 100000) {
+            play.pump(); uint32_t g = play.consume(blk, kBlock); out.insert(out.end(), blk, blk + g);
+        }
+        check(!play.finished(), "loop: a looping stream never reports finished");
+        bool tiled_ok = out.size() >= want;
+        for (uint32_t i = 0; i < want && tiled_ok; i++) if (out[i] != body[i % body.size()]) tiled_ok = false;
+        check(tiled_ok, "loop: playback repeats the body seamlessly across the rewind");
+    }
+
     if (g_failures == 0) { std::printf("OK: all stream checks passed\n"); return 0; }
     std::printf("FAILED: %d check(s)\n", g_failures);
     return 1;

@@ -23,6 +23,8 @@ struct IChunkSource {
     // file is exhausted; a short read with eof()==false just means "nothing more available right now".
     virtual uint32_t read(uint8_t* dst, uint32_t n) = 0;
     virtual bool     eof() const = 0;
+    // Seek back to the start of the body so a looping stream can keep reading. Default no-op.
+    virtual void     rewind() {}
 };
 
 // Slow sink of bytes (the file being recorded on SD), pumped from the main loop.
@@ -47,19 +49,27 @@ public:
         _ring->reset();
     }
 
+    // Enable/disable looping. When on, pump() rewinds the source at EOF and keeps filling instead of
+    // finishing, so the stream repeats seamlessly. Sticky across start() (it is a mode, not stream state).
+    void set_loop(bool loop) { _loop = loop; }
+
     // Main loop: top up the ring from the source while there is room, in scratch-sized reads. A short
     // read does NOT mean "stop" (a chunked source like FatFs can return fewer bytes than asked without
     // being at EOF); only a zero-byte read ends the round - then eof() distinguishes file-end from
     // momentarily-nothing-available. Bounded per call by the ring's free space (~the read-ahead window).
     void pump() {
         if (!_src || _eof) return;
+        int rewinds = 0;                            // guard: don't spin forever on an empty source
         for (;;) {
             const uint32_t space = _ring->writable();
             if (space == 0) return;                 // ring full: read-ahead is satisfied
             uint32_t want = space < _scratch_n ? space : _scratch_n;
             const uint32_t got = _src->read(_scratch, want);
-            if (got) { _ring->write(_scratch, got); continue; }
-            if (_src->eof()) _eof = true;           // source gave nothing: file ended (or nothing yet)
+            if (got) { _ring->write(_scratch, got); rewinds = 0; continue; }
+            if (_src->eof()) {
+                if (_loop && rewinds < 2) { _src->rewind(); rewinds++; continue; }  // loop to the top
+                _eof = true;                        // not looping (or empty source): file ended
+            }
             return;
         }
     }
@@ -84,6 +94,7 @@ private:
     uint8_t*      _scratch = nullptr;
     uint32_t      _scratch_n = 0;
     bool          _eof = false;
+    bool          _loop = false;
     uint32_t      _underruns = 0;
 };
 

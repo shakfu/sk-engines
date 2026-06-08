@@ -12,40 +12,50 @@
 namespace spotykach {
 
 // Platform streaming service: bridges the audio ISR (lock-free rings) and FatFs (main-loop SD I/O) for
-// the `tape` engine. One file at a time - play XOR record - so the two streams share one scratch buffer.
-// Control (start_*/stop) runs in the main loop; the ISR only calls play_consume/record_produce.
+// the `tape` engine. Two INDEPENDENT decks (A/B), each its own play-XOR-record state machine, file, and
+// ring; the two share one scratch buffer because the main-loop pump services them sequentially (never
+// concurrently). Control (start_*/stop) runs in the main loop; the ISR only calls the *_consume/produce.
 class StreamDeck : public IStreamDeck {
 public:
     struct Mem {
-        uint8_t* play_ring;     uint32_t play_ring_bytes;     // power-of-two SDRAM buffers
-        uint8_t* record_ring;   uint32_t record_ring_bytes;
-        uint8_t* scratch;       uint32_t scratch_bytes;       // f_read/f_write staging
+        uint8_t* ring_a;    uint32_t ring_a_bytes;     // power-of-two SDRAM ring, deck A (play XOR record)
+        uint8_t* ring_b;    uint32_t ring_b_bytes;     // power-of-two SDRAM ring, deck B
+        uint8_t* scratch;   uint32_t scratch_bytes;    // f_read/f_write staging, shared (sequential pumps)
     };
     void init(const Mem& m);
 
-    // Main-loop pump (AppImpl::Loop): does the slow SD I/O for whichever stream is active/finalizing.
+    // Main-loop pump (AppImpl::Loop): does the slow SD I/O for each deck that is active/finalizing.
     void process();
 
-    // --- IStreamDeck ------------------------------------------------------------------------------
-    uint32_t play_consume(uint8_t* dst, uint32_t n) override;       // ISR
-    uint32_t record_produce(const uint8_t* src, uint32_t n) override; // ISR
-    bool is_playing()   const override { return _mode.load(std::memory_order_acquire) == Mode::play; }
-    bool is_recording() const override { return _mode.load(std::memory_order_acquire) == Mode::record; }
-    bool start_play(const char* path)   override;   // main loop
-    bool start_record(const char* path) override;   // main loop
-    void stop()                         override;   // main loop
+    // --- IStreamDeck (per-deck) -------------------------------------------------------------------
+    uint32_t play_consume(DeckRef::Ref deck, uint8_t* dst, uint32_t n) override;       // ISR
+    uint32_t record_produce(DeckRef::Ref deck, const uint8_t* src, uint32_t n) override; // ISR
+    bool is_playing(DeckRef::Ref deck)   const override { return _d[deck].mode.load(std::memory_order_acquire) == Mode::play; }
+    bool is_recording(DeckRef::Ref deck) const override { return _d[deck].mode.load(std::memory_order_acquire) == Mode::record; }
+    bool start_play(DeckRef::Ref deck, const char* path)   override;   // main loop
+    bool start_record(DeckRef::Ref deck, const char* path) override;   // main loop
+    void stop(DeckRef::Ref deck)                           override;   // main loop
+    void set_loop(DeckRef::Ref deck, bool loop)            override;   // main loop
+    uint32_t loop_frames(DeckRef::Ref deck) const          override;
 
 private:
     enum class Mode : uint8_t { idle, play, record };
-    std::atomic<Mode> _mode{Mode::idle};
-    bool _finalizing = false;     // record stopped; main loop is flushing the tail + finalizing the WAV
 
-    SpscRing        _play_ring, _record_ring;
-    PlayStream      _play;
-    RecordStream    _record;
-    WavStreamReader _reader;
-    WavStreamWriter _writer;
-    FatFile         _file;        // one file handle (play XOR record)
+    // One self-contained streaming unit per deck. The ring is shared between play and record (a deck is
+    // only ever doing one); play/record streams bind to it and to the common scratch at init().
+    struct Deck {
+        std::atomic<Mode> mode{Mode::idle};
+        bool            finalizing = false;  // record stopped; main loop flushing the tail + finalizing
+        SpscRing        ring;
+        PlayStream      play;
+        RecordStream    record;
+        WavStreamReader reader;
+        WavStreamWriter writer;
+        FatFile         file;                // one file handle per deck (play XOR record)
+    };
+    Deck _d[2];
+
+    void _pump(Deck& d);
 };
 
 } // namespace spotykach

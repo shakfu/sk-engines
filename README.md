@@ -12,7 +12,7 @@ Current engines include:
 2. A tempo-synchronized stereo delay
 3. A four-voice Euclidean drum machine
 4. A resonator/plucked-string instrument based on the [Mutable Instruments Rings DSP code](https://github.com/pichenettes/eurorack/tree/master/rings)
-5. A streaming tape deck that plays and records arbitrarily long takes to the SD card (no in-memory length cap)
+5. A dual streaming tape deck (two independent record/playback decks, SD-streamed, no in-memory length cap)
 6. A minimal stereo passthrough engine demonstrating the platform API
 
 Originally started as a feature-extension fork of the upstream firmware, the project evolved into a platform/engine architecture that enables new instruments to reuse the existing hardware and interaction language rather than reimplement them. See [`docs/architecture.md`](docs/architecture.md) for an overview of the design and instructions for creating new engines.
@@ -56,7 +56,7 @@ The firmware is a fixed hardware/UI **platform** that hosts a swappable DSP **en
 
 - `make -j8 ENGINE=reso` — a resonator/pluck voice on the Mutable Instruments Rings DSP (modal / sympathetic-string / string / FM / string+reverb models on Alt+PITCH; three excite modes — discrete plucks, live-input resonator, scatter cloud). Vendored Rings/stmlib live under `src/engine/reso/thirdparty/`.
 
-- `make -j8 ENGINE=tape` — a streaming tape deck that plays and records arbitrarily long takes to the SD card (SeqA = play, SeqB = record to `/TAPE.WAV`, PITCH = varispeed), removing the in-SDRAM loop-length cap. Streams float WAV through lock-free SDRAM rings drained by a main-loop FatFs pump.
+- `make -j8 ENGINE=tape` — two independent mono **tape decks** (A/B) that play and record arbitrarily long takes to the SD card, removing the in-SDRAM loop-length cap. Per deck: Play pad = play, Alt+Play = record, PITCH = varispeed, POS = pan, MIX = volume, ENV = loop mode (none / loop / faded / Frippertronics); the routing switch and mix fader place/blend the two decks. Streams mono float WAV through lock-free per-deck SDRAM rings drained by a main-loop FatFs pump.
 
 - `make -j8 ENGINE=passthrough` — a minimal stereo-passthrough variant.
 

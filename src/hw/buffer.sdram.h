@@ -26,10 +26,11 @@ public:
     uint8_t* card_buffer() const;
 
 #if defined(SPK_ENGINE_TAPE)
-    // SDRAM read-ahead/write-behind rings + a chunk scratch for the streaming `tape` engine. Power-of-two
-    // sizes (required by SpscRing). Only allocated for the tape build.
-    struct StreamMem { uint8_t* play_ring; uint32_t play_ring_bytes;
-                       uint8_t* record_ring; uint32_t record_ring_bytes;
+    // One SDRAM read-ahead/write-behind ring PER DECK (each ring serves that deck's play OR record,
+    // since a deck is play-XOR-record) + a shared chunk scratch for the streaming `tape` engine.
+    // Power-of-two ring sizes (required by SpscRing). Only allocated for the tape build.
+    struct StreamMem { uint8_t* ring_a; uint32_t ring_a_bytes;
+                       uint8_t* ring_b; uint32_t ring_b_bytes;
                        uint8_t* scratch; uint32_t scratch_bytes; };
     StreamMem streamMem() const;
 #endif

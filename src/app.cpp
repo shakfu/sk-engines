@@ -146,7 +146,7 @@ void AppImpl::Init()
 #if defined(SPK_ENGINE_TAPE)
     {
         const auto sm = SDRAMBuffer::pool().streamMem();
-        _stream.init({ sm.play_ring, sm.play_ring_bytes, sm.record_ring, sm.record_ring_bytes,
+        _stream.init({ sm.ring_a, sm.ring_a_bytes, sm.ring_b, sm.ring_b_bytes,
                        sm.scratch, sm.scratch_bytes });
         ctx.stream = &_stream;   // engine reads this in init()
     }

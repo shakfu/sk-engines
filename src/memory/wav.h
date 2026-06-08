@@ -41,12 +41,12 @@ static constexpr uint16_t kWavBitsPerSample  = 32;
 static constexpr uint16_t kWavBytesPerSample = 4;
 #endif
 
-inline WavHeader wav_header(const size_t size) {
+inline WavHeader wav_header(const size_t size, const uint16_t channels = 2) {
     WavHeader header;
     static_assert(sizeof(header) == 44, "");
 
     header.AudioFormat = kWavAudioFormat;
-    header.NbrChannels = 2;
+    header.NbrChannels = channels;
     header.SampleRate = 48000;
     header.BytePerBloc = kWavBytesPerSample * header.NbrChannels;
     header.BytePerSec = header.SampleRate * header.BytePerBloc;
