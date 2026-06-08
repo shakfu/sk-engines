@@ -12,6 +12,9 @@
 #include "transport/transport.h"   // platform clock/transport service (shared across engines)
 #include "memory/storage.h"
 #include "expose.h"
+#if defined(SPK_ENGINE_TAPE)
+#include "hw/stream_deck.h"   // SD streaming service (tape engine only)
+#endif
 
 #define STORAGE
 
@@ -76,6 +79,9 @@ class AppImpl {
     Hardware    _hw;
     Settings    _settings;
     Storage     _storage;
+#if defined(SPK_ENGINE_TAPE)
+    StreamDeck  _stream;  // SD play/record streaming for the tape engine (pumped in Loop)
+#endif
 };
 };
 
@@ -137,6 +143,14 @@ void AppImpl::Init()
     ctx.time = &_time_source;
     ctx.transport = &_transport;
     ctx.arena = SDRAMBuffer::pool().engineArena();
+#if defined(SPK_ENGINE_TAPE)
+    {
+        const auto sm = SDRAMBuffer::pool().streamMem();
+        _stream.init({ sm.play_ring, sm.play_ring_bytes, sm.record_ring, sm.record_ring_bytes,
+                       sm.scratch, sm.scratch_bytes });
+        ctx.stream = &_stream;   // engine reads this in init()
+    }
+#endif
     _engine.init(ctx);
 
     _ui.init();
@@ -182,6 +196,9 @@ void AppImpl::Loop()
         _engine.prepare();
         #ifdef STORAGE
         _storage.process();
+        #endif
+        #if defined(SPK_ENGINE_TAPE)
+        _stream.process();   // pump the slow SD play/record I/O for the streaming engine
         #endif
         
         #if DEBUG

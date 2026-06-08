@@ -25,6 +25,15 @@ public:
     // SD-card chunked-I/O staging buffer (platform-owned; used by Storage).
     uint8_t* card_buffer() const;
 
+#if defined(SPK_ENGINE_TAPE)
+    // SDRAM read-ahead/write-behind rings + a chunk scratch for the streaming `tape` engine. Power-of-two
+    // sizes (required by SpscRing). Only allocated for the tape build.
+    struct StreamMem { uint8_t* play_ring; uint32_t play_ring_bytes;
+                       uint8_t* record_ring; uint32_t record_ring_bytes;
+                       uint8_t* scratch; uint32_t scratch_bytes; };
+    StreamMem streamMem() const;
+#endif
+
 private:
     NOCOPY(SDRAMBuffer)
 

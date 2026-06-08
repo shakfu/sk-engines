@@ -7,6 +7,7 @@
 
 #include "engine/itimesource.h"
 #include "engine/itransport.h"
+#include "engine/istreamdeck.h"
 
 namespace spotykach {
 
@@ -26,6 +27,7 @@ struct EngineContext {
     EngineArena        arena;
     const ITimeSource* time;
     ITransport*        transport;
+    IStreamDeck*       stream = nullptr;  // SD streaming service (the tape engine uses it; null otherwise)
 };
 
 };

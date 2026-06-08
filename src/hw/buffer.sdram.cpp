@@ -23,3 +23,18 @@ uint8_t* SDRAMBuffer::card_buffer() const
 {
     return _card_buffer;
 }
+
+#if defined(SPK_ENGINE_TAPE)
+// Streaming rings for the tape engine: 1 MB each (~2.7 s of float-stereo read-ahead at 48 kHz) - a
+// power of two as SpscRing requires - plus a 32 KB SD chunk scratch. ~2 MB on top of the 48 MB arena,
+// well within the 64 MB SDRAM. Outside the engine arena so they never collide with engine buffers.
+static constexpr size_t kStreamRingBytes = 1u * 1024u * 1024u;
+static uint8_t DSY_SDRAM_BSS ALIGN32 _play_ring[kStreamRingBytes];
+static uint8_t DSY_SDRAM_BSS ALIGN32 _record_ring[kStreamRingBytes];
+static uint8_t DSY_SDRAM_BSS ALIGN32 _stream_scratch[Card::kChunk];
+
+SDRAMBuffer::StreamMem SDRAMBuffer::streamMem() const
+{
+    return { _play_ring, kStreamRingBytes, _record_ring, kStreamRingBytes, _stream_scratch, Card::kChunk };
+}
+#endif

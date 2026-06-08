@@ -28,6 +28,12 @@ ENGINE_SOURCES = src/engine/delay/delay_engine.cpp
 else ifeq ($(ENGINE), edrums)
 C_DEFS += -DSPK_ENGINE_EDRUMS
 ENGINE_SOURCES = src/engine/edrums/edrums_engine.cpp
+else ifeq ($(ENGINE), tape)
+C_DEFS += -DSPK_ENGINE_TAPE
+# Streaming tape engine: header-only (src/engine/tape/). Its SD streaming service (src/hw/stream_deck.cpp
+# + fat_file.cpp) compiles via the platform src/hw/ wildcard, with bodies guarded by SPK_ENGINE_TAPE so
+# every other engine stays byte-identical.
+ENGINE_SOURCES =
 else ifeq ($(ENGINE), reso)
 C_DEFS += -DSPK_ENGINE_RESO
 # stmlib's filters use M_PI, which strict -std=c++17 does not expose from <cmath> on arm-none-eabi.
@@ -47,7 +53,7 @@ ENGINE_SOURCES = src/engine/reso/reso_engine.cpp \
 	$(RESO_TP)/rings/resources.cc \
 	$(RESO_TP)/stmlib/dsp/units.cc $(RESO_TP)/stmlib/utils/random.cc $(RESO_TP)/stmlib/dsp/atan.cc
 else
-$(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', 'edrums', or 'reso')
+$(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', 'edrums', 'reso', or 'tape')
 endif
 
 USE_FATFS = 1
@@ -97,6 +103,11 @@ include $(SYSTEM_FILES_DIR)/Makefile
 # that includes engine_select.h, so make it depend on a stamp whose content is rewritten only when
 # ENGINE differs -> app.o rebuilds exactly on a switch, no manual `make clean` needed.
 build/app.o: build/.engine-stamp
+# The tape engine's SD-streaming platform TUs are also engine-flag-dependent: their bodies are guarded
+# by SPK_ENGINE_TAPE (so other engines stay byte-identical), so they must rebuild on an engine switch
+# too - otherwise `make ENGINE=tape` over a stale non-tape build relinks empty objects (undefined
+# StreamDeck/FatFile/streamMem). Same stamp mechanism as app.o.
+build/stream_deck.o build/fat_file.o build/buffer.sdram.o: build/.engine-stamp
 build/.engine-stamp: FORCE
 	@mkdir -p build
 	@echo '$(ENGINE)' | cmp -s - $@ 2>/dev/null || echo '$(ENGINE)' > $@
@@ -122,7 +133,7 @@ all: check-boundary
 
 # One-shot variant flash: clean -> build -> flash over DFU. Put the device in DFU mode first
 # (hold Reset ~3s until the bottom pad LEDs breathe white), then `make granular` / `make passthrough`.
-.PHONY: engine-granular engine-passthrough engine-delay engine-edrums engine-reso
+.PHONY: engine-granular engine-passthrough engine-delay engine-edrums engine-reso engine-tape
 engine-granular:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=granular
@@ -147,6 +158,11 @@ engine-reso:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=reso
 	$(MAKE) ENGINE=reso program-dfu
+
+engine-tape:
+	$(MAKE) clean
+	$(MAKE) -j8 ENGINE=tape
+	$(MAKE) ENGINE=tape program-dfu
 
 # Vendored Daisy archives. The core Makefile's link step (-ldaisy -ldaisysp) needs these built, but a
 # fresh checkout has source-only submodules, so a bare `make` used to fail at link with "cannot find

@@ -81,8 +81,13 @@ elseif(ENGINE STREQUAL reso)
     set(ENGINE_DEFINES M_PI=3.14159265358979323846)
     # Rings (~30 KB of code+tables) overflows the 186 KB execution SRAM at -O2; build reso at -Os to fit.
     set(APP_OPT -Os)
+elseif(ENGINE STREQUAL tape)
+    set(ENGINE_DEFINE SPK_ENGINE_TAPE)
+    # Header-only engine (src/engine/tape/); its SD streaming service lives in src/hw/ (picked up by the
+    # HW_SOURCES glob) with bodies guarded by SPK_ENGINE_TAPE.
+    set(ENGINE_SOURCES "")
 else()
-    message(FATAL_ERROR "Unknown ENGINE '${ENGINE}' - use granular, passthrough, delay, edrums, or reso")
+    message(FATAL_ERROR "Unknown ENGINE '${ENGINE}' - use granular, passthrough, delay, edrums, reso, or tape")
 endif()
 
 # Source list = the Makefile's CPP_SOURCES, with the wildcard dirs expanded the same way.

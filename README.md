@@ -12,7 +12,8 @@ Current engines include:
 2. A tempo-synchronized stereo delay
 3. A four-voice Euclidean drum machine
 4. A resonator/plucked-string instrument based on the [Mutable Instruments Rings DSP code](https://github.com/pichenettes/eurorack/tree/master/rings)
-5. A minimal stereo passthrough engine demonstrating the platform API
+5. A streaming tape deck that plays and records arbitrarily long takes to the SD card (no in-memory length cap)
+6. A minimal stereo passthrough engine demonstrating the platform API
 
 Originally started as a feature-extension fork of the upstream firmware, the project evolved into a platform/engine architecture that enables new instruments to reuse the existing hardware and interaction language rather than reimplement them. See [`docs/architecture.md`](docs/architecture.md) for an overview of the design and instructions for creating new engines.
 
@@ -55,6 +56,8 @@ The firmware is a fixed hardware/UI **platform** that hosts a swappable DSP **en
 
 - `make -j8 ENGINE=reso` — a resonator/pluck voice on the Mutable Instruments Rings DSP (modal / sympathetic-string / string / FM / string+reverb models on Alt+PITCH; three excite modes — discrete plucks, live-input resonator, scatter cloud). Vendored Rings/stmlib live under `src/engine/reso/thirdparty/`.
 
+- `make -j8 ENGINE=tape` — a streaming tape deck that plays and records arbitrarily long takes to the SD card (SeqA = play, SeqB = record to `/TAPE.WAV`, PITCH = varispeed), removing the in-SDRAM loop-length cap. Streams float WAV through lock-free SDRAM rings drained by a main-loop FatFs pump.
+
 - `make -j8 ENGINE=passthrough` — a minimal stereo-passthrough variant.
 
 Switching `ENGINE` does not require `make clean`. Other build flags: `DEBUG=1` (enables UART logging) and `LOFI_INT16=1` (16-bit loop buffer, doubling record time). See [`docs/architecture.md`](docs/architecture.md) for the platform/engine design and [`docs/engines/`](docs/engines/) for a per-engine reference (and how to add a new engine).
@@ -83,7 +86,7 @@ The bootloader version used in this project enables USB DFU firmware updating fr
 
 `make program-dfu` flashes whatever is currently in `build/` (it does not rebuild). To flash a non-default engine, build it first in the same step, e.g. `make ENGINE=passthrough && make program-dfu`.
 
-For convenience there are one-shot targets that **clean + build + flash** a variant (put the device in DFU mode first, as in step 3): `make engine-granular` (the looper), `make engine-delay`, `make engine-edrums`, `make engine-reso`, and `make engine-passthrough`.
+For convenience there are one-shot targets that **clean + build + flash** a variant (put the device in DFU mode first, as in step 3): `make engine-granular` (the looper), `make engine-delay`, `make engine-edrums`, `make engine-reso`, `make engine-tape`, and `make engine-passthrough`.
 
 Once finished, the device will automatically boot the new firmware. This can "brick" (temporarily) the device and require reinstallation of either the bootloader, the firmware binary, or both.
 

@@ -22,6 +22,9 @@
 #elif defined(SPK_ENGINE_RESO)
   #include "engine/reso/reso_engine.h"
   namespace spotykach { using ActiveEngine = ResoEngine; }
+#elif defined(SPK_ENGINE_TAPE)
+  #include "engine/tape/tape_engine.h"
+  namespace spotykach { using ActiveEngine = TapeEngine; }
 #else
-  #error "No engine selected: build with ENGINE=granular (default), passthrough, delay, edrums, or reso"
+  #error "No engine selected: build with ENGINE=granular (default), passthrough, delay, edrums, reso, or tape"
 #endif
