@@ -61,6 +61,11 @@ uint32_t StreamDeck::loop_frames(DeckRef::Ref deck) const {
     return d.reader.data_bytes() / static_cast<uint32_t>(sizeof(float));  // mono float: 4 bytes/frame
 }
 
+bool StreamDeck::exists(const char* path) const {
+    FILINFO fno;
+    return f_stat(path, &fno) == FR_OK;   // f_stat uses no FIL handle - safe alongside an open deck file
+}
+
 void StreamDeck::process() {
     for (auto& d : _d) _pump(d);   // service each deck's slow SD I/O sequentially (shared scratch)
 }

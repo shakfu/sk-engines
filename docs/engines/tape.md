@@ -72,7 +72,7 @@ Total per-deck gain into the bus = **MIX volume x mix-fader blend x pan(L/R)**.
 
 ## Tape slots
 
-Each deck has **8 slots**, files `/tapes/tape_a_1.wav` … `/tapes/tape_a_8.wav` (and `tape_b_`), so takes are non-destructive and recallable rather than overwriting one fixed file. **Alt+PITCH** selects the active slot; while Alt is held, the deck's ring shows the **8 slots as evenly-spaced dots with the selected one bright** (the same `set_aux_active` selector seam reso uses for its model picker). Selecting a slot sets the target for the next Play / record - it does not interrupt a deck already playing. Record writes the selected slot (overwriting only that one); Play reads it (amber if empty). The `/tapes/` directory is created on first record. Single-digit slot numbers keep the names 8.3-safe.
+Each deck has **8 slots**, files `/tapes/tape_a_1.wav` … `/tapes/tape_a_8.wav` (and `tape_b_`), so takes are non-destructive and recallable rather than overwriting one fixed file. **Alt+PITCH** selects the active slot; while Alt is held, the deck's ring shows the **8 slots as evenly-spaced dots with the selected one bright** (the same `set_aux_active` selector seam reso uses for its model picker). Selecting a slot sets the target for the next Play / record - it does not interrupt a deck already playing. Record writes the selected slot (overwriting only that one); Play reads it (amber if empty). The selector shows **recorded vs empty** slots (selected bright / recorded mid / empty dim) - the engine probes each slot file with `IStreamDeck::exists` (`f_stat`) in `prepare()` when the selector opens, and marks a slot used the moment its record starts. The `/tapes/` directory is created on first record. Single-digit slot numbers keep the names 8.3-safe.
 
 ---
 
@@ -187,7 +187,7 @@ All streaming code is `#if defined(SPK_ENGINE_TAPE)`, so non-tape engines are by
 
 ### Feature backlog
 
-- **More slots / a browser** - 8 slots per deck exist now (`/tapes/tape_<d>_<n>.wav`, Alt+PITCH select); a recorded-vs-empty slot indication and more banks are the next step.
+- **More slots / a browser** - 8 slots per deck exist now (`/tapes/tape_<d>_<n>.wav`, Alt+PITCH select, with a recorded-vs-empty selector); more banks or a proper file browser are the next step.
 
 - **Seek / scrub** within the long file (`f_lseek` + ring flush).
 

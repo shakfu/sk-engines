@@ -177,8 +177,9 @@ input A, deck B records input B. Corrected.
   reasoned-through but not stress-tested.
 
 ### Feature backlog
-- **Slots** — [done] 8 per deck under `/tapes/`, Alt+PITCH select. Next: a recorded-vs-empty slot
-  indication (probe with `f_stat`) and more banks.
+- **Slots** — [done] 8 per deck under `/tapes/`, Alt+PITCH select, with a recorded-vs-empty selector
+  (selected bright / recorded mid / empty dim), probed via `IStreamDeck::exists` (`f_stat`) in `prepare()`
+  on selector-open. Next: more banks / a proper browser.
 - **Seek / scrub** within the long file (`f_lseek` + ring flush).
 - **Transport sync** + tempo-aligned loop points; **reverse** playback (Rev pad reserved).
 - **int16 streaming** (halves SD bandwidth — the main throughput lever).

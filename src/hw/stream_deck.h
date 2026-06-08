@@ -37,6 +37,7 @@ public:
     void stop(DeckRef::Ref deck)                           override;   // main loop
     void set_loop(DeckRef::Ref deck, bool loop)            override;   // main loop
     uint32_t loop_frames(DeckRef::Ref deck) const          override;
+    bool exists(const char* path) const                    override;   // main loop (f_stat)
 
 private:
     enum class Mode : uint8_t { idle, play, record };

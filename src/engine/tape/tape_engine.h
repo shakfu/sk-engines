@@ -68,7 +68,8 @@ private:
     float _pull(DeckRef::Ref d);          // one mono source frame from a deck's play ring (0 on underrun)
     void  _roll_random_pans();            // fresh random equal-power pans (GenerativeStereo routing)
     static float _fade_env(uint32_t pos, uint32_t L);  // faded-loop seam envelope
-    const char* _path(DeckRef::Ref d);    // selected slot's path, e.g. "tapes/tape_a_1.wav"
+    const char* _path(DeckRef::Ref d, int slot);  // a slot's path, e.g. "tapes/tape_a_1.wav"
+    void  _scan_slots(DeckRef::Ref d);    // f_stat each slot file -> _slot_used (recorded vs empty)
 
     static constexpr size_t   kMaxFrames  = 128;        // platform block is 96
     static constexpr uint32_t kErrColor   = 0xff6000;   // amber: a start_play/record was rejected
@@ -116,6 +117,8 @@ private:
     // Tape-slot selection (Alt+PITCH via ParamId::Aux) - one file per slot per deck, /tapes/tape_<d>_<n>.wav.
     int  _slot[2]     = { 0, 0 };          // selected slot per deck (0-indexed)
     bool _aux_held[2] = { false, false };  // Alt held -> show the slot selector on that deck's ring
+    bool _slot_used[2][kSlots] = {};       // cache: each slot's file exists (recorded vs empty dot)
+    bool _rescan[2]   = { false, false };  // selector just opened -> re-probe slots in prepare()
     char _pbuf[20];                        // scratch for the current slot's path (built in _path)
 
     uint32_t _err_until[2]    = { 0, 0 };  // now_ms() deadline of each ring's error flash (0 = none)

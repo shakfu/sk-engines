@@ -15,6 +15,7 @@ void TapeEngine::prepare() {
         const int i = (d == DeckRef::A) ? 0 : 1;
         _stream->set_loop(d, _loop_mode[i] != Loop::None);
         if (_want_stop[i]) { _want_stop[i] = false; _stream->stop(d); }
+        if (_rescan[i])    { _rescan[i] = false; _scan_slots(d); }  // refresh recorded/empty slot cache
     }
 }
 
@@ -74,7 +75,11 @@ float TapeEngine::param(ParamId id, DeckRef::Ref d) const {
     return 0.f;
 }
 
-void TapeEngine::set_aux_active(DeckRef::Ref d, bool held) { _aux_held[(d == DeckRef::A) ? 0 : 1] = held; }
+void TapeEngine::set_aux_active(DeckRef::Ref d, bool held) {
+    const int i = (d == DeckRef::A) ? 0 : 1;
+    if (held && !_aux_held[i]) _rescan[i] = true;   // selector just opened -> re-probe slots in prepare()
+    _aux_held[i] = held;
+}
 
 // Routing switch (mirrors the granular int mapping so the panel L/C/R reads the same):
 // 0 = Stereo (centre), 1 = DoubleMono (left), 2 = GenerativeStereo (right).
@@ -109,12 +114,15 @@ void TapeEngine::render(DisplayModel& m) {
                          :              0x000000;
         m.play[i] = { c, (playing || recording || err) ? 1.f : 0.f };
         if (_aux_held[i]) {
-            // Alt+PITCH held: show the tape-slot selector - kSlots dots evenly around the ring, the
-            // selected slot bright, the rest dim - over a faint base. (Play/record stays on the LED.)
+            // Alt+PITCH held: show the tape-slot selector - kSlots dots evenly around the ring (selected
+            // bright, recorded mid, empty dim) over a faint base. (Play/record stays on the LED.)
             m.ring[i].set_hex_color(0x202020); m.ring[i].set_segment(0.f, 0.999f);
             m.ring[i].set_point_hex_color(0xffffff);
-            for (int s = 0; s < kSlots; s++)
-                m.ring[i].set_point(static_cast<uint8_t>(s * (kRingLeds / kSlots)), s == _slot[i] ? 1.f : 0.2f);
+            for (int s = 0; s < kSlots; s++) {
+                // selected slot bright, recorded slots mid, empty slots dim
+                const float b = (s == _slot[i]) ? 1.f : (_slot_used[i][s] ? 0.45f : 0.12f);
+                m.ring[i].set_point(static_cast<uint8_t>(s * (kRingLeds / kSlots)), b);
+            }
         } else {
             m.ring[i].set_hex_color(c); m.ring[i].set_segment(0.f, 0.999f);
         }
@@ -181,10 +189,13 @@ void TapeEngine::_toggle(DeckRef::Ref d, bool record) {
 
     if (record) {
         if (_stream->is_recording(d))      _stream->stop(d);
-        else if (!_stream->is_playing(d))  { if (!_stream->start_record(d, _path(d))) _err_until[i] = now + kErrFlashMs; }
+        else if (!_stream->is_playing(d)) {
+            if (!_stream->start_record(d, _path(d, _slot[i]))) _err_until[i] = now + kErrFlashMs;
+            else _slot_used[i][_slot[i]] = true;   // the slot's file now exists
+        }
     } else {
         if (_stream->is_playing(d))        _stream->stop(d);
-        else if (!_stream->is_recording(d)) { if (!_stream->start_play(d, _path(d))) _err_until[i] = now + kErrFlashMs; }
+        else if (!_stream->is_recording(d)) { if (!_stream->start_play(d, _path(d, _slot[i]))) _err_until[i] = now + kErrFlashMs; }
     }
 }
 
@@ -217,16 +228,22 @@ float TapeEngine::_fade_env(uint32_t pos, uint32_t L) {
 
 // Build the selected slot's path, e.g. "tapes/tape_a_1.wav", by hand (no printf - keeps the printf
 // machinery out of the build). Single-digit slot keeps the name 8.3-safe; FatFile creates "tapes/".
-const char* TapeEngine::_path(DeckRef::Ref d) {
-    const int i = (d == DeckRef::A) ? 0 : 1;
+const char* TapeEngine::_path(DeckRef::Ref d, int slot) {
     char* p = _pbuf;
     for (const char* s = "tapes/tape_"; *s; ) *p++ = *s++;
     *p++ = (d == DeckRef::A) ? 'a' : 'b';
     *p++ = '_';
-    *p++ = static_cast<char>('1' + _slot[i]);   // slot 0..kSlots-1 -> '1'..
+    *p++ = static_cast<char>('1' + slot);   // slot 0..kSlots-1 -> '1'..
     for (const char* s = ".wav"; *s; ) *p++ = *s++;
     *p = '\0';
     return _pbuf;
+}
+
+// Probe each slot's file (f_stat via the stream) to mark recorded vs empty for the selector. Main-loop
+// only (from prepare(), on selector-open) - 8 stats is cheap and rare, and the ring absorbs the latency.
+void TapeEngine::_scan_slots(DeckRef::Ref d) {
+    const int i = (d == DeckRef::A) ? 0 : 1;
+    for (int s = 0; s < kSlots; s++) _slot_used[i][s] = _stream->exists(_path(d, s));
 }
 
 } // namespace spotykach

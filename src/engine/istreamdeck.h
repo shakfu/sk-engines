@@ -43,6 +43,10 @@ struct IStreamDeck {
     // (0 if the deck is not playing) so the engine can shape fades/decay per loop.
     virtual void     set_loop(DeckRef::Ref deck, bool loop)  = 0;
     virtual uint32_t loop_frames(DeckRef::Ref deck) const    = 0;
+
+    // Main-loop file probe (f_stat): does `path` exist on the card? Used to show recorded-vs-empty
+    // slots. Not for the audio path.
+    virtual bool     exists(const char* path) const = 0;
 };
 
 } // namespace spotykach
