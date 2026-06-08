@@ -58,6 +58,7 @@ void CoreUI::init() {
 
     _engine_owns_display = _engine.capabilities() & CapOwnDisplay;
     _aux_select = _engine.capabilities() & CapAux;
+    _alt_pos = _engine.capabilities() & CapAltPos;
 };
 
 void CoreUI::_init_values()
@@ -67,6 +68,8 @@ void CoreUI::_init_values()
         // Engine-derived seeds (start position + fx state) come from the engine's pre-seeded
         // param cache; the rest are the platform's UI-default pickup starting points.
         mv(ParamId::Pos)[ref].set(_engine.param(ParamId::Pos, ref));
+        // Alt+POS layer (engine-seeded): claimed via CapAltPos; the tape engine reads it as pan, others 0.
+        mv(ParamId::AltPos)[ref].set(_engine.param(ParamId::AltPos, ref));
         // Engine-seeded (like Pos/ModSpeed): the SIZE default comes from each engine's cache. reso
         // seeds 0.5 (its damping is very sensitive near the top, so centre the knob); granular and
         // delay seed 1.0 to keep their prior default; edrums seeds its own 1.0 per slot.
@@ -186,6 +189,9 @@ void CoreUI::process()
         if (_touched.test(FluxA)) {
             _engine.set_param(ParamId::FluxFb, DeckRef::A, mv(ParamId::FluxFb)[DeckRef::A].value());
         }
+        else if (_alt_pos && _touched.test(Alt)) {
+            _engine.set_param(ParamId::AltPos, DeckRef::A, mv(ParamId::AltPos)[DeckRef::A].value());
+        }
         else {
             _engine.set_param(ParamId::Pos, DeckRef::A, mv(ParamId::Pos)[DeckRef::A].value());
         }
@@ -193,6 +199,9 @@ void CoreUI::process()
     if (_apply.test(Hardware::CTRL_POS_B)) {
         if (_touched.test(FluxB)) {
             _engine.set_param(ParamId::FluxFb, DeckRef::B, mv(ParamId::FluxFb)[DeckRef::B].value());
+        }
+        else if (_alt_pos && _touched.test(Alt)) {
+            _engine.set_param(ParamId::AltPos, DeckRef::B, mv(ParamId::AltPos)[DeckRef::B].value());
         }
         else {
             _engine.set_param(ParamId::Pos, DeckRef::B, mv(ParamId::Pos)[DeckRef::B].value());
@@ -458,7 +467,10 @@ void CoreUI::_process_ui_queue()
                     break;
 
                 case Hardware::CTRL_POS_A:
-                    mv(ParamId::Pos)[DeckRef::A].process(val, !fx_a_touched, changing_id_a);
+                    // Pos keeps its original condition unless this engine opts into Alt+POS=pan; then Alt
+                    // steers the knob to Pan instead. Non-opt-in engines are byte-identical here.
+                    mv(ParamId::Pos)[DeckRef::A].process(val, !fx_a_touched && !(_alt_pos && is_alt_touched), changing_id_a);
+                    if (_alt_pos) mv(ParamId::AltPos)[DeckRef::A].process(val, !fx_a_touched && is_alt_touched, changing_id_a);
                     mv(ParamId::FluxFb)[DeckRef::A].process(val, _touched.test(FluxA), changing_id_a);
                     break;
 
@@ -541,7 +553,8 @@ void CoreUI::_process_ui_queue()
                     break;
 
                 case Hardware::CTRL_POS_B:
-                    mv(ParamId::Pos)[DeckRef::B].process(val, !fx_b_touched, changing_id_b);
+                    mv(ParamId::Pos)[DeckRef::B].process(val, !fx_b_touched && !(_alt_pos && is_alt_touched), changing_id_b);
+                    if (_alt_pos) mv(ParamId::AltPos)[DeckRef::B].process(val, !fx_b_touched && is_alt_touched, changing_id_b);
                     mv(ParamId::FluxFb)[DeckRef::B].process(val, _touched.test(FluxB), changing_id_b);
                     break;
 

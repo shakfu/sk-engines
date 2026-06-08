@@ -83,9 +83,9 @@ elseif(ENGINE STREQUAL reso)
     set(APP_OPT -Os)
 elseif(ENGINE STREQUAL tape)
     set(ENGINE_DEFINE SPK_ENGINE_TAPE)
-    # Header-only engine (src/engine/tape/); its SD streaming service lives in src/hw/ (picked up by the
+    # Engine wrapper (tape_engine.cpp); its SD streaming service lives in src/hw/ (picked up by the
     # HW_SOURCES glob) with bodies guarded by SPK_ENGINE_TAPE.
-    set(ENGINE_SOURCES "")
+    set(ENGINE_SOURCES src/engine/tape/tape_engine.cpp)
 else()
     message(FATAL_ERROR "Unknown ENGINE '${ENGINE}' - use granular, passthrough, delay, edrums, reso, or tape")
 endif()

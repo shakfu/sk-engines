@@ -12,16 +12,17 @@ the ~42 s (float) / 84 s (int16) in-SDRAM loop buffer (`kSourceMaxSeconds`). It 
 seek - can't meet the 2 ms deadline). The original single-stream gate cleared on hardware; it then grew
 into a **dual-deck** instrument:
 
-- **Two independent mono decks** (A/B), each play-XOR-record, its own ring + file (`/TAPEA.WAV`,
-  `/TAPEB.WAV`). Deck A records input A and plays to L, deck B records input B and plays to R.
-- **Routing switch** (`ConfigId::Route`): LEFT = per-deck POS pan, CENTRE = both centered, RIGHT = random
-  pan. **Mix fader** (`Crossfade`) = A/B blend. **MIX** knob = per-deck volume. **PITCH** = per-deck
-  varispeed.
+- **Two independent mono decks** (A/B), each play-XOR-record, its own ring + 8 slot files under
+  `/tapes/`. Deck A records input A and plays to L, deck B records input B and plays to R.
+- **Routing switch** (`ConfigId::Route`): LEFT = per-deck Alt+POS pan, CENTRE = both centered, RIGHT =
+  random pan. **Mix fader** (`Crossfade`) = A/B blend. **MIX** knob = per-deck volume. **PITCH** = per-deck
+  varispeed. **Alt+POS** (`AltPos`) = pan; **Alt+PITCH** (`Aux`) = tape-slot select; **bare POS** reserved.
 - **ENV knob** = per-deck loop mode (4 quadrants): none / plain / faded (seam fade) / Frippertronics
   (per-pass decay, auto-stops).
+- **Tape slots:** 8 per deck under `/tapes/`, selected by Alt+PITCH (non-destructive multi-take).
 
-All hardware-verified ("working so far" on device). Host core (rings + WAV codec + looping) is green.
-SRAM_EXEC ~81.4%.
+Dual-deck + loops are hardware-verified ("working so far"). The latest control-map additions (Alt+POS
+pan, Alt+PITCH slots, `/tapes/` files) build clean + host-green, pending re-flash. SRAM_EXEC ~81.5%.
 
 ## Plan + status
 
@@ -79,13 +80,17 @@ New (device):
 - `src/engine/istreamdeck.h` — per-deck `IStreamDeck` contract (+ `set_loop`/`loop_frames`).
 - `src/hw/fat_file.{h,cpp}` — FatFs `IByteFile` (guarded).
 - `src/hw/stream_deck.{h,cpp}` — dual-deck `StreamDeck` service (guarded).
-- `src/engine/tape/tape_engine.h` — the engine: dual decks, varispeed, routing/pan/mix/volume, loop modes.
+- `src/engine/tape/tape_engine.{h,cpp}` — the engine (slim `IEngine` header + impl): dual decks, varispeed, routing/pan/mix/volume, loop modes.
 
 Edited:
 - `src/engine/engine_context.h` — `IStreamDeck* stream = nullptr;`.
 - `src/hw/buffer.sdram.{h,cpp}` — `streamMem()` + per-deck rings (`ring_a`/`ring_b`, guarded).
 - `src/memory/wav.h` — `wav_header(size, channels=2)` for mono per-deck files.
 - `src/memory/storage.h` — `#if SPK_ENGINE_TAPE`: keep the SD card mounted (skip `_can_unmount()`).
+- `src/hw/fat_file.cpp` — `open_write` creates the parent dir (`/tapes`) before the file.
+- `src/engine/engine_params.h` — adds `ParamId::AltPos` + `CapAltPos` (the Alt+POS knob layer).
+- `src/ui/core.ui.{h,cpp}` — routes Alt+POS → `AltPos` for `CapAltPos` engines (gated like `CapAux`/`Aux`).
+- `src/engine/granular/granular_engine.cpp` — `AltPos` no-op case (`-Wswitch`-clean).
 - `src/app.cpp` — construct/init/inject `StreamDeck`, pump it in `Loop` (guarded).
 - `src/engine/engine_select.h`, `Makefile`, `CMakeLists.txt`, `Makefile.cmake` — register `tape`.
 
@@ -94,15 +99,27 @@ Edited:
 - **Play pad** (per deck) = play toggle; **Alt+Play** = record toggle (`on_play_pad`/`on_record_pad`,
   main-loop-safe). The **Rev pad is inert** (reserved for reverse playback). Play XOR record per deck,
   300 ms same-deck debounce.
-- **PITCH** (`Speed`) = per-deck varispeed (`exp2((v-0.5)*2)`, 0.5×…2×, ±1 octave). **POS** (`Pos`) =
-  per-deck equal-power pan (LEFT routing). **MIX** (`Mix`) = per-deck volume. **ENV** (`Env`) = loop mode
-  (4 quadrants). **Mix fader** (`Crossfade`) = A/B blend. **Routing switch** (`Route`) = pan topology.
+- **PITCH** (`Speed`) = per-deck varispeed (`exp2((v-0.5)*2)`, 0.5×…2×, ±1 octave). **Alt+PITCH** (`Aux`,
+  `CapAux`) = tape-slot select (visual selector while held). **Alt+POS** (`AltPos`, `CapAltPos`) = per-deck
+  equal-power pan (LEFT routing); **bare POS is reserved** for a future loop-start (ignored now). **MIX**
+  (`Mix`) = per-deck volume. **ENV** (`Env`) = loop mode (4 quadrants). **Mix fader** (`Crossfade`) = A/B
+  blend. **Routing switch** (`Route`) = pan topology.
 - I/O: two MONO inputs (A normalled to B); deck A records input A, deck B records input B; stereo bus →
   headphone + the individual jacks.
 - Display: per deck, idle ring **off**, playing **green**, recording **red**, rejected start **amber**
   (`0xff6000`) ~1.2 s; status also on the **Play-pad LED** (the pad you press). Routing position on the
-  **mode L/C/R** indicator. Input monitored to the deck's channel while recording.
-- `capabilities() = CapOwnDisplay | CapDualDeck`. NOT `CapTapeStorage`.
+  **mode L/C/R** indicator. While Alt held, the ring shows the **8-slot selector** (dots, selected bright).
+- `capabilities() = CapOwnDisplay | CapDualDeck | CapAux | CapAltPos`. NOT `CapTapeStorage`.
+
+**Tape slots:** 8 per deck, `/tapes/tape_a_<n>.wav` / `tape_b_<n>.wav`. Alt+PITCH (`Aux`) picks the active
+slot; the next Play/record targets it (no interrupt of a playing deck). `FatFile::open_write` creates
+`/tapes` on first record. Single-digit slots keep the names 8.3-safe.
+
+**Alt-layer remaps are capability-gated, so they never degrade other engines.** Alt+POS→`AltPos` fires
+only for `CapAltPos` engines; everyone else hits the exact original `Pos` path (`process(val,!fx,…)` +
+`set_param(Pos,…)`) byte-for-byte - including pickup and the value display. Same model as `CapAux` for
+Alt+PITCH. (An earlier cut gated `Pos` globally and silently froze granular's Alt+POS; the capability
+gate fixes that - non-tape firmware is unaffected.)
 
 Loop modes (ENV): None / Plain / Faded / Fripp. Looping is in the stream (`set_loop` + `rewind`); the
 fade/decay is engine-side via `loop_frames` + source-frame position tracking. Tunable constants:
@@ -112,7 +129,7 @@ fade/decay is engine-side via `loop_frames` + source-frame position tracking. Tu
 
 ```
 make engine-tape                          # clean + build + DFU flash (Make)
-make -j8 ENGINE=tape                       # build only (~81.4% SRAM_EXEC)
+make -j8 ENGINE=tape                       # build only (~81.5% SRAM_EXEC)
 make -C host test                          # host suites incl. test-stream (all green)
 ```
 On hardware: **Alt+Play(A/B)** records each deck's input, **Play(A/B)** plays them back together
@@ -160,7 +177,8 @@ input A, deck B records input B. Corrected.
   reasoned-through but not stress-tested.
 
 ### Feature backlog
-- **File selection** (beyond the fixed `/TAPEA.WAV` / `/TAPEB.WAV`) — reuse the storage slot/tape UI.
+- **Slots** — [done] 8 per deck under `/tapes/`, Alt+PITCH select. Next: a recorded-vs-empty slot
+  indication (probe with `f_stat`) and more banks.
 - **Seek / scrub** within the long file (`f_lseek` + ring flush).
 - **Transport sync** + tempo-aligned loop points; **reverse** playback (Rev pad reserved).
 - **int16 streaming** (halves SD bandwidth — the main throughput lever).

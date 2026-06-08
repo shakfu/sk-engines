@@ -30,10 +30,10 @@ C_DEFS += -DSPK_ENGINE_EDRUMS
 ENGINE_SOURCES = src/engine/edrums/edrums_engine.cpp
 else ifeq ($(ENGINE), tape)
 C_DEFS += -DSPK_ENGINE_TAPE
-# Streaming tape engine: header-only (src/engine/tape/). Its SD streaming service (src/hw/stream_deck.cpp
-# + fat_file.cpp) compiles via the platform src/hw/ wildcard, with bodies guarded by SPK_ENGINE_TAPE so
-# every other engine stays byte-identical.
-ENGINE_SOURCES =
+# Streaming tape engine = its IEngine wrapper (tape_engine.cpp). Its SD streaming service
+# (src/hw/stream_deck.cpp + fat_file.cpp) compiles via the platform src/hw/ wildcard, with bodies
+# guarded by SPK_ENGINE_TAPE so every other engine stays byte-identical.
+ENGINE_SOURCES = src/engine/tape/tape_engine.cpp
 else ifeq ($(ENGINE), reso)
 C_DEFS += -DSPK_ENGINE_RESO
 # stmlib's filters use M_PI, which strict -std=c++17 does not expose from <cmath> on arm-none-eabi.

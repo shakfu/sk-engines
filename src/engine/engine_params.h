@@ -33,7 +33,8 @@ enum class ParamId : uint8_t {
     PanRange,       // global
     KeyInterval,    // global (launch quantization)
     Crossfade,      // global deck A/B mix
-    Aux,            // per-deck Alt+PITCH selector (engines with CapAux; e.g. edrums model select)
+    AltPos,         // the Alt+POS knob layer (CapAltPos); engine-interpreted, e.g. tape uses it as pan
+    Aux,            // per-deck Alt+PITCH selector (engines with CapAux; e.g. edrums model select / tape slot)
     Count
 };
 
@@ -84,6 +85,8 @@ enum Capability : uint32_t {
                                  // (bypasses the granular *_leds/render_ring query path) - item 3b-2a
     CapAux           = 1u << 7,  // engine claims Alt+PITCH as a per-deck selector (ParamId::Aux);
                                  // without it Alt+PITCH keeps its default meaning (granular: pitch-quantize)
+    CapAltPos        = 1u << 8,  // engine claims the Alt+POS knob layer (ParamId::AltPos); without it
+                                 // Alt+POS keeps its default meaning (POS still drives Pos, e.g. granular)
 };
 using Capabilities = uint32_t;
 

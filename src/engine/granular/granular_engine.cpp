@@ -79,6 +79,7 @@ void GranularEngine::set_param(const ParamId id, const DeckRef::Ref ref, const f
         case ParamId::Tempo:         break;
         case ParamId::KeyInterval:   break;
 
+        case ParamId::AltPos:        break; // Alt+POS layer (granular doesn't claim CapAltPos; POS stays Pos)
         case ParamId::Aux:           break; // Alt+PITCH selector (granular doesn't use CapAux)
 
         case ParamId::Count:         break;
