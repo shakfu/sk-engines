@@ -1,5 +1,5 @@
 // faust-spike DSP source. Regenerate the kernel with:
-//   make faust-gen           (wraps cyfaust; see Makefile / src/engine/faust/README.md)
+//   make faust-gen           (wraps cyfaust; see Makefile / src/engine/reverb/README.md)
 //
 // A representative DSP-heavy block standing in for "a new subtractive/physical-model engine"
 // (the reso/Rings flavour): a sawtooth through a Moog ladder VCF, shaped by an ADSR, stereo out.

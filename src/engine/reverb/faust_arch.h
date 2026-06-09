@@ -12,10 +12,9 @@
 // kernel class and its compile-time-only metadata/UI methods compile.
 //
 // Control path: the kernel's params are PRIVATE members, exposed only through buildUserInterface,
-// which hands out one FAUSTFLOAT* per control. ParamUI (faust_engine.cpp) captures those pointers by
+// which hands out one FAUSTFLOAT* per control. CaptureUI (reverb_engine.cpp) captures those pointers by
 // label once at init; the engine then writes params through them. This is the idiomatic Faust embed
-// pattern and exactly the "treat the generated class as an opaque kernel + manual param wiring" seam
-// discussed when scoping this spike.
+// pattern and exactly the "treat the generated class as an opaque kernel + manual param wiring" seam.
 
 #ifndef FAUSTFLOAT
 #define FAUSTFLOAT float
@@ -27,8 +26,8 @@ struct Meta {
     virtual void declare(const char* /*key*/, const char* /*value*/) {}
 };
 
-// UI sink (kernel.buildUserInterface(UI*)). Default no-ops; ParamUI overrides the add* it cares about
-// to capture control zone pointers. Covers the widget set Faust can emit so a changed voice.dsp still
+// UI sink (kernel.buildUserInterface(UI*)). Default no-ops; CaptureUI overrides the add* it cares about
+// to capture control zone pointers. Covers the widget set Faust can emit so a changed .dsp still
 // compiles without editing this shim.
 class UI {
  public:

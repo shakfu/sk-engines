@@ -25,6 +25,10 @@ How the firmware's files split between the fixed **platform**, the **contract**,
 
 **All of `src/engine/granular/`**: the `IEngine` adapter `granular_engine.{h,cpp}` (class `GranularEngine`) plus the private DSP (`core`, `deck`, `generator`, `vox`, `buffer`, `fx*`, `track`, `panner`, `modulator`, `detector`, `follower`, `biquad`, `adenv`, `click`, `cpattern`, plus their headers and `mode.h`/`speed.map.h`/etc.). The DSP was relocated from `src/core/` in Phase 5 R3 (2026-06-03); the adapter joined it under `granular/` to match the per-engine subdir convention (`delay/`, `edrums/`, `passthrough/` all keep their `*_engine.*` beside their DSP). The clock (`driver`/`synclock`/`tempo`/`divider`) was split out to `src/transport/` + `src/dsp/` when transport became a shared platform service; granular `Core` now subscribes to the platform `Transport`'s ticks.
 
+### Reverb engine
+
+**All of `src/engine/reverb/`**: the `IEngine` adapter `reverb_engine.{h,cpp}` (class `ReverbEngine`, a stereo reverb), the Faust DSP sources `dattorro.dsp`/`zita.dsp` (+ the retained spike `voice.dsp`), the **generated** kernels `faust_kernel_<name>.h` (one `class mydsp` per namespace `rv_<name>`, produced by `make faust-gen` from cyfaust's cpp backend), and the hand-written MIT arch shim `faust_arch.h`. The kernels' delay-line state (~1 MB across both reverbs) is placement-new'd into the SDRAM arena, so `SRAM` stays flat; `SRAM_EXEC` (code) is the constraint. See [engines/reverb.md](engines/reverb.md) and `src/engine/reverb/README.md`.
+
 ### Passthrough engine
 
 `src/engine/passthrough/passthrough_engine.h` — header-only; depends only on the contract + `nocopy.h` + `<cmath>`. The reference for how small a non-granular engine is.

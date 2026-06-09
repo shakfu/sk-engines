@@ -66,7 +66,7 @@ The `ParamId` names are granular-flavored (the platform's vocabulary), but a non
 ## Building and flashing a variant
 
 ```text
-make -j8 ENGINE=granular      # default; also: delay | edrums | reso | tape | passthrough
+make -j8 ENGINE=granular      # default; also: delay | edrums | reso | tape | reverb | passthrough
 make ENGINE=edrums program-dfu
 make engine-edrums            # one-shot: clean + build + flash (device in DFU mode)
 make check-boundary           # platform (hw/ui/memory/transport) must not include engine/granular/
@@ -81,4 +81,5 @@ make check-boundary           # platform (hw/ui/memory/transport) must not inclu
 | Edrums | `edrums` | dual Euclidean drum machine (synthesized) | [edrums.md](edrums.md) |
 | Reso | `reso` | dual resonator / pluck voice (Mutable Instruments Rings DSP) | [reso.md](reso.md) |
 | Tape | `tape` | dual streaming SD record/playback decks (no in-memory length cap) | [tape.md](tape.md) |
+| Reverb | `reverb` | stereo reverb (Dattorro plate / Zita hall), Faust/cyfaust-generated, Alt+PITCH selects | [reverb.md](reverb.md) |
 | Passthrough | `passthrough` | minimal stereo passthrough (reference engine) | [passthrough.md](passthrough.md) |
