@@ -12,7 +12,7 @@
 
 /* ------------------------------------------------------------
 name: "voice"
-Code generated with Faust 2.83.1 (https://faust.grame.fr)
+Code generated with Faust 2.85.5 (https://faust.grame.fr)
 Compilation options: -lang cpp -fpga-mem-th 4 -ct 1 -es 1 -mcd 16 -mdd 1024 -mdy 33 -single -ftz 0
 ------------------------------------------------------------ */
 
@@ -97,24 +97,24 @@ class mydsp : public dsp {
 		m->declare("filters.lib/pole:author", "Julius O. Smith III");
 		m->declare("filters.lib/pole:copyright", "Copyright (C) 2003-2019 by Julius O. Smith III <jos@ccrma.stanford.edu>");
 		m->declare("filters.lib/pole:license", "MIT-style STK-4.3 license");
-		m->declare("filters.lib/version", "1.3.0");
+		m->declare("filters.lib/version", "1.7.1");
 		m->declare("maths.lib/author", "GRAME");
 		m->declare("maths.lib/copyright", "GRAME");
 		m->declare("maths.lib/license", "LGPL with exception");
 		m->declare("maths.lib/name", "Faust Math Library");
-		m->declare("maths.lib/version", "2.7.0");
+		m->declare("maths.lib/version", "2.9.0");
 		m->declare("name", "voice");
 		m->declare("oscillators.lib/name", "Faust Oscillator Library");
 		m->declare("oscillators.lib/saw2ptr:author", "Julius O. Smith III");
 		m->declare("oscillators.lib/saw2ptr:license", "STK-4.3");
-		m->declare("oscillators.lib/version", "1.4.0");
+		m->declare("oscillators.lib/version", "1.7.0");
 		m->declare("platform.lib/name", "Generic Platform Library");
 		m->declare("platform.lib/version", "1.3.0");
 		m->declare("vaeffects.lib/moog_vcf:author", "Julius O. Smith III");
 		m->declare("vaeffects.lib/moog_vcf:copyright", "Copyright (C) 2003-2019 by Julius O. Smith III <jos@ccrma.stanford.edu>");
 		m->declare("vaeffects.lib/moog_vcf:license", "MIT-style STK-4.3 license");
 		m->declare("vaeffects.lib/name", "Faust Virtual Analog Filter Effect Library");
-		m->declare("vaeffects.lib/version", "1.2.0");
+		m->declare("vaeffects.lib/version", "1.5.0");
 	}
 
 	virtual int getNumInputs() {
