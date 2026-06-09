@@ -7,10 +7,11 @@ Priority is driven less by size than by what unblocks/gates what, and by whether
 | # | Item | Effort | Risk | Verify | Gating |
 |---|------|--------|------|--------|--------|
 | P1 | Mono-input: answer the normalling question | trivial | n/a | a fact | unblocks/kills P1-code |
-| P2 | Refactor delay engine onto shared primitives | med | med-high | **hardware flash** | none (primitives now in `dsp/`) |
-| P3 | Convert the build to CMake (spike done; flash-gated) | high | high | flash (host parity met) | strategic intent |
+| P2 | Faust DSP on hardware: CPU + voicing (reverb J-A, tape FX) | low | med | **hardware flash** | gates reverb + tape-FX merge to `main` |
+| P3 | Refactor delay engine onto shared primitives | med | med-high | **hardware flash** | none (primitives now in `dsp/`) |
+| P4 | Convert the build to CMake (spike done; flash-gated) | high | high | flash (host parity met) | strategic intent |
 
-Hardware-batch note: P2, the mono-input *software fallback* (if P1 says "not normalled"), and the still-outstanding Phase-5 R4a granular-path flash-verify are all hardware-gated - do them together in one bench session.
+Hardware-batch note: the Faust DSP CPU/voicing check (P2), the delay refactor (P3), the mono-input *software fallback* (if P1 says "not normalled"), and the still-outstanding Phase-5 R4a granular-path flash-verify are all hardware-gated - do them together in one bench session.
 
 ---
 
@@ -22,13 +23,23 @@ Highest-leverage *decision* before any code: answering one hardware fact either 
 
 - **Hardware normalling** (preferred if the board supports it): the right input jack normals to the left when nothing is plugged in - automatic, firmware does nothing, and **this whole item is moot** (delete it).
 
-- **Software fallback** (only if NOT normalled - and then this code is hardware-gated, batch with P2): detect a near-silent right input (peak below a small threshold over a window) and copy left -> right. Needs hysteresis/timing so it doesn't flap, and it's a *platform* input concern (applies to any engine), so it belongs in the platform's audio path (e.g. `AppImpl::ProcessAudio` before `engine.process`), not in an individual engine. Caveat: silence-detection can't tell "cable plugged but quiet" from "no cable".
+- **Software fallback** (only if NOT normalled - and then this code is hardware-gated, batch with P3): detect a near-silent right input (peak below a small threshold over a window) and copy left -> right. Needs hysteresis/timing so it doesn't flap, and it's a *platform* input concern (applies to any engine), so it belongs in the platform's audio path (e.g. `AppImpl::ProcessAudio` before `engine.process`), not in an individual engine. Caveat: silence-detection can't tell "cable plugged but quiet" from "no cable".
 
-## P2 - Refactor the delay engine onto the shared primitives (HARDWARE-GATED)
+## P2 - Faust DSP on hardware: CPU + voicing (HARDWARE-GATED)
+
+The reverb (`reverb`) and tape-FX (`tape`) engines are built, host-tested, and fit, but their Jiles-Atherton hysteresis and FDN/plate reverb DSP have **never run on the H7** - the host tests confirm wiring/bounds/finiteness, not real-time CPU or musicality. This gates merging that work to `main`. In one bench session:
+
+- **CPU.** Flash `ENGINE=reverb` and `ENGINE=tape` and read `Meter::cpu` for the stereo paths. The J-A runs 4 substeps/sample (~1 `tanh` + ~4 divisions each) x 2 voices/decks; estimated ~10-25% of 480 MHz but unmeasured. If too hot, the levers are: swap `ma.tanh` for a polynomial Langevin approx, or fall back to an ADAA-tanh saturator (tape). For reverb, only add a third algorithm after measuring (`SRAM_EXEC` is ~92% with two).
+
+- **Voicing (by ear).** Tape saturation is intentionally subtle (the lib's -50 dB calibration); confirm the `drive*54` dB range + the `Ms/a/alpha/k` ferromagnetic params give a usable clean->crunch sweep, and that wow/flutter rate/depth feel right. Reverb: confirm the Dattorro plate / Zita hall sound correct and the Alt+PITCH algorithm switch is click-free.
+
+Voicing levers live in the `.dsp` sources (`src/engine/{reverb,tape}/*.dsp`); re-tune and `make faust-gen`. See `docs/engines/{reverb,tape}.md`. On pass, this unblocks the reverb + tape-FX merge to `main`.
+
+## P3 - Refactor the delay engine onto the shared primitives (HARDWARE-GATED)
 
 The shared primitives are now in `dsp/` (the `.cpp` tier move is done), so the prerequisite is satisfied. This is the concrete second consumer that justified the tier: the delay reimplemented one-pole smoothing and a fractional delay line, which now live in `dsp/smooth.h` and `dsp/deline.h`. But it **CHANGES the delay's DSP** (its smoothing/interpolation may not be bit-identical to the shared versions), so do it deliberately with a hardware flash test, not a silent swap. Batch with the other hardware-gated items (see top note).
 
-## P3 - Evaluate converting the build to CMake (Make as a thin frontend)
+## P4 - Evaluate converting the build to CMake (Make as a thin frontend)
 
 Lowest priority: a deliberate spike, not a task, and explicitly *not worth it for aesthetics alone*
 
