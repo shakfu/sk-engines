@@ -59,6 +59,22 @@ ENGINE_SOURCES = src/engine/reso/reso_engine.cpp \
 	$(RESO_TP)/rings/dsp/resonator.cc $(RESO_TP)/rings/dsp/fm_voice.cc \
 	$(RESO_TP)/rings/resources.cc \
 	$(RESO_TP)/stmlib/dsp/units.cc $(RESO_TP)/stmlib/utils/random.cc $(RESO_TP)/stmlib/dsp/atan.cc
+# gen~ engines (ENGINE=gen_<name>) are appended below by scripts/gen_engine.py, one marker-delimited
+# `else ifeq` block per export. They use the genlib-isolation bridge from gen-dsp + the shared
+# src/engine/gen/ family (GenEngine<W> + the arena-bound genlib runtime). See `make gen-engines`.
+# >>> gen:gigaverb >>> (managed by scripts/gen_engine.py)
+else ifeq ($(ENGINE), gen_gigaverb)
+C_DEFS += -DSPK_ENGINE_GEN_GIGAVERB
+C_DEFS += -DGENLIB_NO_JSON
+C_DEFS += -DDAISY_EXT_NAME=gigaverb
+C_DEFS += -DGEN_EXPORTED_NAME=gen_exported
+C_DEFS += -DGEN_EXPORTED_HEADER=\"gen_exported.h\"
+C_DEFS += -DGEN_EXPORTED_CPP=\"gen_exported.cpp\"
+C_DEFS += -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter
+GEN_DIR = src/engine/gen_gigaverb
+GEN_INC = -I$(GEN_DIR) -I$(GEN_DIR)/gen -I$(GEN_DIR)/gen/gen_dsp
+ENGINE_SOURCES = $(GEN_DIR)/_ext_daisy.cpp src/engine/gen/genlib_arena.cpp
+# <<< gen:gigaverb <<<
 else
 $(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', 'edrums', 'reso', 'tape', or 'reverb')
 endif
@@ -79,7 +95,7 @@ APP_TYPE = BOOT_SRAM
 LDSCRIPT = alt_sram.lds
 BOOT_BIN = bootloader-spotykach-v2.bin
 
-C_INCLUDES = -Isrc/ -Ilib/ $(RESO_INC)
+C_INCLUDES = -Isrc/ -Ilib/ $(RESO_INC) $(GEN_INC)
 # NOTE: there used to be `C_USR_FLAGS = -ffast-math -funroll-loops` here, but the core Makefile reads
 # C_USER_FLAGS (with the E), so it was dead - those flags never reached the compiler and the shipping
 # firmware was built without them. Removed to stop it reading as active. The device meets its CPU/SRAM
@@ -115,6 +131,12 @@ build/app.o: build/.engine-stamp
 # too - otherwise `make ENGINE=tape` over a stale non-tape build relinks empty objects (undefined
 # StreamDeck/FatFile/streamMem). Same stamp mechanism as app.o.
 build/stream_deck.o build/fat_file.o build/buffer.sdram.o: build/.engine-stamp
+# gen~ engines share the wrapper object basenames _ext_daisy.o / genlib_arena.o across exports (gen-dsp
+# fixes the filenames), so a gen_X -> gen_Y switch must recompile them or the link pulls the previous
+# engine's wrapper (undefined-reference to the other's <name>_daisy namespace). Same stamp as app.o.
+# NOTE: after `scripts/gen_engine.py --remove`, run `make clean` once - the removed engine's stale
+# build/_ext_daisy.d still names its now-deleted source, which make rejects before any recipe runs.
+build/_ext_daisy.o build/genlib_arena.o: build/.engine-stamp
 build/.engine-stamp: FORCE
 	@mkdir -p build
 	@echo '$(ENGINE)' | cmp -s - $@ 2>/dev/null || echo '$(ENGINE)' > $@
@@ -212,6 +234,27 @@ faust-gen:
 	  rm -f $$dir/.kernel.gen; \
 	done
 	@echo "regenerated faust kernels"
+
+# Regenerate every gen~ engine via gen-dsp's Daisy backend (the gen~ analogue of faust-gen).
+# GEN_EXPORTS lists one "<gen~-export-dir>:<name>" spec per engine: scripts/gen_engine.py runs gen-dsp
+# into src/engine/gen_<name>/, keeps only the genlib-isolation bridge (drops gen-dsp's board main and
+# private allocator), emits <name>_engine.h (a ParamId map you retune by hand -- preserved across
+# re-runs unless --force-glue), and wires the ENGINE switch + engine_select.h in marker-delimited
+# blocks. gen-dsp lives in the repo-local .venv alongside cyfaust (`.venv/bin/pip install -e <gen-dsp>`).
+# Add an engine: drop its spec here (or run the script directly), then `make ENGINE=gen_<name>`.
+GEN_PY ?= .venv/bin/python
+# One "<gen~-export-dir>:<name>" spec per engine. gigaverb points at its own vendored export (the copy
+# gen-dsp dropped under the engine dir is itself a valid gen-dsp input), so a regen is reproducible on
+# any checkout without the external gen-dsp source tree. For a new engine, point at your gen~ export dir.
+GEN_EXPORTS ?= src/engine/gen_gigaverb/gen:gigaverb
+.PHONY: gen-engines
+gen-engines:
+	@test -n "$(GEN_EXPORTS)" || { echo "set GEN_EXPORTS='<export-dir>:<name> ...' (or run scripts/gen_engine.py directly)"; exit 1; }
+	@for spec in $(GEN_EXPORTS); do \
+	  export=$${spec%:*}; name=$${spec##*:}; \
+	  $(GEN_PY) scripts/gen_engine.py $$export $$name || exit 1; \
+	done
+	@echo "regenerated gen~ engines"
 
 # Vendored Daisy archives. The core Makefile's link step (-ldaisy -ldaisysp) needs these built, but a
 # fresh checkout has source-only submodules, so a bare `make` used to fail at link with "cannot find

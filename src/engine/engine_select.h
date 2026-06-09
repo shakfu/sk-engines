@@ -28,6 +28,12 @@
 #elif defined(SPK_ENGINE_REVERB)
   #include "engine/reverb/reverb_engine.h"
   namespace spotykach { using ActiveEngine = ReverbEngine; }
+// gen~ engines (SPK_ENGINE_GEN_*) are appended below by scripts/gen_engine.py.
+// >>> gen:gigaverb >>>
+#elif defined(SPK_ENGINE_GEN_GIGAVERB)
+  #include "engine/gen_gigaverb/gigaverb_engine.h"
+  namespace spotykach { using ActiveEngine = GigaverbEngine; }
+// <<< gen:gigaverb <<<
 #else
   #error "No engine selected: build with ENGINE=granular (default), passthrough, delay, edrums, reso, tape, or reverb"
 #endif

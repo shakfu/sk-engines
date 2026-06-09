@@ -1,0 +1,324 @@
+#!/usr/bin/env python3
+"""Generate an sk-engines IEngine from a Max gen~ export via gen-dsp.
+
+This is the gen~ analogue of `make faust-gen`. For a gen~ export it:
+
+  1. runs gen-dsp's Daisy backend into a temp dir,
+  2. syncs the genlib-isolation bridge (the wrapper_* C interface, the copied
+     gen/ export) into src/engine/gen_<name>/, dropping gen-dsp's board main
+     (gen_ext_daisy.cpp) and its private allocator (genlib_daisy.*) -- the
+     sk-engines platform provides those, and genlib allocation is routed into
+     the EngineContext SDRAM arena by src/engine/gen/genlib_arena.cpp,
+  3. emits <name>_engine.h: a traits struct forwarding to the export's
+     <name>_daisy namespace plus a default ParamId -> gen-parameter map, bound
+     to the generic GenEngine<W> in src/engine/gen/gen_engine.h,
+  4. idempotently wires the Makefile ENGINE switch and engine_select.h (in
+     marker-delimited blocks, safe to re-run).
+
+The ParamId map is the one non-mechanical spot -- a positional default you
+retune by hand. The glue file is NOT overwritten on re-run unless --force-glue
+is given, so hand-tuning survives regeneration of the mechanical files.
+
+One-time scaffolding this assumes already exists (created with the first gen
+engine, not by this script): the shared family src/engine/gen/ and `$(GEN_INC)`
+appended to C_INCLUDES in the Makefile.
+
+Usage:
+    python scripts/gen_engine.py <gen_export_dir> <name> [--board seed] [--force-glue]
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+# Mechanical files copied from the gen-dsp output into the engine dir. The board
+# main and the private allocator are intentionally excluded.
+_KEEP_FILES = [
+    "_ext_daisy.cpp",
+    "_ext_daisy.h",
+    "gen_ext_common_daisy.h",
+    "gen_buffer.h",
+    "daisy_buffer.h",
+    "gen_remap_inputs.h",
+    "manifest.json",
+]
+_KEEP_DIRS = ["gen"]
+
+# Default ParamId assignment order: gen parameter i maps to PRIMARY[i]. This is
+# arbitrary-but-sensible; retune index_of() in the generated header to taste.
+# Only ParamIds the platform actually delivers to a single-deck engine via
+# set_param() are listed, so every default-mapped param reaches a real control:
+#   - first 6 are the plain panel knobs (no modifier): SIZE/POS/PITCH/ENV/SOS/MOD_AMT
+#   - the rest are modifier layers (Flux/Grit pad, Alt, ENV-chord) needing no cap.
+# Deliberately omitted: ModSpeed (MODFREQ routes to set_mod_speed(), not
+# set_param()), Aux/AltPos (need CapAux/CapAltPos), Win/PolySlice (granular slice
+# modes), and the global transport params. See docs/engine-types/gen.md.
+_PRIMARY = [
+    "Size", "Pos", "Speed", "Env", "Mix", "ModAmp",
+    "Feedback", "FluxFb", "FluxIntensity", "GritIntensity", "FluxMix", "GritMix",
+    "EnvSize",
+]
+
+
+def _run_gen_dsp(export: Path, name: str, board: str, out: Path) -> None:
+    cmd = [
+        sys.executable, "-m", "gen_dsp", str(export),
+        "-p", "daisy", "-n", name, "--board", board, "--no-build",
+        "-o", str(out),
+    ]
+    print("  $ " + " ".join(cmd))
+    subprocess.run(cmd, check=True)
+
+
+def _class_name(name: str) -> str:
+    return "".join(p.capitalize() for p in re.split(r"[_\-]", name)) + "Engine"
+
+
+def _macro(name: str) -> str:
+    return "SPK_ENGINE_GEN_" + re.sub(r"[^0-9a-zA-Z]", "_", name).upper()
+
+
+def _sync_mechanical(src: Path, dst: Path) -> None:
+    dst.mkdir(parents=True, exist_ok=True)
+    for f in _KEEP_FILES:
+        s = src / f
+        if s.is_file():
+            shutil.copy2(s, dst / f)
+    for d in _KEEP_DIRS:
+        s = src / d
+        if s.is_dir():
+            t = dst / d
+            if t.exists():
+                shutil.rmtree(t)
+            shutil.copytree(s, t)
+
+
+def _glue_source(name: str, manifest: dict) -> str:
+    ns = f"{name}_daisy"
+    cls = _class_name(name)
+    params = manifest.get("params", [])
+
+    # Build the ParamId -> index switch and a human-readable map comment.
+    cases: list[str] = []
+    map_lines: list[str] = []
+    for p in params:
+        i = p["index"]
+        rng = f'[{p["min"]:g}..{p["max"]:g}]'
+        if i < len(_PRIMARY):
+            pid = _PRIMARY[i]
+            cases.append(
+                f'            case ParamId::{pid}:'.ljust(40)
+                + f'return {i};  // gen "{p["name"]}" {rng}'
+            )
+            map_lines.append(f'//   {pid:<10} -> {i} {p["name"]} {rng}')
+        else:
+            map_lines.append(
+                f'//   (unmapped)  -> {i} {p["name"]} {rng}  '
+                f'-- add a ParamId case below to reach it'
+            )
+    cases_block = "\n".join(cases) if cases else "            // (no parameters)"
+    map_block = "\n".join(map_lines) if map_lines else "//   (no parameters)"
+
+    return f"""// {name}_engine.h - gen~ "{name}" bound to the generic GenEngine.
+//
+// GENERATED by scripts/gen_engine.py. The mechanical wrapper files in this
+// directory are regenerated wholesale; THIS file is generated once and then
+// hand-tuned -- re-running gen_engine.py preserves it unless --force-glue.
+//
+// The export's wrapper_* C interface lives in namespace `{ns}` (from
+// -DDAISY_EXT_NAME={name}). The ParamId map below (normalized 0..1 -> [min,max])
+// is a positional default; reassign cases in index_of() to taste:
+{map_block}
+
+#pragma once
+
+#include "engine/iengine.h"
+#include "_ext_daisy.h"            // namespace {ns} {{ wrapper_* }}; GenState == void
+#include "engine/gen/gen_engine.h"
+
+namespace spotykach {{
+
+struct {cls}Wrap {{
+    static void* create(float sr, long block) {{
+        return {ns}::wrapper_create(sr, block);
+    }}
+    static void perform(void* st, float** in, long nin, float** out, long nout, long n) {{
+        {ns}::wrapper_perform(st, in, nin, out, nout, n);
+    }}
+    static int num_inputs()  {{ return {ns}::wrapper_num_inputs(); }}
+    static int num_outputs() {{ return {ns}::wrapper_num_outputs(); }}
+
+    // ParamId -> gen parameter index (-1 = unmapped).
+    static int index_of(ParamId id) {{
+        switch (id) {{
+{cases_block}
+            default: return -1;
+        }}
+    }}
+
+    static void set_param(void* st, ParamId id, DeckRef::Ref deck, float v01) {{
+        if (deck == DeckRef::B) return;  // single stereo effect: ignore deck B
+        const int i = index_of(id);
+        if (i < 0) return;
+        const float lo = {ns}::wrapper_param_min(st, i);
+        const float hi = {ns}::wrapper_param_max(st, i);
+        {ns}::wrapper_set_param(st, i, lo + v01 * (hi - lo));
+    }}
+
+    static float get_param(void* st, ParamId id, DeckRef::Ref /*deck*/) {{
+        const int i = index_of(id);
+        if (i < 0) return 0.f;
+        const float lo  = {ns}::wrapper_param_min(st, i);
+        const float hi  = {ns}::wrapper_param_max(st, i);
+        const float val = {ns}::wrapper_get_param(st, i);
+        return (hi > lo) ? (val - lo) / (hi - lo) : 0.f;
+    }}
+}};
+
+using {cls} = GenEngine<{cls}Wrap>;
+
+}} // namespace spotykach
+"""
+
+
+def _block_re(name: str) -> re.Pattern:
+    start = f">>> gen:{name} >>>"
+    end = f"<<< gen:{name} <<<"
+    return re.compile(
+        r"[ \t]*(?://|#) " + re.escape(start) + r".*?(?://|#) " + re.escape(end) + r"\n",
+        re.DOTALL,
+    )
+
+
+def _upsert(text: str, name: str, block: str, before: str) -> str:
+    """Insert/replace a marker-delimited block immediately before `before`."""
+    pat = _block_re(name)
+    block = block if block.endswith("\n") else block + "\n"
+    if pat.search(text):
+        return pat.sub(block, text)
+    idx = text.index(before)
+    return text[:idx] + block + text[idx:]
+
+
+def _unwire(root: Path, name: str) -> None:
+    for rel in ("Makefile", "src/engine/engine_select.h"):
+        p = root / rel
+        new = _block_re(name).sub("", p.read_text())
+        p.write_text(new)
+    eng = root / "src" / "engine" / f"gen_{name}"
+    if eng.is_dir():
+        shutil.rmtree(eng)
+        print(f"  removed {eng.relative_to(root)}/ and unwired Makefile + engine_select.h")
+    else:
+        print(f"  unwired Makefile + engine_select.h (no {eng.relative_to(root)}/ to remove)")
+
+
+def _wire_makefile(root: Path, name: str, manifest: dict) -> None:
+    mk = root / "Makefile"
+    text = mk.read_text()
+    engine = f"gen_{name}"
+    gen_name = manifest["gen_name"]
+    block = (
+        f"# >>> gen:{name} >>> (managed by scripts/gen_engine.py)\n"
+        f"else ifeq ($(ENGINE), {engine})\n"
+        f"C_DEFS += -D{_macro(name)}\n"
+        f"C_DEFS += -DGENLIB_NO_JSON\n"
+        f"C_DEFS += -DDAISY_EXT_NAME={name}\n"
+        f"C_DEFS += -DGEN_EXPORTED_NAME={gen_name}\n"
+        f'C_DEFS += -DGEN_EXPORTED_HEADER=\\"{gen_name}.h\\"\n'
+        f'C_DEFS += -DGEN_EXPORTED_CPP=\\"{gen_name}.cpp\\"\n'
+        f"C_DEFS += -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter\n"
+        f"GEN_DIR = src/engine/{engine}\n"
+        f"GEN_INC = -I$(GEN_DIR) -I$(GEN_DIR)/gen -I$(GEN_DIR)/gen/gen_dsp\n"
+        f"ENGINE_SOURCES = $(GEN_DIR)/_ext_daisy.cpp src/engine/gen/genlib_arena.cpp\n"
+        f"# <<< gen:{name} <<<\n"
+    )
+    sentinel = "else\n$(error Unknown ENGINE"
+    if sentinel not in text:
+        raise SystemExit("Makefile: could not find the ENGINE-switch sentinel to anchor insertion")
+    if "$(GEN_INC)" not in text:
+        print("  WARNING: Makefile C_INCLUDES is missing $(GEN_INC); add it once: "
+              "C_INCLUDES = -Isrc/ -Ilib/ $(RESO_INC) $(GEN_INC)")
+    mk.write_text(_upsert(text, name, block, sentinel))
+
+
+def _wire_engine_select(root: Path, name: str) -> None:
+    hdr = root / "src" / "engine" / "engine_select.h"
+    text = hdr.read_text()
+    cls = _class_name(name)
+    block = (
+        f"// >>> gen:{name} >>>\n"
+        f"#elif defined({_macro(name)})\n"
+        f'  #include "engine/gen_{name}/{name}_engine.h"\n'
+        f"  namespace spotykach {{ using ActiveEngine = {cls}; }}\n"
+        f"// <<< gen:{name} <<<\n"
+    )
+    sentinel = "#else"
+    if sentinel not in text:
+        raise SystemExit("engine_select.h: could not find #else sentinel")
+    hdr.write_text(_upsert(text, name, block, sentinel))
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Generate an sk-engines engine from a gen~ export.")
+    ap.add_argument("export", type=Path, nargs="?",
+                    help="gen~ export directory (contains gen_exported.cpp + gen_dsp/); omit with --remove")
+    ap.add_argument("name", help="engine name, e.g. gigaverb -> ENGINE=gen_gigaverb")
+    ap.add_argument("--board", default="seed", help="gen-dsp Daisy board variant (default: seed)")
+    ap.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parent.parent,
+                    help="sk-engines repo root (default: parent of scripts/)")
+    ap.add_argument("--force-glue", action="store_true",
+                    help="overwrite <name>_engine.h even if it exists (drops hand-tuned ParamId map)")
+    ap.add_argument("--remove", action="store_true",
+                    help="delete src/engine/gen_<name>/ and unwire it from the Makefile + engine_select.h")
+    args = ap.parse_args()
+
+    if not re.fullmatch(r"[a-z][a-z0-9_]*", args.name):
+        raise SystemExit(f"invalid name {args.name!r}: use lowercase [a-z0-9_], starting with a letter")
+    root = args.repo_root.resolve()
+
+    if args.remove:
+        print(f"gen_engine: removing gen_{args.name}")
+        _unwire(root, args.name)
+        return 0
+
+    if args.export is None:
+        raise SystemExit("export directory is required (or pass --remove to delete an engine)")
+    export = args.export.resolve()
+    if not export.is_dir():
+        raise SystemExit(f"export not found: {export}")
+    engine_dir = root / "src" / "engine" / f"gen_{args.name}"
+
+    print(f"gen_engine: {export} -> {engine_dir} (ENGINE=gen_{args.name})")
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_out = Path(tmp) / f"gen_{args.name}"
+        _run_gen_dsp(export, args.name, args.board, tmp_out)
+        manifest = json.loads((tmp_out / "manifest.json").read_text())
+        _sync_mechanical(tmp_out, engine_dir)
+
+    glue = engine_dir / f"{args.name}_engine.h"
+    if glue.exists() and not args.force_glue:
+        print(f"  keep   {glue.relative_to(root)} (exists; --force-glue to regenerate)")
+    else:
+        glue.write_text(_glue_source(args.name, manifest))
+        print(f"  write  {glue.relative_to(root)}")
+
+    _wire_makefile(root, args.name, manifest)
+    _wire_engine_select(root, args.name)
+
+    n = len(manifest.get("params", []))
+    print(f"  wired  Makefile + engine_select.h  ({manifest['num_inputs']}in/"
+          f"{manifest['num_outputs']}out, {n} params)")
+    print(f"  build: make ENGINE=gen_{args.name}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

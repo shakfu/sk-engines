@@ -8,12 +8,22 @@ The platform is intentionally decoupled from any specific engine. Core subsystem
 
 Current engines include:
 
-1. A dual-deck granular looper (the reference and default engine)
-2. A tempo-synchronized stereo delay
-3. A four-voice Euclidean drum machine
-4. A resonator/plucked-string instrument based on the [Mutable Instruments Rings DSP code](https://github.com/pichenettes/eurorack/tree/master/rings)
-5. A dual streaming tape deck (two independent record/playback decks, SD-streamed, no in-memory length cap)
-6. A minimal stereo passthrough engine demonstrating the platform API
+1. [granular](docs/engines/granular.md): dual-deck granular looper (the original reference and default engine)
+2. [delay](docs/engines/delay.md): tempo-synchronized stereo delay
+3. [edrums](docs/engines/edrums.md): four-voice Euclidean drum machine
+4. [reso](docs/engines/reso.md): resonator/plucked-string instrument based on the [Mutable Instruments Rings DSP code](https://github.com/pichenettes/eurorack/tree/master/rings)
+5. [tape](docs/engines/tape.md): dual streaming tape deck (two independent record/playback decks, SD-streamed, no in-memory length cap)
+6. [reverb](docs/engines/reverb.md): stereo reverb with two switchable algorithms (Dattorro plate / Zita-rev1 hall), generated from [Faust](https://faust.grame.fr) sources
+7. [gigaverb](docs/engines/gigaverb.md): stereo reverb authored in Max/MSP **gen~** and translated to C++ via [gen-dsp](https://github.com/shakfu/gen-dsp) (Tom Erbe's gigaverb)
+8. [passthrough](docs/engines/passthrough.md): minimal stereo passthrough engine demonstrating the platform API
+
+Engines can be authored in three ways:
+
+1. Using [C++](docs/engine-types/cpp.md) against `IEngine`
+2. Using [**Faust**](docs/engine-types/faust.md) (via [cyfaust](https://github.com/shakfu/cyfaust))
+3. Using Max/MSP's [**gen~**](docs/engine-types/gen.md) language (via [gen-dsp](https://github.com/shakfu/gen-dsp))
+
+The latter two generate C++ that the platform wraps behind the same contract. The three methods are documented in [`docs/engine-types/`](docs/engine-types/).
 
 Originally started as a feature-extension fork of the upstream firmware, the project evolved into a platform/engine architecture that enables new instruments to reuse the existing hardware and interaction language rather than reimplement them. See [`docs/architecture.md`](docs/architecture.md) for an overview of the design and instructions for creating new engines.
 
@@ -58,9 +68,13 @@ The firmware is a fixed hardware/UI **platform** that hosts a swappable DSP **en
 
 - `make -j8 ENGINE=tape` — two independent mono **tape decks** (A/B) that play and record arbitrarily long takes to the SD card, removing the in-SDRAM loop-length cap. Per deck: Play pad = play, Alt+Play = record, PITCH = varispeed, Alt+POS = pan, MIX = volume, ENV = loop mode (none / loop / faded / Frippertronics), Alt+PITCH = tape-slot select (8 slots under `/tapes/`); the routing switch and mix fader place/blend the two decks. Streams mono float WAV through lock-free per-deck SDRAM rings drained by a main-loop FatFs pump.
 
+- `make -j8 ENGINE=reverb` — a stereo reverb with **two switchable algorithms** (a Dattorro plate and a Zita-rev1 hall, Alt+PITCH selects live), generated from [Faust](https://faust.grame.fr) sources by cyfaust. Regenerate the kernels with `make faust-gen`.
+
+- `make -j8 ENGINE=gen_gigaverb` — a stereo reverb (Tom Erbe's **gigaverb**) authored in Max/MSP **gen~** and translated to C++ by [gen-dsp](https://github.com/shakfu/gen-dsp). The engine directory is generated from a gen~ export with `make gen-engines` (or `scripts/gen_engine.py`); see [`docs/engine-types/gen.md`](docs/engine-types/gen.md).
+
 - `make -j8 ENGINE=passthrough` — a minimal stereo-passthrough variant.
 
-Switching `ENGINE` does not require `make clean`. Other build flags: `DEBUG=1` (enables UART logging) and `LOFI_INT16=1` (16-bit loop buffer, doubling record time). See [`docs/architecture.md`](docs/architecture.md) for the platform/engine design and [`docs/engines/`](docs/engines/) for a per-engine reference (and how to add a new engine).
+Switching `ENGINE` does not require `make clean`. Other build flags: `DEBUG=1` (enables UART logging) and `LOFI_INT16=1` (16-bit loop buffer, doubling record time). See [`docs/architecture.md`](docs/architecture.md) for the platform/engine design, [`docs/engines/`](docs/engines/) for a per-engine reference, and [`docs/engine-types/`](docs/engine-types/) for the three ways to author an engine (native C++, Faust, gen~).
 
 There is also an **opt-in CMake build** (an in-progress alternative; the `make` build above stays canonical): `make -f Makefile.cmake ENGINE=<engine>` configures and builds via CMake, with output in `build-cmake/<engine>/` instead of `build/`. It mirrors the same commands (`program-dfu`, `engine-<name>`, `DEBUG=1`, `LOFI_INT16=1`) and caches each engine in its own dir, so switching engines never forces a rebuild.
 
@@ -86,10 +100,10 @@ The bootloader version used in this project enables USB DFU firmware updating fr
 
 `make program-dfu` flashes whatever is currently in `build/` (it does not rebuild). To flash a non-default engine, build it first in the same step, e.g. `make ENGINE=passthrough && make program-dfu`.
 
-For convenience there are one-shot targets that **clean + build + flash** a variant (put the device in DFU mode first, as in step 3): `make engine-granular` (the looper), `make engine-delay`, `make engine-edrums`, `make engine-reso`, `make engine-tape`, and `make engine-passthrough`.
+For convenience there are one-shot targets that **clean + build + flash** a variant (put the device in DFU mode first, as in step 3): `make engine-granular` (the looper), `make engine-delay`, `make engine-edrums`, `make engine-reso`, `make engine-tape`, `make engine-reverb`, and `make engine-passthrough`. The gen~ engine has no one-shot target; flash it with `make clean && make ENGINE=gen_gigaverb && make program-dfu`.
 
 Once finished, the device will automatically boot the new firmware. This can "brick" (temporarily) the device and require reinstallation of either the bootloader, the firmware binary, or both.
 
 ## Architecture & developer docs
 
-Firmware internals are documented under [`docs/`](docs/) — start with [`docs/architecture.md`](docs/architecture.md), which covers the hardware platform, the platform/engine seam (`IEngine`), and how to slot in a new engine. [`docs/engines/`](docs/engines/) documents each engine in detail plus the shared transport and knob-routing model. Notable changes are tracked in [`CHANGELOG.md`](CHANGELOG.md).
+Firmware internals are documented under [`docs/`](docs/) — start with [`docs/architecture.md`](docs/architecture.md), which covers the hardware platform, the platform/engine seam (`IEngine`), and how to slot in a new engine. [`docs/engines/`](docs/engines/) documents each engine in detail plus the shared transport and knob-routing model, and [`docs/engine-types/`](docs/engine-types/) covers the three engine-authoring methods (native C++, Faust/cyfaust, gen~/gen-dsp). Notable changes are tracked in [`CHANGELOG.md`](CHANGELOG.md).

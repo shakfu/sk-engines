@@ -1,6 +1,6 @@
 # Engines
 
-Spotykach is a fixed hardware/UI **platform** hosting a swappable DSP **engine** (one chosen at build time via `ENGINE=`). This folder documents each engine in detail; this page covers the model they all share. Companion docs: `docs/architecture.md` (platform/engine design), `docs/engine-layout.md` (which files belong to which engine).
+Spotykach is a fixed hardware/UI **platform** hosting a swappable DSP **engine** (one chosen at build time via `ENGINE=`). This folder documents each shipped engine in detail; this page covers the model they all share. There are three **ways to build** an engine (native C++, Faust/cyfaust, gen~/gen-dsp) — see [`../engine-types/`](../engine-types/README.md). Companion docs: `docs/architecture.md` (platform/engine design), `docs/engine-layout.md` (which files belong to which engine).
 
 ## The contract an engine implements
 
@@ -74,12 +74,15 @@ make check-boundary           # platform (hw/ui/memory/transport) must not inclu
 
 ## The engines
 
-| Engine | `ENGINE=` | What it is | Doc |
-|---|---|---|---|
-| Granular looper | `granular` (default) | the full instrument: dual granular looper/sampler | [granular.md](granular.md) |
-| Stereo delay | `delay` | tempo-synced dual delay line | [delay.md](delay.md) |
-| Edrums | `edrums` | dual Euclidean drum machine (synthesized) | [edrums.md](edrums.md) |
-| Reso | `reso` | dual resonator / pluck voice (Mutable Instruments Rings DSP) | [reso.md](reso.md) |
-| Tape | `tape` | dual streaming SD record/playback decks (no in-memory length cap) + tape FX (wow/flutter, hysteresis) | [tape.md](tape.md) |
-| Reverb | `reverb` | stereo reverb (Dattorro plate / Zita hall), Faust/cyfaust-generated, Alt+PITCH selects | [reverb.md](reverb.md) |
-| Passthrough | `passthrough` | minimal stereo passthrough (reference engine) | [passthrough.md](passthrough.md) |
+The **Built via** column links to the development method ([`../engine-types/`](../engine-types/README.md)).
+
+| Engine | `ENGINE=` | What it is | Built via | Doc |
+|---|---|---|---|---|
+| Granular looper | `granular` (default) | the full instrument: dual granular looper/sampler | [native C++](../engine-types/cpp.md) | [granular.md](granular.md) |
+| Stereo delay | `delay` | tempo-synced dual delay line | [native C++](../engine-types/cpp.md) | [delay.md](delay.md) |
+| Edrums | `edrums` | dual Euclidean drum machine (synthesized) | [native C++](../engine-types/cpp.md) | [edrums.md](edrums.md) |
+| Reso | `reso` | dual resonator / pluck voice (Mutable Instruments Rings DSP) | [native C++](../engine-types/cpp.md) | [reso.md](reso.md) |
+| Tape | `tape` | dual streaming SD record/playback decks (no in-memory length cap) + tape FX (wow/flutter, hysteresis) | [native C++](../engine-types/cpp.md) + [Faust](../engine-types/faust.md) | [tape.md](tape.md) |
+| Reverb | `reverb` | stereo reverb (Dattorro plate / Zita hall), Alt+PITCH selects | [Faust](../engine-types/faust.md) | [reverb.md](reverb.md) |
+| gigaverb | `gen_gigaverb` | stereo reverb from a Max gen~ patch | [gen~](../engine-types/gen.md) | [gigaverb.md](gigaverb.md) |
+| Passthrough | `passthrough` | minimal stereo passthrough (reference engine) | [native C++](../engine-types/cpp.md) | [passthrough.md](passthrough.md) |
