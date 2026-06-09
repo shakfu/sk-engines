@@ -115,14 +115,18 @@ void EdrumsEngine::init(const EngineContext& ctx)
     _transport->set_on_tick(std::bind(&EdrumsEngine::_on_tick, this, _1));
 
     const float sr = ctx.sample_rate;
-    // Four drums = two decks x two slots, all playing. Slot 0 is the boot-active (editable) drum;
-    // slot 1 is the swap-in. Deck A = kick/tom (low spine), deck B = snare/hat (backbeat). All slots
-    // are fully seeded here so the three the platform never applies to still sound from the first bar.
+    // Four drums = two decks x two slots. Slot 0 is the boot-active (editable) drum; slot 1 is the
+    // swap-in. Deck A = kick/tom (low spine), deck B = snare/hat (backbeat). Every drum is fully voiced
+    // here (model, pitch, decay, length) but seeded with pos=0 (zero onsets) so the kit boots SILENT:
+    // the player builds it up by raising POS on each drum (and Rev-swapping to reach the slot-1 pair).
+    // Raising POS yields an in-tune, correctly-voiced pattern instantly, since only the onset count was
+    // withheld. Pos is also the value the platform reads back at boot (active slot only) -> knob seeds
+    // to 0, so turning POS up from minimum catches and adds hits.
     //                d            slot  model         seed         pos    pitch  decay
-    _init_slot(DeckRef::A, 0, sr, 0 /*kick */, 0x9e3779b9u, 0.30f, 0.50f, 0.50f);
-    _init_slot(DeckRef::A, 1, sr, 4 /*tom  */, 0x85ebca6bu, 0.30f, 0.40f, 0.55f);
-    _init_slot(DeckRef::B, 0, sr, 1 /*snare*/, 0x6d2b79f5u, 0.45f, 0.50f, 0.50f);
-    _init_slot(DeckRef::B, 1, sr, 3 /*hat  */, 0xc2b2ae35u, 0.50f, 0.82f, 0.30f);
+    _init_slot(DeckRef::A, 0, sr, 0 /*kick */, 0x9e3779b9u, 0.00f, 0.50f, 0.50f);
+    _init_slot(DeckRef::A, 1, sr, 4 /*tom  */, 0x85ebca6bu, 0.00f, 0.40f, 0.55f);
+    _init_slot(DeckRef::B, 0, sr, 1 /*snare*/, 0x6d2b79f5u, 0.00f, 0.50f, 0.50f);
+    _init_slot(DeckRef::B, 1, sr, 3 /*hat  */, 0xc2b2ae35u, 0.00f, 0.82f, 0.30f);
 }
 
 // Fully seed one drum so it sounds independently of the platform's knob apply (which only writes the

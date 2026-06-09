@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Edrums now boots silent instead of playing a full kit.** The four drums were each seeded with a non-zero density (`POS` 0.30/0.30/0.45/0.50) and full fire probability, so the whole kit played from bar 1. All four `POS` seeds are now **0** (zero Euclidean onsets), so the engine boots silent and the player builds the groove up by raising POS on each drum (Rev-swapping each deck to reach its slot-1 drum). Only the onset count is withheld - model, pitch, decay, and length stay pre-seeded - so a drum is in tune and correctly voiced the instant its first onset appears, and `param(Pos)` reads back 0 so the POS knob seeds to minimum and catches as it is turned up. The headless slot test gains a boot-silence assertion (pure-zero bus over a full cycle with no onsets, then audible once POS is raised). (`src/engine/edrums/edrums_engine.cpp`, `host/test_edrums_slots.cpp`, `docs/engines/edrums.md`)
+
 ## [0.2.3]
 
 ### Added

@@ -10,9 +10,11 @@
 //   3. take_param_reseed reports a swap exactly once, then self-clears, per deck.
 //   4. The four-voice process()/tick path stays finite.
 //
-// Slot defaults seeded by init() (see EdrumsEngine::_init_slot):
-//   deck A: slot0 Kick (Aux 0.00, Speed .50, Mix .50, Pos .30), slot1 Tom (Aux 1.00, Speed .40, Mix .55, Pos .30)
-//   deck B: slot0 Snare(Aux 0.25, Speed .50, Mix .50, Pos .45), slot1 Hat (Aux 0.75, Speed .82, Mix .30, Pos .50)
+// Slot defaults seeded by init() (see EdrumsEngine::_init_slot). All four boot with Pos=0 (zero
+// onsets) so the kit starts SILENT; the player raises POS to build it up. Models/pitch/decay are
+// still seeded, so a raised drum is in tune immediately.
+//   deck A: slot0 Kick (Aux 0.00, Speed .50, Mix .50, Pos 0), slot1 Tom (Aux 1.00, Speed .40, Mix .55, Pos 0)
+//   deck B: slot0 Snare(Aux 0.25, Speed .50, Mix .50, Pos 0), slot1 Hat (Aux 0.75, Speed .82, Mix .30, Pos 0)
 
 #include <cmath>
 #include <cstdio>
@@ -63,8 +65,8 @@ int main() {
     // --- 1. Boot state addresses slot 0 of each deck -------------------------------------------
     check(approx(e.param(ParamId::Aux, DeckRef::A), 0.00f), "A active = slot0 (Kick) at boot");
     check(approx(e.param(ParamId::Aux, DeckRef::B), 0.25f), "B active = slot0 (Snare) at boot");
-    check(approx(e.param(ParamId::Pos, DeckRef::A), 0.30f), "A slot0 Pos seeded 0.30");
-    check(approx(e.param(ParamId::Pos, DeckRef::B), 0.45f), "B slot0 Pos seeded 0.45");
+    check(approx(e.param(ParamId::Pos, DeckRef::A), 0.00f), "A slot0 Pos seeded 0 (silent boot)");
+    check(approx(e.param(ParamId::Pos, DeckRef::B), 0.00f), "B slot0 Pos seeded 0 (silent boot)");
     check(e.take_param_reseed(DeckRef::A) == false, "no reseed pending before any swap (A)");
     check(e.take_param_reseed(DeckRef::B) == false, "no reseed pending before any swap (B)");
 
@@ -104,19 +106,40 @@ int main() {
     check(e.take_param_reseed(DeckRef::A) == false, "Play pad raises no reseed");
     check(approx(e.param(ParamId::Aux, DeckRef::A), aux_before), "Play pad does not change the active slot");
 
-    // --- 6. Four-voice tick + process path stays finite ----------------------------------------
-    TransportTick t; t.tick = true; t.tempo = 120.f;
-    for (uint32_t i = 0; i < 64; i++) { t.index = i; transport.on_tick(t); } // step all four drums
-
+    // --- 6. The kit boots SILENT (Pos=0 everywhere -> no onsets), and raising POS makes it sound --
     float in_l[host::kBlock] = {0}, in_r[host::kBlock] = {0};
     float out_l[host::kBlock], out_r[host::kBlock];
     const float* in_ptrs[2]  = { in_l, in_r };
     float*       out_ptrs[2] = { out_l, out_r };
+
+    auto peak = [&]() {
+        float pk = 0.f;
+        for (size_t i = 0; i < host::kBlock; i++) {
+            pk = std::fmax(pk, std::fabs(out_l[i]));
+            pk = std::fmax(pk, std::fabs(out_r[i]));
+        }
+        return pk;
+    };
+    auto drive = [&](uint32_t steps) {
+        TransportTick t; t.tick = true; t.tempo = 120.f;
+        for (uint32_t i = 0; i < steps; i++) { t.index = i; transport.on_tick(t); }
+    };
+
+    // Step all four drums through a full cycle with no onsets seeded: the bus must be pure silence.
+    drive(64);
+    e.process(in_ptrs, out_ptrs, host::kBlock);
+    check(peak() == 0.f, "kit boots silent: no output before any POS is raised");
+
+    // Raise POS on deck A's focused drum (slot 0, kick) to full density so every step is an onset,
+    // then step once and render: a hit must now reach the bus, and output stays finite.
+    e.set_param(ParamId::Pos, DeckRef::A, 1.0f);
+    drive(1);
     e.process(in_ptrs, out_ptrs, host::kBlock);
     bool finite = true;
     for (size_t i = 0; i < host::kBlock; i++)
         if (!std::isfinite(out_l[i]) || !std::isfinite(out_r[i])) finite = false;
-    check(finite, "process() output is finite with four voices");
+    check(finite, "process() output is finite once a drum sounds");
+    check(peak() > 0.f, "raising POS makes the focused drum audible");
 
     if (g_failures == 0) { std::printf("OK: all edrums slot checks passed\n"); return 0; }
     std::printf("FAILED: %d check(s)\n", g_failures);
