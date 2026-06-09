@@ -34,9 +34,12 @@ TRANSPORT_SRC = $(wildcard $(ROOT)/src/transport/*.cpp)
 ENGINE_SRC  = $(wildcard $(ROOT)/src/engine/*.cpp)
 DAISYSP_SRC = $(wildcard $(DAISYSP)/*/*.cpp)
 LIB_SRC     = $(CORE_SRC) $(DSP_SRC) $(TRANSPORT_SRC) $(ENGINE_SRC) $(DAISYSP_SRC)
-# The edrums/reso engines live under src/engine/<name>/ (outside the wildcards above); add for tests.
+# The edrums/reso/reverb engines live under src/engine/<name>/ (outside the wildcards above); add for tests.
 EDRUMS_SRC  = $(ROOT)/src/engine/edrums/edrums_engine.cpp
 RESO_SRC    = $(ROOT)/src/engine/reso/reso_engine.cpp
+# The reverb engine's adapter; its Faust kernels are checked-in headers (engine/reverb/faust_kernel_*.h,
+# portable C++) pulled by the .cpp, so no extra sources are needed.
+REVERB_SRC  = $(ROOT)/src/engine/reverb/reverb_engine.cpp
 # reso's DSP is the Mutable Instruments Rings engine + its stmlib support library (under $(RESO_TP)).
 RINGS_SRC   = $(RESO_TP)/rings/dsp/part.cc $(RESO_TP)/rings/dsp/string.cc \
               $(RESO_TP)/rings/dsp/resonator.cc $(RESO_TP)/rings/dsp/fm_voice.cc \
@@ -48,9 +51,10 @@ SRC          = main_host.cpp $(LIB_SRC)
 TEST         = $(BUILD)/test_engine_params
 TEST_EDRUMS  = $(BUILD)/test_edrums_slots
 TEST_RESO    = $(BUILD)/test_reso
+TEST_REVERB  = $(BUILD)/test_reverb
 TEST_STREAM  = $(BUILD)/test_stream
 
-.PHONY: all clean run test test-granular test-edrums test-reso test-stream
+.PHONY: all clean run test test-granular test-edrums test-reso test-reverb test-stream
 all: $(TARGET)
 
 $(TARGET): $(SRC) | $(BUILD)
@@ -64,6 +68,9 @@ $(TEST_EDRUMS): test_edrums_slots.cpp $(LIB_SRC) $(EDRUMS_SRC) | $(BUILD)
 
 $(TEST_RESO): test_reso.cpp $(LIB_SRC) $(RESO_SRC) $(RINGS_SRC) | $(BUILD)
 	$(CXX) $(CXXFLAGS) test_reso.cpp $(LIB_SRC) $(RESO_SRC) $(RINGS_SRC) -o $@
+
+$(TEST_REVERB): test_reverb.cpp $(LIB_SRC) $(REVERB_SRC) | $(BUILD)
+	$(CXX) $(CXXFLAGS) test_reverb.cpp $(LIB_SRC) $(REVERB_SRC) -o $@
 
 # The SD-streaming core (SpscRing + Play/RecordStream) is self-contained header-only logic with no
 # engine/Daisy/FatFs deps, so its test compiles on its own.
@@ -79,7 +86,7 @@ run: $(TARGET)
 
 # `test` runs both engine harnesses. Both inject the transport via EngineContext (granular drives the
 # real platform Transport; edrums uses a small stub ITransport) - the post-transport-decoupling way.
-test: test-granular test-edrums test-reso test-stream
+test: test-granular test-edrums test-reso test-reverb test-stream
 
 test-granular: $(TEST)
 	./$(TEST)
@@ -89,6 +96,9 @@ test-edrums: $(TEST_EDRUMS)
 
 test-reso: $(TEST_RESO)
 	./$(TEST_RESO)
+
+test-reverb: $(TEST_REVERB)
+	./$(TEST_REVERB)
 
 test-stream: $(TEST_STREAM)
 	./$(TEST_STREAM)

@@ -7,7 +7,7 @@
 //
 // Control labels consumed by the reverb engine's zita bind table (linear-mapped from the 0..1 knobs into
 // each slider's native range): "Wet/Dry Mix", "Mid RT60", "Low RT60", "HF Damping", "In Delay",
-// "LF X". "Level" (output dB) is captured and held fixed; the EQ sections keep their flat defaults.
+// "Eq1 Level". "Level" (output dB) is captured and held fixed; Eq2 and the EQ frequencies stay default.
 declare name "zita";
 declare description "Zita-rev1 FDN hall reverb (sk-engines faust engine).";
 

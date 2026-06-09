@@ -27,16 +27,19 @@ enum Knob { K_Mix = 0, K_Decay, K_Damp, K_Tone, K_SizeA, K_SizeB, K_Count };
 struct Role {
     FAUSTFLOAT* z[2] = { nullptr, nullptr };
     float lo = 0.f, hi = 1.f;
+    bool  inv = false; // map v=1 -> lo instead of hi (for sliders whose high end is the "off" end)
     void set(float v) const {
-        const float x = lo + v * (hi - lo);
+        const float x = inv ? hi - v * (hi - lo) : lo + v * (hi - lo);
         if (z[0]) *z[0] = x;
         if (z[1]) *z[1] = x;
     }
 };
 
 // One (box,label) -> (role,slot) mapping. `section` null = match the label in any box; non-null =
-// only inside that box (Dattorro reuses "Diffusion 1/2" in both its Input and Feedback boxes).
-struct Bind { const char* section; const char* label; Knob role; int slot; };
+// only inside that box (Dattorro reuses "Diffusion 1/2" in both its Input and Feedback boxes). `invert`
+// flips the knob->slider direction: Zita's "Wet/Dry Mix" runs +1=dry..-1=wet, opposite Dattorro's
+// "Dry/Wet Mix", so the wet knob must invert to keep "knob up = more wet" across algorithms.
+struct Bind { const char* section; const char* label; Knob role; int slot; bool invert; };
 
 // Generic zone-capture UI: walks the kernel's buildUserInterface, fills the Role table from a per-
 // reverb Bind list (matching by label, and box where required), and captures "Level" separately so
@@ -59,7 +62,7 @@ struct CaptureUI : public UI {
             if (std::strcmp(b.label, label) != 0) continue;
             if (b.section && std::strcmp(b.section, section) != 0) continue;
             Role& r = roles[b.role];
-            r.z[b.slot] = z; r.lo = lo; r.hi = hi;
+            r.z[b.slot] = z; r.lo = lo; r.hi = hi; r.inv = b.invert;
         }
     }
     void addVerticalSlider  (const char* l, FAUSTFLOAT* z, FAUSTFLOAT, FAUSTFLOAT mn, FAUSTFLOAT mx, FAUSTFLOAT) override { add(l, z, mn, mx); }
@@ -115,18 +118,18 @@ struct ZitaVoice : ReverbVoice {
     void init(int sr) override {
         dsp.init(sr);
         static const Bind kBinds[] = {
-            { nullptr, "Wet/Dry Mix", K_Mix,   0 },
+            { nullptr, "Wet/Dry Mix", K_Mix,   0, true }, // zita: +1=dry..-1=wet, so invert for "up = wet"
             { nullptr, "Mid RT60",    K_Decay, 0 }, // main decay time
             { nullptr, "HF Damping",  K_Damp,  0 },
             { nullptr, "Low RT60",    K_Tone,  0 }, // low-band decay -> tonal character
             { nullptr, "In Delay",    K_SizeA, 0 }, // pre-delay
-            { nullptr, "LF X",        K_SizeB, 0 }, // low/mid crossover frequency
+            { nullptr, "Eq1 Level",   K_SizeB, 0 }, // tail tone: low-mid peaking EQ (+/-15 dB, mid=flat)
         };
         FAUSTFLOAT* level = nullptr;
         CaptureUI ui; ui.roles = role; ui.binds = kBinds;
         ui.nbinds = static_cast<int>(sizeof(kBinds) / sizeof(kBinds[0])); ui.level_out = &level;
         dsp.buildUserInterface(&ui);
-        if (level) *level = 0.f; // unity output (dB); EQ sections keep their flat defaults
+        if (level) *level = 0.f; // unity output (dB); Eq1 Level is a knob (SizeB), Eq2 + EQ freqs stay default
     }
     void compute(FAUSTFLOAT** in, FAUSTFLOAT** out, int n) override { dsp.compute(n, in, out); }
     const char* name() const override { return "HALL"; }

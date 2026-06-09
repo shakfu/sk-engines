@@ -47,11 +47,11 @@ damping Hz / pre-delay ms) just work without per-reverb scaling code.
 | ENV | `Env` | Damp | Damping | HF Damping |
 | PITCH | `Speed` | Tone | Prefilter | Low RT60 |
 | SIZE | `Size` | SizeA | input Diffusion (x2) | In Delay (pre-delay) |
-| MOD_AMT | `ModAmp` | SizeB | tank Diffusion (x2) | LF crossover |
+| MOD_AMT | `ModAmp` | SizeB | tank Diffusion (x2) | tail EQ (Eq1 Level, +/-15 dB) |
 | Alt+PITCH | `Aux` | select | **algorithm: plate / hall** | |
 
 `capabilities() = CapOwnDisplay | CapAux`. Output Level is captured and held fixed (plate -6 dB, hall
-0 dB); Zita's two output EQ sections keep their flat defaults. Aux quantizes its 0..1 value to a reverb
+0 dB); Zita's Eq1 Level is the SizeB knob (tail tone), Eq2 and the EQ frequencies stay default. Aux quantizes its 0..1 value to a reverb
 index (`round(v * (N-1))`, the same idiom reso uses for model select) and re-applies the cached knob
 values to the newly-active kernel, so a switch never strands a knob.
 

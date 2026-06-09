@@ -58,10 +58,10 @@ seconds / damping Hz / pre-delay ms) just work.
 | ENV | Damp | Damping | HF Damping |
 | PITCH | Tone | Prefilter | Low RT60 |
 | SIZE | SizeA | input Diffusion (x2) | In Delay (pre-delay) |
-| MOD_AMT | SizeB | tank Diffusion (x2) | LF crossover |
+| MOD_AMT | SizeB | tank Diffusion (x2) | tail EQ (Eq1 Level, +/-15 dB) |
 | **Alt+PITCH** | **Aux** | **algorithm select (plate / hall)** | |
 
-Output Level is captured and held fixed; Zita's EQ sections keep their flat defaults. The rings meter
+Output Level is captured and held fixed; Zita's Eq2 and EQ frequencies keep their defaults. The rings meter
 the output (plate = blue, hall = violet); while Alt+PITCH is held they show the selector.
 
 Add an algorithm: drop `<name>.dsp` here, append `<name>` to `RV_NAMES` in the Makefile, bump

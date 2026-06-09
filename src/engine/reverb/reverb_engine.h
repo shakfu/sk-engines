@@ -28,7 +28,7 @@ struct ReverbVoice; // defined in reverb_engine.cpp (wraps one generated kernel 
 //   SOS   (Mix)    -> Mix    (wet/dry)        POS   (Pos)   -> Decay (tail length)
 //   ENV   (Env)    -> Damp   (HF damping)     PITCH (Speed) -> Tone  (plate: prefilter / hall: low RT60)
 //   SIZE  (Size)   -> SizeA  (plate: input diffusion / hall: pre-delay)
-//   MODAMT(ModAmp) -> SizeB  (plate: tank diffusion  / hall: LF crossover)
+//   MODAMT(ModAmp) -> SizeB  (plate: tank diffusion  / hall: tail EQ, low-mid peak +/-15 dB)
 //   Alt+PITCH (Aux) -> reverb algorithm select
 class ReverbEngine : public IEngine {
 public:
