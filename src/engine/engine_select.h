@@ -25,6 +25,9 @@
 #elif defined(SPK_ENGINE_TAPE)
   #include "engine/tape/tape_engine.h"
   namespace spotykach { using ActiveEngine = TapeEngine; }
+#elif defined(SPK_ENGINE_FAUST)
+  #include "engine/faust/faust_engine.h"
+  namespace spotykach { using ActiveEngine = FaustEngine; }
 #else
-  #error "No engine selected: build with ENGINE=granular (default), passthrough, delay, edrums, reso, or tape"
+  #error "No engine selected: build with ENGINE=granular (default), passthrough, delay, edrums, reso, tape, or faust"
 #endif

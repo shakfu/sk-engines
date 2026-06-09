@@ -19,3 +19,6 @@ CLAUDE.md
 # tooling (clangd) - regenerate with: bear -- make
 compile_commands.json
 .cache/
+
+# faust-spike codegen: cyfaust lives in a repo-local venv (see src/engine/faust/README.md)
+.venv/

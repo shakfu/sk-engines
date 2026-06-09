@@ -34,6 +34,13 @@ C_DEFS += -DSPK_ENGINE_TAPE
 # (src/hw/stream_deck.cpp + fat_file.cpp) compiles via the platform src/hw/ wildcard, with bodies
 # guarded by SPK_ENGINE_TAPE so every other engine stays byte-identical.
 ENGINE_SOURCES = src/engine/tape/tape_engine.cpp
+else ifeq ($(ENGINE), faust)
+C_DEFS += -DSPK_ENGINE_FAUST
+# FAUST-SPIKE (throwaway): a cyfaust-generated DSP kernel wrapped behind IEngine, to measure
+# generated-code SRAM_EXEC cost on the H7. The kernel header (faust_dsp.h) is generated from
+# voice.dsp by `make faust-gen`; the arch shim (faust_arch.h) is hand-written + MIT. The core
+# Makefile already links with -Wl,--print-memory-usage, so the build prints the SRAM_EXEC usage.
+ENGINE_SOURCES = src/engine/faust/faust_engine.cpp
 else ifeq ($(ENGINE), reso)
 C_DEFS += -DSPK_ENGINE_RESO
 # stmlib's filters use M_PI, which strict -std=c++17 does not expose from <cmath> on arm-none-eabi.
@@ -53,7 +60,7 @@ ENGINE_SOURCES = src/engine/reso/reso_engine.cpp \
 	$(RESO_TP)/rings/resources.cc \
 	$(RESO_TP)/stmlib/dsp/units.cc $(RESO_TP)/stmlib/utils/random.cc $(RESO_TP)/stmlib/dsp/atan.cc
 else
-$(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', 'edrums', 'reso', or 'tape')
+$(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', 'edrums', 'reso', 'tape', or 'faust')
 endif
 
 USE_FATFS = 1
@@ -133,7 +140,7 @@ all: check-boundary
 
 # One-shot variant flash: clean -> build -> flash over DFU. Put the device in DFU mode first
 # (hold Reset ~3s until the bottom pad LEDs breathe white), then `make granular` / `make passthrough`.
-.PHONY: engine-granular engine-passthrough engine-delay engine-edrums engine-reso engine-tape
+.PHONY: engine-granular engine-passthrough engine-delay engine-edrums engine-reso engine-tape engine-faust
 engine-granular:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=granular
@@ -163,6 +170,37 @@ engine-tape:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=tape
 	$(MAKE) ENGINE=tape program-dfu
+
+# FAUST-SPIKE (throwaway). Flash the cyfaust-generated voice engine.
+engine-faust:
+	$(MAKE) clean
+	$(MAKE) -j8 ENGINE=faust
+	$(MAKE) ENGINE=faust program-dfu
+
+# Regenerate src/engine/faust/faust_dsp.h from voice.dsp via cyfaust's cpp backend, re-prepending the
+# project preamble (the generated body is appended verbatim). cyfaust (the Cython libfaust wrapper, full
+# cpp backend) lives in a repo-local .venv: `python3 -m venv .venv && .venv/bin/pip install cyfaust`.
+# Override the interpreter with `make faust-gen CYFAUST_PY=/path/to/python-with-cyfaust` to pin a
+# different libfaust version.
+CYFAUST_PY ?= .venv/bin/python
+FAUST_DIR   = src/engine/faust
+.PHONY: faust-gen
+faust-gen:
+	$(CYFAUST_PY) -m cyfaust compile $(FAUST_DIR)/voice.dsp -b cpp -o $(FAUST_DIR)/.kernel.gen
+	@{ \
+	  echo '// SYNTHUX ACADEMY /////////////////////////////////////////'; \
+	  echo '// SPOTYKACH ///////////////////////////////////////////////'; \
+	  echo '#pragma once'; echo ''; \
+	  echo '// GENERATED FILE - do not edit by hand. Regenerate with `make faust-gen` (cyfaust cpp backend).'; \
+	  echo '// Source: src/engine/faust/voice.dsp. Class name is the Faust default `mydsp` (global namespace);'; \
+	  echo '// FaustEngine refers to it as ::mydsp. The arch shim below provides the dsp/UI/Meta base types the'; \
+	  echo '// generated class assumes (see faust_arch.h for why we declare them ourselves rather than vendor'; \
+	  echo "// Faust's GPL-with-exception headers)."; echo ''; \
+	  echo '#include "engine/faust/faust_arch.h"'; echo ''; \
+	  cat $(FAUST_DIR)/.kernel.gen; \
+	} > $(FAUST_DIR)/faust_dsp.h
+	@rm -f $(FAUST_DIR)/.kernel.gen
+	@echo "regenerated $(FAUST_DIR)/faust_dsp.h"
 
 # Vendored Daisy archives. The core Makefile's link step (-ldaisy -ldaisysp) needs these built, but a
 # fresh checkout has source-only submodules, so a bare `make` used to fail at link with "cannot find
