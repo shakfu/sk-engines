@@ -40,6 +40,8 @@ RESO_SRC    = $(ROOT)/src/engine/reso/reso_engine.cpp
 # The reverb engine's adapter; its Faust kernels are checked-in headers (engine/reverb/faust_kernel_*.h,
 # portable C++) pulled by the .cpp, so no extra sources are needed.
 REVERB_SRC  = $(ROOT)/src/engine/reverb/reverb_engine.cpp
+# The tape engine + its Faust tape-FX kernel (engine/tape/faust_kernel_tapefx.h, header pulled by the .cpp).
+TAPE_SRC    = $(ROOT)/src/engine/tape/tape_engine.cpp
 # reso's DSP is the Mutable Instruments Rings engine + its stmlib support library (under $(RESO_TP)).
 RINGS_SRC   = $(RESO_TP)/rings/dsp/part.cc $(RESO_TP)/rings/dsp/string.cc \
               $(RESO_TP)/rings/dsp/resonator.cc $(RESO_TP)/rings/dsp/fm_voice.cc \
@@ -52,9 +54,10 @@ TEST         = $(BUILD)/test_engine_params
 TEST_EDRUMS  = $(BUILD)/test_edrums_slots
 TEST_RESO    = $(BUILD)/test_reso
 TEST_REVERB  = $(BUILD)/test_reverb
+TEST_TAPE    = $(BUILD)/test_tape
 TEST_STREAM  = $(BUILD)/test_stream
 
-.PHONY: all clean run test test-granular test-edrums test-reso test-reverb test-stream
+.PHONY: all clean run test test-granular test-edrums test-reso test-reverb test-tape test-stream
 all: $(TARGET)
 
 $(TARGET): $(SRC) | $(BUILD)
@@ -69,8 +72,13 @@ $(TEST_EDRUMS): test_edrums_slots.cpp $(LIB_SRC) $(EDRUMS_SRC) | $(BUILD)
 $(TEST_RESO): test_reso.cpp $(LIB_SRC) $(RESO_SRC) $(RINGS_SRC) | $(BUILD)
 	$(CXX) $(CXXFLAGS) test_reso.cpp $(LIB_SRC) $(RESO_SRC) $(RINGS_SRC) -o $@
 
-$(TEST_REVERB): test_reverb.cpp $(LIB_SRC) $(REVERB_SRC) | $(BUILD)
+# The generated Faust kernels are headers (not in $(*_SRC)), so list them explicitly as prerequisites
+# - else `make faust-gen` followed by `make test-*` would relink against a stale binary.
+$(TEST_REVERB): test_reverb.cpp $(LIB_SRC) $(REVERB_SRC) $(wildcard $(ROOT)/src/engine/reverb/faust_kernel_*.h) | $(BUILD)
 	$(CXX) $(CXXFLAGS) test_reverb.cpp $(LIB_SRC) $(REVERB_SRC) -o $@
+
+$(TEST_TAPE): test_tape.cpp $(LIB_SRC) $(TAPE_SRC) $(ROOT)/src/engine/tape/faust_kernel_tapefx.h | $(BUILD)
+	$(CXX) $(CXXFLAGS) test_tape.cpp $(LIB_SRC) $(TAPE_SRC) -o $@
 
 # The SD-streaming core (SpscRing + Play/RecordStream) is self-contained header-only logic with no
 # engine/Daisy/FatFs deps, so its test compiles on its own.
@@ -86,7 +94,7 @@ run: $(TARGET)
 
 # `test` runs both engine harnesses. Both inject the transport via EngineContext (granular drives the
 # real platform Transport; edrums uses a small stub ITransport) - the post-transport-decoupling way.
-test: test-granular test-edrums test-reso test-reverb test-stream
+test: test-granular test-edrums test-reso test-reverb test-tape test-stream
 
 test-granular: $(TEST)
 	./$(TEST)
@@ -99,6 +107,9 @@ test-reso: $(TEST_RESO)
 
 test-reverb: $(TEST_REVERB)
 	./$(TEST_REVERB)
+
+test-tape: $(TEST_TAPE)
+	./$(TEST_TAPE)
 
 test-stream: $(TEST_STREAM)
 	./$(TEST_STREAM)

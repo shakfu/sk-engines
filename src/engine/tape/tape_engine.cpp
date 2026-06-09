@@ -1,10 +1,54 @@
 #include "engine/tape/tape_engine.h"
+#include "engine/arena.h"
+#include "engine/tape/faust_kernel_tapefx.h" // the cyfaust-generated kernel: tfx_tapefx::mydsp
 
+#include <algorithm>
 #include <cmath>
+#include <cstring>
+#include <new> // placement new
 
 namespace spotykach {
 
-void TapeEngine::init(const EngineContext& ctx) { _stream = ctx.stream; _time = ctx.time; }
+// Per-deck tape-FX kernel: wow/flutter (modulated fractional delay) -> Jiles-Atherton hysteresis. The
+// generated kernel is mono (1 in, 1 out); compute() is allocation-free and in-place safe (Faust reads
+// each input sample into a local before writing the output). The ~16 KB delay buffer lives inside the
+// object, so the whole struct is placement-new'd into the SDRAM arena. Knobs are written as normalized
+// 0..1 values straight into the captured zones (the .dsp does the musical scaling).
+struct TapeFx {
+    tfx_tapefx::mydsp dsp;
+    FAUSTFLOAT* z[4] = { nullptr, nullptr, nullptr, nullptr }; // drive, char, wow, rate
+
+    struct Cap : UI {
+        TapeFx* fx;
+        void bind(const char* l, FAUSTFLOAT* zp) {
+            if      (std::strcmp(l, "drive") == 0) fx->z[0] = zp;
+            else if (std::strcmp(l, "char")  == 0) fx->z[1] = zp;
+            else if (std::strcmp(l, "wow")   == 0) fx->z[2] = zp;
+            else if (std::strcmp(l, "rate")  == 0) fx->z[3] = zp;
+        }
+        void addHorizontalSlider(const char* l, FAUSTFLOAT* zp, FAUSTFLOAT, FAUSTFLOAT, FAUSTFLOAT, FAUSTFLOAT) override { bind(l, zp); }
+        void addVerticalSlider  (const char* l, FAUSTFLOAT* zp, FAUSTFLOAT, FAUSTFLOAT, FAUSTFLOAT, FAUSTFLOAT) override { bind(l, zp); }
+    };
+
+    void init(int sr) { dsp.init(sr); Cap ui; ui.fx = this; dsp.buildUserInterface(&ui); }
+    void set(int which, float v) { if (z[which]) *z[which] = v; }       // which: 0..3, v in [0,1]
+    void process(float* buf, int n) { FAUSTFLOAT* io[1] = { buf }; dsp.compute(n, io, io); } // in-place
+};
+
+void TapeEngine::init(const EngineContext& ctx) {
+    _stream = ctx.stream;
+    _time   = ctx.time;
+    // Construct a tape-FX kernel per deck in the SDRAM arena (each ~16 KB of delay-line state).
+    Arena ar(ctx.arena);
+    const int sr = static_cast<int>(ctx.sample_rate);
+    for (int i = 0; i < 2; i++) {
+        if (void* m = ar.alloc<uint8_t>(sizeof(TapeFx), alignof(TapeFx))) {
+            _fx[i] = new (m) TapeFx();
+            _fx[i]->init(sr);
+            for (int p = 0; p < 4; p++) _fx[i]->set(p, _fx_n[i][p]); // seed from the cached defaults
+        }
+    }
+}
 
 // Main-loop housekeeping: push each deck's loop-enable to the stream (so it seeks to the top vs stops at
 // EOF), and action a Frippertronics fade-out that asked to stop (stop() touches FatFs, so it must run
@@ -27,6 +71,11 @@ void TapeEngine::process(const float* const* in, float** out, size_t size) {
     float monoA[kMaxFrames], monoB[kMaxFrames];
     _render_deck(DeckRef::A, in, 0, monoA, n);
     _render_deck(DeckRef::B, in, 1, monoB, n);
+
+    // Tape FX (wow/flutter + hysteresis) on the played-back signal only - not on the record monitor,
+    // whose wow/flutter delay would add monitoring latency.
+    if (_fx[0] && _stream->is_playing(DeckRef::A)) _fx[0]->process(monoA, static_cast<int>(n));
+    if (_fx[1] && _stream->is_playing(DeckRef::B)) _fx[1]->process(monoB, static_cast<int>(n));
 
     // Per-block output gains: per-deck pan (selected by the routing switch) scaled by the mix-fader A/B
     // blend. Pan/blend gains are precomputed on knob change, so the ISR loop is just multiplies.
@@ -63,6 +112,15 @@ void TapeEngine::set_param(ParamId id, DeckRef::Ref d, float v) {
                       : v < 0.75f ? Loop::Faded : Loop::Fripp; }
     else if (id == ParamId::Aux) { const int s = static_cast<int>(v * kSlots);
                                    _slot[i] = s < 0 ? 0 : (s >= kSlots ? kSlots - 1 : s); }
+    // Tape FX: POS=drive, SIZE=character, MOD_AMT=wow/flutter depth (rate is MODFREQ, set_mod_speed).
+    else if (id == ParamId::Pos)    { _fx_n[i][0] = v; if (_fx[i]) _fx[i]->set(0, v); }
+    else if (id == ParamId::Size)   { _fx_n[i][1] = v; if (_fx[i]) _fx[i]->set(1, v); }
+    else if (id == ParamId::ModAmp) { _fx_n[i][2] = v; if (_fx[i]) _fx[i]->set(2, v); }
+}
+
+void TapeEngine::set_mod_speed(DeckRef::Ref d, float v, bool /*sync*/) {
+    const int i = (d == DeckRef::A) ? 0 : 1;
+    _fx_n[i][3] = v; if (_fx[i]) _fx[i]->set(3, v);   // MODFREQ -> wow/flutter rate
 }
 
 float TapeEngine::param(ParamId id, DeckRef::Ref d) const {
@@ -72,6 +130,10 @@ float TapeEngine::param(ParamId id, DeckRef::Ref d) const {
     if (id == ParamId::Mix)   return _gain[i];
     if (id == ParamId::Env)   return _env_n[i];
     if (id == ParamId::Aux)   return (static_cast<float>(_slot[i]) + 0.5f) / static_cast<float>(kSlots);
+    if (id == ParamId::Pos)     return _fx_n[i][0]; // drive
+    if (id == ParamId::Size)    return _fx_n[i][1]; // character
+    if (id == ParamId::ModAmp)  return _fx_n[i][2]; // wow/flutter depth
+    if (id == ParamId::ModSpeed) return _fx_n[i][3]; // wow/flutter rate
     return 0.f;
 }
 

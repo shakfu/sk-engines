@@ -11,6 +11,8 @@
 
 namespace spotykach {
 
+struct TapeFx; // defined in tape_engine.cpp: a per-deck Faust kernel (wow/flutter + J-A hysteresis)
+
 // Dual streaming tape deck: two INDEPENDENT mono decks (A/B), each playing or recording its own
 // arbitrarily long file on the SD card, bypassing the in-SDRAM loop-length cap. A deck is play-XOR-
 // record (no overdub), so the two run like a pair of record decks - e.g. play deck A while recording
@@ -46,6 +48,7 @@ public:
 
     void  set_param(ParamId id, DeckRef::Ref d, float v) override;
     float param(ParamId id, DeckRef::Ref d) const override;
+    void  set_mod_speed(DeckRef::Ref d, float v, bool sync) override; // MODFREQ -> tape wow/flutter rate
     void  set_aux_active(DeckRef::Ref d, bool held) override;   // Alt held -> show the slot selector
     bool  set_config(ConfigId id, DeckRef::Ref, int value) override;  // routing switch -> pan topology
     Route route() const override { return _route; }                   // mode L/C/R LED
@@ -123,6 +126,13 @@ private:
 
     uint32_t _err_until[2]    = { 0, 0 };  // now_ms() deadline of each ring's error flash (0 = none)
     uint32_t _last_trig_ms[2] = { 0, 0 };  // now_ms() of each deck's last accepted toggle (debounce)
+
+    // Per-deck tape FX (Faust kernel: wow/flutter + Jiles-Atherton hysteresis), placement-new'd in the
+    // SDRAM arena at init(); only applied to the playback signal. Knobs: POS=drive, SIZE=character,
+    // MOD_AMT=wow/flutter depth, MODFREQ=wow/flutter rate. _fx_n caches the four 0..1 values per deck
+    // (order: drive, char, wow, rate) for param() readback.
+    TapeFx* _fx[2] = { nullptr, nullptr };
+    float   _fx_n[2][4] = { { 0.3f, 0.3f, 0.3f, 0.4f }, { 0.3f, 0.3f, 0.3f, 0.4f } };
 };
 
 } // namespace spotykach

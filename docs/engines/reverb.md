@@ -93,7 +93,7 @@ reused - Dattorro's "Diffusion 1/2" appear in both its Input and Feedback boxes)
   `RV_NAMES`). `voice.dsp` - the retained spike voice (not built).
 - `src/engine/reverb/faust_kernel_<name>.h` - **generated** (do not hand-edit), one `class mydsp` per
   namespace `rv_<name>`. Regenerate with `make faust-gen`.
-- `src/engine/reverb/faust_arch.h` - hand-written MIT `dsp`/`UI`/`Meta` base types.
+- `src/engine/faust_arch.h` - hand-written MIT `dsp`/`UI`/`Meta` base types; shared with the tape engine's Faust kernel.
 - `src/engine/reverb/reverb_engine.{h,cpp}` - the `IEngine` wrapper (arena construction, `CaptureUI` +
   bind tables, role mapping, Aux selector, render).
 - `src/engine/reverb/README.md` - build-system detail and the footprint table.

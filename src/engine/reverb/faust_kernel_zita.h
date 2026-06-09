@@ -4,13 +4,13 @@
 
 // GENERATED FILE - do not edit by hand. Regenerate with `make faust-gen` (cyfaust cpp backend).
 // Source: src/engine/reverb/zita.dsp. The generated `class mydsp` is wrapped in namespace spotykach::rv_zita; its
-// dsp/UI/Meta base types resolve to the global arch shim (see faust_arch.h).
+// dsp/UI/Meta base types resolve to the shared arch shim (see engine/faust_arch.h).
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <math.h>
-#include "engine/reverb/faust_arch.h"
+#include "engine/faust_arch.h"
 
 namespace spotykach { namespace rv_zita {
 /* ------------------------------------------------------------

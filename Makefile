@@ -177,41 +177,41 @@ engine-reverb:
 	$(MAKE) -j8 ENGINE=reverb
 	$(MAKE) ENGINE=reverb program-dfu
 
-# Regenerate the reverb engine's Faust kernels via cyfaust's cpp backend. One header per reverb in
-# RV_NAMES: src/engine/reverb/<name>.dsp -> faust_kernel_<name>.h, with the generated `class mydsp`
-# wrapped in namespace spotykach::rv_<name> so multiple kernels coexist in one build (cyfaust's cpp
-# backend has no class-rename flag, so every kernel is `mydsp` - the namespace disambiguates them). The
-# kernel's own `#include`s are hoisted to global scope (a namespaced #include would pull <cmath> etc.
-# into the namespace); the generated class's unqualified `dsp`/`UI`/`Meta` then resolve to the global
-# arch shim. cyfaust (the Cython libfaust wrapper, full cpp backend) lives in a repo-local .venv:
-# `python3 -m venv .venv && .venv/bin/pip install cyfaust`. Override the interpreter with
-# `CYFAUST_PY=/path/to/python` to pin a different libfaust version. Add a reverb: drop <name>.dsp here,
-# append <name> to RV_NAMES, and register a bind table + concrete ReverbVoice in reverb_engine.cpp.
+# Regenerate every engine's Faust kernel via cyfaust's cpp backend. FAUST_KERNELS lists one
+# "<dir>:<namespace-prefix>:<name>" spec per kernel: it compiles <dir>/<name>.dsp -> <dir>/faust_kernel_<name>.h
+# with the generated `class mydsp` wrapped in namespace spotykach::<prefix><name> so multiple kernels coexist
+# in one build (cyfaust's cpp backend has no class-rename flag, so every kernel is `mydsp` - the namespace
+# disambiguates them, and the generated `__mydsp_H__` include guard is renamed to match). The kernel's own
+# `#include`s are hoisted to global scope (a namespaced #include would pull <cmath> etc. into the namespace);
+# the generated class's unqualified `dsp`/`UI`/`Meta` resolve to the shared arch shim src/engine/faust_arch.h.
+# cyfaust (the Cython libfaust wrapper, full cpp backend) lives in a repo-local .venv: `python3 -m venv .venv
+# && .venv/bin/pip install cyfaust`. Override the interpreter with `CYFAUST_PY=/path/to/python` to pin a
+# different libfaust version. Add a kernel: drop <name>.dsp in its engine dir, add a spec here, and bind it.
 CYFAUST_PY ?= .venv/bin/python
-REVERB_DIR  = src/engine/reverb
-RV_NAMES   ?= dattorro zita
+FAUST_KERNELS ?= src/engine/reverb:rv_:dattorro src/engine/reverb:rv_:zita src/engine/tape:tfx_:tapefx
 .PHONY: faust-gen
 faust-gen:
-	@for nm in $(RV_NAMES); do \
-	  src=$(REVERB_DIR)/$$nm.dsp; \
-	  echo "compiling $$src -> faust_kernel_$$nm.h (namespace spotykach::rv_$$nm)"; \
-	  $(CYFAUST_PY) -m cyfaust compile $$src -b cpp -o $(REVERB_DIR)/.kernel.gen || exit 1; \
+	@for spec in $(FAUST_KERNELS); do \
+	  dir=$${spec%%:*}; rest=$${spec#*:}; pfx=$${rest%%:*}; nm=$${rest##*:}; ns=$$pfx$$nm; \
+	  src=$$dir/$$nm.dsp; out=$$dir/faust_kernel_$$nm.h; \
+	  echo "compiling $$src -> $$out (namespace spotykach::$$ns)"; \
+	  $(CYFAUST_PY) -m cyfaust compile $$src -b cpp -o $$dir/.kernel.gen || exit 1; \
 	  { \
 	    echo '// SYNTHUX ACADEMY /////////////////////////////////////////'; \
 	    echo '// SPOTYKACH ///////////////////////////////////////////////'; \
 	    echo '#pragma once'; echo ''; \
 	    echo "// GENERATED FILE - do not edit by hand. Regenerate with \`make faust-gen\` (cyfaust cpp backend)."; \
-	    echo "// Source: $$src. The generated \`class mydsp\` is wrapped in namespace spotykach::rv_$$nm; its"; \
-	    echo "// dsp/UI/Meta base types resolve to the global arch shim (see faust_arch.h)."; echo ''; \
-	    grep '^#include' $(REVERB_DIR)/.kernel.gen; \
-	    echo '#include "engine/reverb/faust_arch.h"'; echo ''; \
-	    echo "namespace spotykach { namespace rv_$$nm {"; \
-	    grep -v '^#include' $(REVERB_DIR)/.kernel.gen | sed "s/__mydsp_H__/__rv_$${nm}_H__/g"; \
-	    echo "} } // namespace spotykach::rv_$$nm"; \
-	  } > $(REVERB_DIR)/faust_kernel_$$nm.h; \
-	  rm -f $(REVERB_DIR)/.kernel.gen; \
+	    echo "// Source: $$src. The generated \`class mydsp\` is wrapped in namespace spotykach::$$ns; its"; \
+	    echo "// dsp/UI/Meta base types resolve to the shared arch shim (see engine/faust_arch.h)."; echo ''; \
+	    grep '^#include' $$dir/.kernel.gen; \
+	    echo '#include "engine/faust_arch.h"'; echo ''; \
+	    echo "namespace spotykach { namespace $$ns {"; \
+	    grep -v '^#include' $$dir/.kernel.gen | sed "s/__mydsp_H__/__$${ns}_H__/g"; \
+	    echo "} } // namespace spotykach::$$ns"; \
+	  } > $$out; \
+	  rm -f $$dir/.kernel.gen; \
 	done
-	@echo "regenerated: $(foreach n,$(RV_NAMES),faust_kernel_$(n).h)"
+	@echo "regenerated faust kernels"
 
 # Vendored Daisy archives. The core Makefile's link step (-ldaisy -ldaisysp) needs these built, but a
 # fresh checkout has source-only submodules, so a bare `make` used to fail at link with "cannot find

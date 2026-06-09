@@ -39,8 +39,9 @@ into one Faust `process` would run all of them every sample (Faust has no branch
 - `voice.dsp` - the original spike voice (saw -> Moog VCF -> ADSR), retained as an alternate source.
 - `faust_kernel_<name>.h` - **generated** (do not hand-edit). One per reverb, each `class mydsp` in
   namespace `spotykach::rv_<name>`. Regenerate with `make faust-gen`.
-- `faust_arch.h` - hand-written, MIT. The minimal `dsp` / `UI` / `Meta` base types the generated kernels
-  assume, so we avoid vendoring Faust's GPL-with-exception architecture headers.
+- `../faust_arch.h` (shared, `src/engine/faust_arch.h`) - hand-written, MIT. The minimal `dsp` / `UI` /
+  `Meta` base types the generated kernels assume, so we avoid vendoring Faust's GPL-with-exception
+  architecture headers. Shared with the tape engine's Faust kernel.
 - `reverb_engine.{h,cpp}` - the `IEngine` wrapper. Constructs every kernel in the SDRAM arena, captures
   each one's control zones via `buildUserInterface` (a generic `CaptureUI` driven by a per-reverb bind
   table), maps the panel knobs onto reverb-agnostic roles, and selects the active algorithm on Aux.

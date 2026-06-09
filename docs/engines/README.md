@@ -80,6 +80,6 @@ make check-boundary           # platform (hw/ui/memory/transport) must not inclu
 | Stereo delay | `delay` | tempo-synced dual delay line | [delay.md](delay.md) |
 | Edrums | `edrums` | dual Euclidean drum machine (synthesized) | [edrums.md](edrums.md) |
 | Reso | `reso` | dual resonator / pluck voice (Mutable Instruments Rings DSP) | [reso.md](reso.md) |
-| Tape | `tape` | dual streaming SD record/playback decks (no in-memory length cap) | [tape.md](tape.md) |
+| Tape | `tape` | dual streaming SD record/playback decks (no in-memory length cap) + tape FX (wow/flutter, hysteresis) | [tape.md](tape.md) |
 | Reverb | `reverb` | stereo reverb (Dattorro plate / Zita hall), Faust/cyfaust-generated, Alt+PITCH selects | [reverb.md](reverb.md) |
 | Passthrough | `passthrough` | minimal stereo passthrough (reference engine) | [passthrough.md](passthrough.md) |

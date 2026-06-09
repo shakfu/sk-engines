@@ -7,6 +7,8 @@ build-cmake/
 *.mmon
 .*_cache
 
+thirdparty/
+
 # testing
 *.dSYM
 runner
