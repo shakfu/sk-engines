@@ -9,18 +9,27 @@ The platform is intentionally decoupled from any specific engine. Core subsystem
 Current engines include:
 
 1. [granular](docs/engines/granular.md): dual-deck granular looper (the original reference and default engine)
+
 2. [delay](docs/engines/delay.md): tempo-synchronized stereo delay
+
 3. [edrums](docs/engines/edrums.md): four-voice Euclidean drum machine
+
 4. [reso](docs/engines/reso.md): resonator/plucked-string instrument based on the [Mutable Instruments Rings DSP code](https://github.com/pichenettes/eurorack/tree/master/rings)
+
 5. [tape](docs/engines/tape.md): dual streaming tape deck (two independent record/playback decks, SD-streamed, no in-memory length cap)
+
 6. [reverb](docs/engines/reverb.md): stereo reverb with two switchable algorithms (Dattorro plate / Zita-rev1 hall), generated from [Faust](https://faust.grame.fr) sources
+
 7. [gigaverb](docs/engines/gigaverb.md): stereo reverb authored in Max/MSP **gen~** and translated to C++ via [gen-dsp](https://github.com/shakfu/gen-dsp) (Tom Erbe's gigaverb)
+
 8. [passthrough](docs/engines/passthrough.md): minimal stereo passthrough engine demonstrating the platform API
 
 Engines can be authored in three ways:
 
 1. Using [C++](docs/engine-types/cpp.md) against `IEngine`
+
 2. Using [**Faust**](docs/engine-types/faust.md) (via [cyfaust](https://github.com/shakfu/cyfaust))
+
 3. Using Max/MSP's [**gen~**](docs/engine-types/gen.md) language (via [gen-dsp](https://github.com/shakfu/gen-dsp))
 
 The latter two generate C++ that the platform wraps behind the same contract. The three methods are documented in [`docs/engine-types/`](docs/engine-types/).
