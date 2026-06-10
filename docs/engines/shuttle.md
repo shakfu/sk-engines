@@ -44,7 +44,7 @@ The varispeed read pointer wraps within the window (both directions); the Seq re
 
 - **Record** (Alt+Play) captures the live input into the focused track's buffer (overwrite from the start), monitored as it records. Deck A records input A, deck B records input B.
 
-- **Load** (Alt+PITCH selects a slot) drains an existing `/shuttle/` WAV from the card into the track's RAM buffer over a few main-loop passes, then shuttles it like any other take. Reuses the platform's streaming service via the `SPK_USE_STREAM` capability flag (shared with the `tape` engine).
+- **Load** (Alt+PITCH selects a slot) drains an existing `/shuttle/` WAV from the card into the track's RAM buffer over a few main-loop passes, then shuttles it like any other take. Reuses the platform's streaming service via the `SPK_USE_STREAM` capability flag (shared with the `tape` engine). A loaded file must be **mono 32-bit-float WAV at 48 kHz** (other formats are rejected); convert sources with [`scripts/convert_tape_audio.py`](../../scripts/convert_tape_audio.py) - pass `--engine shuttle` so it warns past the ~30 s RAM cap - or the one-liners in [`docs/preparing-audio.md`](../preparing-audio.md).
 
 ## Architecture
 

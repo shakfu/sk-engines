@@ -18,13 +18,31 @@ namespace spotykach {
 // body bytes, stopping exactly at DataSize (so trailing chunks past `data` aren't streamed as audio).
 class WavStreamReader : public IChunkSource {
 public:
-    // `f` must be an open file positioned at 0. Returns false on a missing/invalid header.
+    // Device sample rate; the streaming path does no resampling, so a non-48k file would play at the
+    // wrong pitch. Matches the rate wav.h writes into recorded headers.
+    static constexpr uint32_t kPlaybackSampleRate = 48000;
+
+    // `f` must be an open file positioned at 0. Returns false on a missing/invalid/unsupported header.
     bool begin(IByteFile* f) {
         _f = f; _remaining = 0; _data_start = 0; _data_size = 0;
-        uint8_t hdr[64];
+        // Wider than the canonical 44-byte header: an externally-authored WAV often prepends `fact` /
+        // `LIST` metadata chunks before `data`, pushing it well past 64 bytes (ffmpeg float output lands
+        // it near offset 90). The chunk scanner needs the whole header region in this buffer to find
+        // `data`; 256 covers real-world metadata, and anything larger is rejected (safe) rather than
+        // mis-parsed.
+        uint8_t hdr[256];
         const uint32_t got = f->read(hdr, sizeof(hdr));
         WavHeader h{}; size_t header_size = 0;
         if (!wav_header(hdr, got, h, header_size)) return false;
+        // Format guard: the streaming path hands raw body bytes straight to the engine's float frames
+        // with NO conversion, so anything but the native record format is reinterpreted as garbage (the
+        // distortion seen loading 16-bit / 32-bit-int / stereo files). Reject mismatches here - the
+        // caller (start_play) turns a false into the deck's error flash. kWav* track the build (float32
+        // default, int16 under LOFI_INT16); the engine is mono at the device's 48 kHz.
+        if (h.AudioFormat   != kWavAudioFormat)    return false;
+        if (h.BitsPerSample != kWavBitsPerSample)  return false;
+        if (h.NbrChannels   != 1)                  return false;
+        if (h.SampleRate    != kPlaybackSampleRate) return false;
         if (!f->seek(static_cast<uint32_t>(header_size))) return false;
         _data_start = static_cast<uint32_t>(header_size);
         _data_size  = h.DataSize;

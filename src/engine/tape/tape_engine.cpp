@@ -169,12 +169,14 @@ void TapeEngine::render(DisplayModel& m) {
         const bool recording = _stream && _stream->is_recording(dk);
         const bool err       = _time && now < _err_until[i];   // failed start still flashing
         // Idle off, playing bright green, recording bright red, rejected start amber - an unambiguous
-        // off->on per deck. Feedback rides the Play-pad LED (the pad you pressed).
-        const uint32_t c = err       ? kErrColor
+        // off->on per deck. Feedback rides the Play-pad LED (the pad you pressed). A wrong-format reject
+        // STROBES the amber (~4.5 Hz) to read distinctly from the steady amber of a missing/empty slot.
+        const bool err_lit   = err && (!_err_fmt[i] || ((now / 110u) & 1u) == 0u);
+        const uint32_t c = err_lit   ? kErrColor
                          : playing    ? 0x00ff00
                          : recording  ? 0xff0000
                          :              0x000000;
-        m.play[i] = { c, (playing || recording || err) ? 1.f : 0.f };
+        m.play[i] = { c, (playing || recording || err_lit) ? 1.f : 0.f };
         if (_aux_held[i]) {
             // Alt+PITCH held: show the tape-slot selector - kSlots dots evenly around the ring (selected
             // bright, recorded mid, empty dim) over a faint base. (Play/record stays on the LED.)
@@ -248,6 +250,7 @@ void TapeEngine::_toggle(DeckRef::Ref d, bool record) {
     if (_time && now - _last_trig_ms[i] < kDebounceMs) return;
     _last_trig_ms[i] = now;
     _err_until[i]    = 0;                            // clear any stale flash on a fresh press
+    _err_fmt[i]      = false;
 
     if (record) {
         if (_stream->is_recording(d))      _stream->stop(d);
@@ -257,7 +260,12 @@ void TapeEngine::_toggle(DeckRef::Ref d, bool record) {
         }
     } else {
         if (_stream->is_playing(d))        _stream->stop(d);
-        else if (!_stream->is_recording(d)) { if (!_stream->start_play(d, _path(d, _slot[i]))) _err_until[i] = now + kErrFlashMs; }
+        else if (!_stream->is_recording(d)) {
+            if (!_stream->start_play(d, _path(d, _slot[i]))) {
+                _err_until[i] = now + kErrFlashMs;
+                _err_fmt[i]   = _stream->exists(_path(d, _slot[i]));  // file present but refused = bad format
+            }
+        }
     }
 }
 

@@ -24,3 +24,6 @@ compile_commands.json
 
 # faust-spike codegen: cyfaust lives in a repo-local venv (see src/engine/faust/README.md)
 .venv/
+
+# scratch: local audio sources / converted card files (see docs/preparing-audio.md)
+tmp/

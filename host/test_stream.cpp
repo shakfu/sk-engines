@@ -218,7 +218,7 @@ int main() {
         const auto body = ramp(17 * kBlock + 99);
         MemFile file;
         WavStreamWriter w;
-        check(w.begin(&file), "WAV writer emits a placeholder header");
+        check(w.begin(&file, 1), "WAV writer emits a placeholder header");
         for (uint32_t pi = 0; pi < body.size(); ) {       // stream the body in blocks
             uint32_t c = std::min<uint32_t>(kBlock, (uint32_t)body.size() - pi);
             w.write(body.data() + pi, c); pi += c;
@@ -249,7 +249,7 @@ int main() {
         const auto take = ramp(29 * kBlock + 211);
         MemFile file;
         // record: produce() -> RecordStream -> WavStreamWriter -> MemFile
-        WavStreamWriter w; w.begin(&file);
+        WavStreamWriter w; w.begin(&file, 1);
         uint8_t rb1[2048]; SpscRing ring1; ring1.init(rb1, sizeof(rb1));
         uint8_t sc1[256];
         RecordStream rec; rec.init(&ring1, sc1, sizeof(sc1)); rec.start(&w);
@@ -277,7 +277,7 @@ int main() {
     {
         const auto body = ramp(5 * kBlock + 137);
         MemFile file;
-        WavStreamWriter w; w.begin(&file);
+        WavStreamWriter w; w.begin(&file, 1);
         for (uint32_t pi = 0; pi < body.size(); ) {
             uint32_t c = std::min<uint32_t>(kBlock, (uint32_t)body.size() - pi);
             w.write(body.data() + pi, c); pi += c;
@@ -303,6 +303,55 @@ int main() {
         bool tiled_ok = out.size() >= want;
         for (uint32_t i = 0; i < want && tiled_ok; i++) if (out[i] != body[i % body.size()]) tiled_ok = false;
         check(tiled_ok, "loop: playback repeats the body seamlessly across the rewind");
+    }
+
+    // --- 10. Format validation + header robustness. The streaming reader hands raw body bytes straight
+    // to the engine's float frames with no conversion, so it must accept ONLY the native record format
+    // (mono, kWav* depth/format, 48 kHz) - else 16-bit / 32-bit-int / stereo files reinterpret as garbage
+    // (the distortion seen on hardware). It must also find `data` even when an externally-authored WAV
+    // prepends a fat metadata chunk that pushes `data` past the old 64-byte parse window.
+    {
+        auto le16 = [](std::vector<uint8_t>& v, uint16_t x){ v.push_back(x & 0xff); v.push_back((x >> 8) & 0xff); };
+        auto le32 = [](std::vector<uint8_t>& v, uint32_t x){ for (int i = 0; i < 4; i++) v.push_back((x >> (8 * i)) & 0xff); };
+        auto tag  = [](std::vector<uint8_t>& v, const char* s){ for (int i = 0; i < 4; i++) v.push_back((uint8_t)s[i]); };
+        // Build a WAV: fmt chunk (+ optional JUNK metadata chunk of `junk` bytes before data) + body ramp.
+        auto make_wav = [&](uint16_t fmt, uint16_t ch, uint16_t bits, uint32_t sr, uint32_t junk, uint32_t body) {
+            const uint16_t blockAlign = ch * (bits / 8);
+            std::vector<uint8_t> v;
+            tag(v, "RIFF"); le32(v, 0); tag(v, "WAVE");
+            tag(v, "fmt "); le32(v, 16); le16(v, fmt); le16(v, ch); le32(v, sr);
+            le32(v, sr * blockAlign); le16(v, blockAlign); le16(v, bits);
+            if (junk) { tag(v, "JUNK"); le32(v, junk); for (uint32_t i = 0; i < junk; i++) v.push_back((uint8_t)(i & 0xff)); }
+            tag(v, "data"); le32(v, body);
+            for (uint32_t i = 0; i < body; i++) v.push_back((uint8_t)(i & 0xff));
+            const uint32_t riff = (uint32_t)v.size() - 8;
+            v[4] = riff & 0xff; v[5] = (riff >> 8) & 0xff; v[6] = (riff >> 16) & 0xff; v[7] = (riff >> 24) & 0xff;
+            return v;
+        };
+        const uint32_t body = 3 * kBlock + 17;
+        auto accepts = [&](std::vector<uint8_t> bytes) {
+            MemFile mf; mf.buf = std::move(bytes); mf.cur = 0; WavStreamReader r; return r.begin(&mf);
+        };
+        const uint16_t wrongFmt  = (kWavAudioFormat == 3) ? 1 : 3;     // int vs float, opposite the build
+        const uint16_t wrongBits = (kWavBitsPerSample == 32) ? 16 : 32;
+
+        check( accepts(make_wav(kWavAudioFormat, 1, kWavBitsPerSample, 48000, 0, body)), "validation: native mono file accepted");
+        check(!accepts(make_wav(kWavAudioFormat, 2, kWavBitsPerSample, 48000, 0, body)), "validation: stereo rejected");
+        check(!accepts(make_wav(wrongFmt,        1, kWavBitsPerSample, 48000, 0, body)), "validation: wrong audio-format (int vs float) rejected");
+        check(!accepts(make_wav(kWavAudioFormat, 1, wrongBits,         48000, 0, body)), "validation: wrong bit depth rejected");
+        check(!accepts(make_wav(kWavAudioFormat, 1, kWavBitsPerSample, 44100, 0, body)), "validation: non-48k sample rate rejected");
+
+        // Robustness: a 64-byte metadata chunk pushes `data` well past offset 64; the old 64-byte window
+        // would miss it (begin -> false -> silent no-load), the widened window must still find + stream it.
+        {
+            MemFile mf; mf.buf = make_wav(kWavAudioFormat, 1, kWavBitsPerSample, 48000, 64, body); mf.cur = 0;
+            WavStreamReader r;
+            check(r.begin(&mf), "robustness: data behind a metadata chunk (past byte 64) still parses");
+            std::vector<uint8_t> out(body); uint32_t g = r.read(out.data(), body);
+            bool body_ok = (g == body);
+            for (uint32_t i = 0; i < body && body_ok; i++) if (out[i] != (uint8_t)(i & 0xff)) body_ok = false;
+            check(body_ok, "robustness: body after the metadata chunk reads back intact");
+        }
     }
 
     if (g_failures == 0) { std::printf("OK: all stream checks passed\n"); return 0; }

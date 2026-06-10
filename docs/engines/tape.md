@@ -81,6 +81,8 @@ Total per-deck gain into the bus = **MIX volume x mix-fader blend x pan(L/R)**.
 
 Each deck has **8 slots**, files `/tapes/tape_a_1.wav` … `/tapes/tape_a_8.wav` (and `tape_b_`), so takes are non-destructive and recallable rather than overwriting one fixed file. **Alt+PITCH** selects the active slot; while Alt is held, the deck's ring shows the **8 slots as evenly-spaced dots with the selected one bright** (the same `set_aux_active` selector seam reso uses for its model picker). Selecting a slot sets the target for the next Play / record - it does not interrupt a deck already playing. Record writes the selected slot (overwriting only that one); Play reads it (amber if empty). The selector shows **recorded vs empty** slots (selected bright / recorded mid / empty dim) - the engine probes each slot file with `IStreamDeck::exists` (`f_stat`) in `prepare()` when the selector opens, and marks a slot used the moment its record starts. The `/tapes/` directory is created on first record. Single-digit slot numbers keep the names 8.3-safe.
 
+To load **your own** audio into a slot, the file must be **mono 32-bit-float WAV at 48 kHz** - the engine does no on-device conversion, and a wrong-format file (16-bit / 32-bit-int / stereo / non-48k) is rejected with a strobing amber error LED. Convert source files with [`scripts/convert_tape_audio.py`](../../scripts/convert_tape_audio.py) or the ffmpeg/sox one-liners in [`docs/preparing-audio.md`](../preparing-audio.md).
+
 ---
 
 ## Loop modes (ENV knob, per deck)
