@@ -172,7 +172,7 @@ all: check-boundary
 
 # One-shot variant flash: clean -> build -> flash over DFU. Put the device in DFU mode first
 # (hold Reset ~3s until the bottom pad LEDs breathe white), then `make granular` / `make passthrough`.
-.PHONY: engine-granular engine-passthrough engine-delay engine-edrums engine-reso engine-tape engine-reverb
+.PHONY: engine-granular engine-passthrough engine-delay engine-edrums engine-reso engine-tape engine-shuttle engine-reverb
 engine-granular:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=granular
@@ -202,6 +202,11 @@ engine-tape:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=tape
 	$(MAKE) ENGINE=tape program-dfu
+
+engine-shuttle:
+	$(MAKE) clean
+	$(MAKE) -j8 ENGINE=shuttle
+	$(MAKE) ENGINE=shuttle program-dfu
 
 # Flash the Faust-generated reverb engine (Dattorro plate / Zita hall).
 engine-reverb:
