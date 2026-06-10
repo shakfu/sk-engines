@@ -83,7 +83,7 @@ The firmware is a fixed hardware/UI **platform** that hosts a swappable DSP **en
 
 - `make -j8 ENGINE=reverb` — a stereo reverb with **two switchable algorithms** (a Dattorro plate and a Zita-rev1 hall, Alt+PITCH selects live), generated from [Faust](https://faust.grame.fr) sources by cyfaust. Regenerate the kernels with `make faust-gen`.
 
-- `make -j8 ENGINE=gen_gigaverb` — a stereo reverb (Tom Erbe's **gigaverb**) authored in Max/MSP **gen~** and translated to C++ by [gen-dsp](https://github.com/shakfu/gen-dsp). The engine directory is generated from a gen~ export with `make gen-engines` (or `scripts/gen_engine.py`); see [`docs/engine-types/gen.md`](docs/engine-types/gen.md).
+- `make -j8 ENGINE=gigaverb` — a stereo reverb (Tom Erbe's **gigaverb**) authored in Max/MSP **gen~** and translated to C++ by [gen-dsp](https://github.com/shakfu/gen-dsp). The engine directory is generated from a gen~ export with `make gen-engines` (or `scripts/gen_engine.py`); see [`docs/engine-types/gen.md`](docs/engine-types/gen.md).
 
 - `make -j8 ENGINE=passthrough` — a minimal stereo-passthrough variant.
 
@@ -113,7 +113,7 @@ The bootloader version used in this project enables USB DFU firmware updating fr
 
 `make program-dfu` flashes whatever is currently in `build/` (it does not rebuild). To flash a non-default engine, build it first in the same step, e.g. `make ENGINE=passthrough && make program-dfu`.
 
-For convenience there are one-shot targets that **clean + build + flash** a variant (put the device in DFU mode first, as in step 3): `make engine-granular` (the looper), `make engine-delay`, `make engine-edrums`, `make engine-reso`, `make engine-tape`, `make engine-reverb`, and `make engine-passthrough`. The gen~ engine has no one-shot target; flash it with `make clean && make ENGINE=gen_gigaverb && make program-dfu`.
+For convenience there are one-shot targets that **clean + build + flash** a variant (put the device in DFU mode first, as in step 3): `make engine-granular` (the looper), `make engine-delay`, `make engine-edrums`, `make engine-reso`, `make engine-tape`, `make engine-reverb`, and `make engine-passthrough`. The gen~ engine has no one-shot target; flash it with `make clean && make ENGINE=gigaverb && make program-dfu`.
 
 Once finished, the device will automatically boot the new firmware. This can "brick" (temporarily) the device and require reinstallation of either the bootloader, the firmware binary, or both.
 

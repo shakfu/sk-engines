@@ -73,15 +73,15 @@ ENGINE_SOURCES = src/engine/reso/reso_engine.cpp \
 # `else ifeq` block per export. They use the genlib-isolation bridge from gen-dsp + the shared
 # src/engine/gen/ family (GenEngine<W> + the arena-bound genlib runtime). See `make gen-engines`.
 # >>> gen:gigaverb >>> (managed by scripts/gen_engine.py)
-else ifeq ($(ENGINE), gen_gigaverb)
-C_DEFS += -DSPK_ENGINE_GEN_GIGAVERB
+else ifeq ($(ENGINE), gigaverb)
+C_DEFS += -DSPK_ENGINE_GIGAVERB
 C_DEFS += -DGENLIB_NO_JSON
 C_DEFS += -DDAISY_EXT_NAME=gigaverb
 C_DEFS += -DGEN_EXPORTED_NAME=gen_exported
 C_DEFS += -DGEN_EXPORTED_HEADER=\"gen_exported.h\"
 C_DEFS += -DGEN_EXPORTED_CPP=\"gen_exported.cpp\"
 C_DEFS += -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter
-GEN_DIR = src/engine/gen_gigaverb
+GEN_DIR = src/engine/gigaverb
 GEN_INC = -I$(GEN_DIR) -I$(GEN_DIR)/gen -I$(GEN_DIR)/gen/gen_dsp
 ENGINE_SOURCES = $(GEN_DIR)/_ext_daisy.cpp src/engine/gen/genlib_arena.cpp
 # <<< gen:gigaverb <<<
@@ -251,12 +251,12 @@ faust-gen:
 # private allocator), emits <name>_engine.h (a ParamId map you retune by hand -- preserved across
 # re-runs unless --force-glue), and wires the ENGINE switch + engine_select.h in marker-delimited
 # blocks. gen-dsp lives in the repo-local .venv alongside cyfaust (`.venv/bin/pip install -e <gen-dsp>`).
-# Add an engine: drop its spec here (or run the script directly), then `make ENGINE=gen_<name>`.
+# Add an engine: drop its spec here (or run the script directly), then `make ENGINE=<name>`.
 GEN_PY ?= .venv/bin/python
 # One "<gen~-export-dir>:<name>" spec per engine. gigaverb points at its own vendored export (the copy
 # gen-dsp dropped under the engine dir is itself a valid gen-dsp input), so a regen is reproducible on
 # any checkout without the external gen-dsp source tree. For a new engine, point at your gen~ export dir.
-GEN_EXPORTS ?= src/engine/gen_gigaverb/gen:gigaverb
+GEN_EXPORTS ?= src/engine/gigaverb/gen:gigaverb
 .PHONY: gen-engines
 gen-engines:
 	@test -n "$(GEN_EXPORTS)" || { echo "set GEN_EXPORTS='<export-dir>:<name> ...' (or run scripts/gen_engine.py directly)"; exit 1; }

@@ -33,8 +33,8 @@
   namespace spotykach { using ActiveEngine = ShuttleEngine; }
 // gen~ engines (SPK_ENGINE_GEN_*) are appended below by scripts/gen_engine.py.
 // >>> gen:gigaverb >>>
-#elif defined(SPK_ENGINE_GEN_GIGAVERB)
-  #include "engine/gen_gigaverb/gigaverb_engine.h"
+#elif defined(SPK_ENGINE_GIGAVERB)
+  #include "engine/gigaverb/gigaverb_engine.h"
   namespace spotykach { using ActiveEngine = GigaverbEngine; }
 // <<< gen:gigaverb <<<
 #else

@@ -2,7 +2,7 @@
 
 Author the DSP in **Max/MSP [gen~]**, export it to C++, and translate the export into an `IEngine` module with [gen-dsp](https://github.com/shakfu/gen-dsp). It is the gen~ counterpart of the [Faust](faust.md) method, but with **the least hand-written firmware**: the wrapper is fully generic, and one host command emits a whole engine directory. The trade-off is that it is currently capability-minimal - stereo audio + knob params only (`capabilities() = 0`).
 
-**Implementation:** [gigaverb](../engines/gigaverb.md) (`ENGINE=gen_gigaverb`). Each gen~ export becomes its own engine, `ENGINE=gen_<name>`. For the `IEngine` contract and knob grammar, see [../engines/README.md](../engines/README.md).
+**Implementation:** [gigaverb](../engines/gigaverb.md) (`ENGINE=gigaverb`). Each gen~ export becomes its own engine, `ENGINE=<name>`. For the `IEngine` contract and knob grammar, see [../engines/README.md](../engines/README.md).
 
 ## Concept
 
@@ -18,12 +18,12 @@ Max gen~ export ──gen-dsp──▶ _ext_daisy.{cpp,h}  (wrapper_* C interfac
    src/engine/gen/  ┌───────────────┴────────────────┐
    (shared family)  │ genlib_arena.cpp  gen_engine.h  │  GenEngine<W> : IEngine
                     └───────────────┬────────────────┘
-   gen_<name>/<name>_engine.h ──────┘  traits W -> <name>_daisy::wrapper_*  +  ParamId map
+   <name>/<name>_engine.h ──────┘  traits W -> <name>_daisy::wrapper_*  +  ParamId map
 ```
 
 ## Header isolation (why it is split this way)
 
-genlib's headers (`genlib_ops.h`, `genlib_platform.h`) define `exp2`/`trunc` and enable ARM fast-math paths that collide with libDaisy and modern `<cmath>`. They are therefore quarantined: **only** `gen_<name>/_ext_daisy.cpp` and `src/engine/gen/genlib_arena.cpp` include genlib (with gen-dsp's `WIN32` / `GENLIB_NO_DENORM_TEST` / `ARM_MATH_CM7`-undef guards). The platform side - `app.cpp` -> `engine_select.h` -> `<name>_engine.h` - sees only `_ext_daisy.h`: an opaque `typedef void GenState` and `wrapper_*` functions taking `float**`. The two sides meet at that C boundary and never share a translation unit. `t_sample` is `float` (genlib self-defines `GENLIB_USE_FLOAT32` for `__arm__`), so the audio buffers pass straight through.
+genlib's headers (`genlib_ops.h`, `genlib_platform.h`) define `exp2`/`trunc` and enable ARM fast-math paths that collide with libDaisy and modern `<cmath>`. They are therefore quarantined: **only** `<name>/_ext_daisy.cpp` and `src/engine/gen/genlib_arena.cpp` include genlib (with gen-dsp's `WIN32` / `GENLIB_NO_DENORM_TEST` / `ARM_MATH_CM7`-undef guards). The platform side - `app.cpp` -> `engine_select.h` -> `<name>_engine.h` - sees only `_ext_daisy.h`: an opaque `typedef void GenState` and `wrapper_*` functions taking `float**`. The two sides meet at that C boundary and never share a translation unit. `t_sample` is `float` (genlib self-defines `GENLIB_USE_FLOAT32` for `__arm__`), so the audio buffers pass straight through.
 
 ## Memory model
 
@@ -41,7 +41,7 @@ I/O is marshalled to the platform stereo bus in `GenEngine::process()`: the firs
 
 - `src/engine/gen/genlib_arena.{h,cpp}` - the arena-bound genlib runtime. Shared. The only hand-written divergence from gen-dsp's stock `genlib_daisy.cpp` is the allocator backend.
 
-- `src/engine/gen_<name>/` - one per export:
+- `src/engine/<name>/` - one per export:
 
   - `gen/` - the copied gen~ export (`gen_exported.cpp/.h`, `gen_dsp/` genlib). **Generated; do not edit.**
 
@@ -53,7 +53,7 @@ I/O is marshalled to the platform stereo bus in `GenEngine::process()`: the firs
 
 - `scripts/gen_engine.py` - the host-side code generator (driver around gen-dsp).
 
-- Registered in `src/engine/engine_select.h` and the root `Makefile` (`ENGINE=gen_<name>` block, `gen-engines` codegen target) - both in marker-delimited blocks the generator upserts.
+- Registered in `src/engine/engine_select.h` and the root `Makefile` (`ENGINE=<name>` block, `gen-engines` codegen target) - both in marker-delimited blocks the generator upserts.
 
 ## Prerequisite (one-time)
 
@@ -77,20 +77,20 @@ gen-dsp runs only at codegen time on the host; the firmware build is plain `arm-
    make gen-engines GEN_EXPORTS="/path/to/export:myverb /path/to/other:thing"
    ```
 
-   `<name>` must be lowercase `[a-z0-9_]`; the engine becomes `ENGINE=gen_myverb`. `make gen-engines` with no args regenerates whatever `GEN_EXPORTS` defaults to in the Makefile.
+   `<name>` must be lowercase `[a-z0-9_]`; the engine becomes `ENGINE=myverb`. `make gen-engines` with no args regenerates whatever `GEN_EXPORTS` defaults to in the Makefile.
 
-3. **Map the knobs.** Edit `index_of()` in `src/engine/gen_myverb/myverb_engine.h`. The generator emits a positional default over the reachable `ParamId`s (with each param's name + range in a comment); reassign to taste. This is the only file you hand-edit.
+3. **Map the knobs.** Edit `index_of()` in `src/engine/myverb/myverb_engine.h`. The generator emits a positional default over the reachable `ParamId`s (with each param's name + range in a comment); reassign to taste. This is the only file you hand-edit.
 
 4. **Build + flash.** Engine switches go through `make clean` (see below):
 
    ```text
-   make clean && make -j8 ENGINE=gen_myverb     # the link prints SRAM_EXEC usage
-   make ENGINE=gen_myverb program-dfu           # flash (device in DFU mode first)
+   make clean && make -j8 ENGINE=myverb     # the link prints SRAM_EXEC usage
+   make ENGINE=myverb program-dfu           # flash (device in DFU mode first)
    ```
 
 **Re-generating** after editing the patch: re-run the same command. The mechanical files are refreshed wholesale; `myverb_engine.h` (your knob map) is preserved unless you pass `--force-glue`.
 
-**Removing** an engine: `scripts/gen_engine.py myverb --remove` deletes `src/engine/gen_myverb/` and unwires both files. Run `make clean` once afterward (see below).
+**Removing** an engine: `scripts/gen_engine.py myverb --remove` deletes `src/engine/myverb/` and unwires both files. Run `make clean` once afterward (see below).
 
 ## Engine switching (use `make clean`)
 

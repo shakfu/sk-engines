@@ -37,6 +37,12 @@ The **tape engine** (`src/engine/tape/`) also carries a Faust kernel: `tapefx.ds
 
 `src/engine/passthrough/passthrough_engine.h` — header-only; depends only on the contract + `nocopy.h` + `<cmath>`. The reference for how small a non-granular engine is.
 
+### gen~ engines (gen-dsp)
+
+**Shared gen~ infrastructure**: `src/engine/gen/` is the gen-dsp counterpart of `faust_arch.h` — shared runtime support for the **family** of gen~ engines, not a leaf engine itself. It holds `gen_engine.h` (the `GenEngine<W>` template, one `IEngine` adapter shared by every gen~ export — it forwards `process()` to the generated DSP and maps `ParamId`s to gen params) and `genlib_arena.{h,cpp}` (the `genlib` memory runtime bound to the SDRAM arena, so gen~'s allocations land in the engine arena rather than the heap). It lives in `src/engine/` — not `src/dsp/` — deliberately: it is `IEngine`-coupled (`gen_engine.h` includes `engine/iengine.h`, `GenEngine<W> : public IEngine`), so it belongs to the engine framework, whereas `src/dsp/` is the engine-*agnostic* primitive tier. This mirrors the Shared Faust infrastructure above (`faust_arch.h`): codegen-runtime support for an engine family sits in `src/engine/`, shared by every gen~ engine.
+
+A concrete gen~ engine lives in its own `src/engine/<name>/` (e.g. `gigaverb/`) - an unprefixed plain engine dir, exactly like a native or Faust engine - holding the **generated** gen~ export under `gen/` (`gen_exported.{cpp,h}` + the genlib `gen_dsp/` runtime), the `_ext_daisy.cpp` platform bridge, and the `<name>_engine.h` trait header (e.g. `gigaverb_engine.h`) that supplies the `W` for `GenEngine<W>` — `W::process`/`set_param`/`get_param` forward to the export. The host-side generator `scripts/gen_engine.py` (`make gen-engines`) turns a gen~ export into a wired-in engine (`ENGINE=<name>`, `SPK_ENGINE_<NAME>`) and appends its `else ifeq` block to `engine_select.h` + the `Makefile`. Note the only `gen`-named directory is the shared infra `src/engine/gen/`; concrete gen~ engines carry no `gen_` prefix (the engine's gen~ provenance lives in its docs and the `manifest.json`, not its build-target name). See [engine-types/gen.md](engine-types/gen.md).
+
 ## A new engine
 
 Lives in its own subdirectory: **`src/engine/<name>/`**, holding `<name>_engine.{h,cpp}` and that engine's private DSP. It depends only on the contract headers. Checklist (also in `architecture.md`):

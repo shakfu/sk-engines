@@ -24,6 +24,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **gen~ engine build targets drop the `gen_` prefix.** The gigaverb engine renames `gen_gigaverb` -> `gigaverb` (`ENGINE=gigaverb`, `src/engine/gigaverb/`, `SPK_ENGINE_GIGAVERB`), and the generator convention changes to match: `scripts/gen_engine.py` now wires a gen~ export as a plain `ENGINE=<name>` / `src/engine/<name>/` / `SPK_ENGINE_<NAME>` (no `gen_`/`SPK_ENGINE_GEN_`), so a gen~ engine sits beside native and Faust engines with no prefix - and the only `gen`-named directory is the shared infra `src/engine/gen/`. The gen~ provenance now lives in the engine's docs + `manifest.json`, not its target name. (`scripts/gen_engine.py`, `Makefile`, `src/engine/engine_select.h`, `src/engine/gigaverb/`, `docs/engines/gigaverb.md`, `docs/engine-types/gen.md`, `docs/engine-layout.md`, `README.md`)
+
 - **SD streaming service gated by capability (`SPK_USE_STREAM`), not engine name.** The streaming platform (`StreamDeck`/`FatFile`, SDRAM rings, keep-card-mounted) was guarded by `#if defined(SPK_ENGINE_TAPE)`; it now keys on a Makefile-set `SPK_USE_STREAM` flag that both `tape` and `shuttle` define. The `app.cpp` construct/pump/inject of `_stream` is the one shared touch point (a hardware service the platform must own); the rest now reference the capability, so the next streaming engine is a one-line Makefile change. Non-streaming engines stay byte-identical (`tape` output unchanged - both macros are defined for a tape build). (`Makefile`, `src/app.cpp`, `src/hw/buffer.sdram.{h,cpp}`, `src/hw/stream_deck.cpp`, `src/hw/fat_file.cpp`, `src/memory/storage.h`)
 
 ## [0.2.4]

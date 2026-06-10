@@ -83,6 +83,7 @@ The **Built via** column links to the development method ([`../engine-types/`](.
 | Edrums | `edrums` | dual Euclidean drum machine (synthesized) | [native C++](../engine-types/cpp.md) | [edrums.md](edrums.md) |
 | Reso | `reso` | dual resonator / pluck voice (Mutable Instruments Rings DSP) | [native C++](../engine-types/cpp.md) | [reso.md](reso.md) |
 | Tape | `tape` | dual streaming SD record/playback decks (no in-memory length cap) + tape FX (wow/flutter, hysteresis) | [native C++](../engine-types/cpp.md) + [Faust](../engine-types/faust.md) | [tape.md](tape.md) |
+| Shuttle | `shuttle` | buffer-based bipolar/reverse varispeed tape (four in-RAM tracks; capstan-speed PITCH, per-track loop window) | [native C++](../engine-types/cpp.md) | [shuttle.md](shuttle.md) |
 | Reverb | `reverb` | stereo reverb (Dattorro plate / Zita hall), Alt+PITCH selects | [Faust](../engine-types/faust.md) | [reverb.md](reverb.md) |
-| gigaverb | `gen_gigaverb` | stereo reverb from a Max gen~ patch | [gen~](../engine-types/gen.md) | [gigaverb.md](gigaverb.md) |
+| gigaverb | `gigaverb` | stereo reverb from a Max gen~ patch | [gen~](../engine-types/gen.md) | [gigaverb.md](gigaverb.md) |
 | Passthrough | `passthrough` | minimal stereo passthrough (reference engine) | [native C++](../engine-types/cpp.md) | [passthrough.md](passthrough.md) |

@@ -5,7 +5,7 @@ This is the gen~ analogue of `make faust-gen`. For a gen~ export it:
 
   1. runs gen-dsp's Daisy backend into a temp dir,
   2. syncs the genlib-isolation bridge (the wrapper_* C interface, the copied
-     gen/ export) into src/engine/gen_<name>/, dropping gen-dsp's board main
+     gen/ export) into src/engine/<name>/, dropping gen-dsp's board main
      (gen_ext_daisy.cpp) and its private allocator (genlib_daisy.*) -- the
      sk-engines platform provides those, and genlib allocation is routed into
      the EngineContext SDRAM arena by src/engine/gen/genlib_arena.cpp,
@@ -82,7 +82,7 @@ def _class_name(name: str) -> str:
 
 
 def _macro(name: str) -> str:
-    return "SPK_ENGINE_GEN_" + re.sub(r"[^0-9a-zA-Z]", "_", name).upper()
+    return "SPK_ENGINE_" + re.sub(r"[^0-9a-zA-Z]", "_", name).upper()
 
 
 def _sync_mechanical(src: Path, dst: Path) -> None:
@@ -212,7 +212,7 @@ def _unwire(root: Path, name: str) -> None:
         p = root / rel
         new = _block_re(name).sub("", p.read_text())
         p.write_text(new)
-    eng = root / "src" / "engine" / f"gen_{name}"
+    eng = root / "src" / "engine" / name
     if eng.is_dir():
         shutil.rmtree(eng)
         print(f"  removed {eng.relative_to(root)}/ and unwired Makefile + engine_select.h")
@@ -223,7 +223,7 @@ def _unwire(root: Path, name: str) -> None:
 def _wire_makefile(root: Path, name: str, manifest: dict) -> None:
     mk = root / "Makefile"
     text = mk.read_text()
-    engine = f"gen_{name}"
+    engine = name
     gen_name = manifest["gen_name"]
     block = (
         f"# >>> gen:{name} >>> (managed by scripts/gen_engine.py)\n"
@@ -256,7 +256,7 @@ def _wire_engine_select(root: Path, name: str) -> None:
     block = (
         f"// >>> gen:{name} >>>\n"
         f"#elif defined({_macro(name)})\n"
-        f'  #include "engine/gen_{name}/{name}_engine.h"\n'
+        f'  #include "engine/{name}/{name}_engine.h"\n'
         f"  namespace spotykach {{ using ActiveEngine = {cls}; }}\n"
         f"// <<< gen:{name} <<<\n"
     )
@@ -270,14 +270,14 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Generate an sk-engines engine from a gen~ export.")
     ap.add_argument("export", type=Path, nargs="?",
                     help="gen~ export directory (contains gen_exported.cpp + gen_dsp/); omit with --remove")
-    ap.add_argument("name", help="engine name, e.g. gigaverb -> ENGINE=gen_gigaverb")
+    ap.add_argument("name", help="engine name, e.g. gigaverb -> ENGINE=gigaverb")
     ap.add_argument("--board", default="seed", help="gen-dsp Daisy board variant (default: seed)")
     ap.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parent.parent,
                     help="sk-engines repo root (default: parent of scripts/)")
     ap.add_argument("--force-glue", action="store_true",
                     help="overwrite <name>_engine.h even if it exists (drops hand-tuned ParamId map)")
     ap.add_argument("--remove", action="store_true",
-                    help="delete src/engine/gen_<name>/ and unwire it from the Makefile + engine_select.h")
+                    help="delete src/engine/<name>/ and unwire it from the Makefile + engine_select.h")
     args = ap.parse_args()
 
     if not re.fullmatch(r"[a-z][a-z0-9_]*", args.name):
@@ -285,7 +285,7 @@ def main() -> int:
     root = args.repo_root.resolve()
 
     if args.remove:
-        print(f"gen_engine: removing gen_{args.name}")
+        print(f"gen_engine: removing {args.name}")
         _unwire(root, args.name)
         return 0
 
@@ -294,11 +294,11 @@ def main() -> int:
     export = args.export.resolve()
     if not export.is_dir():
         raise SystemExit(f"export not found: {export}")
-    engine_dir = root / "src" / "engine" / f"gen_{args.name}"
+    engine_dir = root / "src" / "engine" / args.name
 
-    print(f"gen_engine: {export} -> {engine_dir} (ENGINE=gen_{args.name})")
+    print(f"gen_engine: {export} -> {engine_dir} (ENGINE={args.name})")
     with tempfile.TemporaryDirectory() as tmp:
-        tmp_out = Path(tmp) / f"gen_{args.name}"
+        tmp_out = Path(tmp) / args.name
         _run_gen_dsp(export, args.name, args.board, tmp_out)
         manifest = json.loads((tmp_out / "manifest.json").read_text())
         _sync_mechanical(tmp_out, engine_dir)
@@ -316,7 +316,7 @@ def main() -> int:
     n = len(manifest.get("params", []))
     print(f"  wired  Makefile + engine_select.h  ({manifest['num_inputs']}in/"
           f"{manifest['num_outputs']}out, {n} params)")
-    print(f"  build: make ENGINE=gen_{args.name}")
+    print(f"  build: make ENGINE={args.name}")
     return 0
 
 
