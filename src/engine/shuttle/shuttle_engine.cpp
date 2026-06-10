@@ -36,6 +36,7 @@ void ShuttleEngine::init(const EngineContext& ctx) {
             if (!_buf[d][s]) _cap = 0;                // arena exhausted -> no tape (defensive)
         }
     _recompute_blend();
+    _recompute_pan();
 }
 
 void ShuttleEngine::_request_load(DeckRef::Ref d, int s) {
@@ -92,15 +93,15 @@ void ShuttleEngine::process(const float* const* in, float** out, size_t size) {
     _render_track(DeckRef::B, 0, in, 1, b0, n);
     _render_track(DeckRef::B, 1, in, 1, b1, n);
 
-    // Deck mono = its two tracks summed at their per-track volume; then deck pan x A/B blend to stereo.
-    const float gA0 = _gain[0][0], gA1 = _gain[0][1], gB0 = _gain[1][0], gB1 = _gain[1][1];
-    const float La = _gA * _panL[0], Ra = _gA * _panR[0];
-    const float Lb = _gB * _panL[1], Rb = _gB * _panR[1];
+    // Each track is panned independently into the stereo bus: total gain = MIX volume x A/B blend x
+    // its per-track pan (L/R, route-dependent). Coeffs computed once per block, outside the sample loop.
+    const float LA0 = _gA * _gain[0][0] * _panL[0][0], RA0 = _gA * _gain[0][0] * _panR[0][0];
+    const float LA1 = _gA * _gain[0][1] * _panL[0][1], RA1 = _gA * _gain[0][1] * _panR[0][1];
+    const float LB0 = _gB * _gain[1][0] * _panL[1][0], RB0 = _gB * _gain[1][0] * _panR[1][0];
+    const float LB1 = _gB * _gain[1][1] * _panL[1][1], RB1 = _gB * _gain[1][1] * _panR[1][1];
     for (size_t i = 0; i < n; i++) {
-        const float mA = a0[i] * gA0 + a1[i] * gA1;
-        const float mB = b0[i] * gB0 + b1[i] * gB1;
-        out[0][i] = mA * La + mB * Lb;
-        out[1][i] = mA * Ra + mB * Rb;
+        out[0][i] = a0[i] * LA0 + a1[i] * LA1 + b0[i] * LB0 + b1[i] * LB1;
+        out[1][i] = a0[i] * RA0 + a1[i] * RA1 + b0[i] * RB0 + b1[i] * RB1;
     }
 }
 
@@ -183,7 +184,7 @@ void ShuttleEngine::set_param(ParamId id, DeckRef::Ref d, float v) {
     else if (id == ParamId::Pos)  { _pos_n[i][s]  = v; }   // loop window start  (computed per block)
     else if (id == ParamId::Size) { _size_n[i][s] = v; }   // loop window length (computed per block)
     else if (id == ParamId::Mix) { _gain[i][s] = v; }
-    else if (id == ParamId::AltPos) { _pan[i] = v; _panL[i] = std::cos(v * kHalfPi); _panR[i] = std::sin(v * kHalfPi); }  // per-deck
+    else if (id == ParamId::AltPos) { _pan[i][s] = v; _recompute_pan(); }   // per-track manual pan
     else if (id == ParamId::Crossfade) { _xfade = v; _recompute_blend(); }
     else if (id == ParamId::Aux) {
         const int sl = static_cast<int>(v * kTapeSlots);
@@ -199,7 +200,7 @@ float ShuttleEngine::param(ParamId id, DeckRef::Ref d) const {
     if (id == ParamId::Pos)    return _pos_n[i][s];
     if (id == ParamId::Size)   return _size_n[i][s];
     if (id == ParamId::Mix)    return _gain[i][s];
-    if (id == ParamId::AltPos) return _pan[i];
+    if (id == ParamId::AltPos) return _pan[i][s];
     if (id == ParamId::Aux)    return (static_cast<float>(_tape_slot[i][s]) + 0.5f) / static_cast<float>(kTapeSlots);
     return 0.f;
 }
@@ -276,9 +277,71 @@ void ShuttleEngine::_recompute_blend() {
     _gB = _xfade >= 0.5f ? 1.f : 2.f * _xfade;
 }
 
+// Routing switch (mirrors the granular/tape int mapping so the panel L/C/R reads the same):
+// 0 = Stereo (centre), 1 = DoubleMono (left), 2 = GenerativeStereo (right). The platform calls this
+// every loop, so act only on an actual switch transition - otherwise GenerativeStereo would re-roll
+// its random pans on every pass instead of once on entry.
+bool ShuttleEngine::set_config(ConfigId id, DeckRef::Ref, int value) {
+    if (id == ConfigId::Route) {
+        const Route r = (value == 2) ? Route::GenerativeStereo
+                      : (value == 1) ? Route::DoubleMono
+                                     : Route::Stereo;
+        if (r != _route) {
+            _route = r;
+            if (_route == Route::GenerativeStereo) _roll_random_pans();   // also recomputes the gains
+            else                                   _recompute_pan();
+        }
+    }
+    return false;
+}
+
+// Resolve each track's effective pan position to equal-power L/R gains, per the routing switch:
+//   DoubleMono       -> the manual Alt+POS pan (_pan)
+//   Stereo           -> auto-spread: a deck's tracks fan evenly across L..R (2 tracks -> hard L/R)
+//   GenerativeStereo -> the random positions rolled in _roll_random_pans (_rnd)
+void ShuttleEngine::_recompute_pan() {
+    for (int i = 0; i < 2; i++) {
+        for (int s = 0; s < kTracks; s++) {
+            float p;
+            switch (_route) {
+                case Route::Stereo:           p = (kTracks > 1) ? static_cast<float>(s) / (kTracks - 1) : 0.5f; break;
+                case Route::GenerativeStereo: p = _rnd[i][s]; break;
+                default:                      p = _pan[i][s]; break;   // DoubleMono
+            }
+            _panL[i][s] = std::cos(p * kHalfPi);
+            _panR[i][s] = std::sin(p * kHalfPi);
+        }
+    }
+}
+
+// Assign every track a fresh random pan position (the GenerativeStereo / RIGHT routing). Uses a small
+// LCG so it needs no platform RNG and stays deterministic, mirroring the tape engine.
+void ShuttleEngine::_roll_random_pans() {
+    for (int i = 0; i < 2; i++) {
+        for (int s = 0; s < kTracks; s++) {
+            _rng = _rng * 1664525u + 1013904223u;
+            _rnd[i][s] = static_cast<float>(_rng >> 8) * (1.f / 16777216.f);   // [0,1)
+        }
+    }
+    _recompute_pan();
+}
+
+// Per-track standby hue. Each deck's ring shows only its FOCUSED track, so giving the two tracks
+// distinct hues makes it obvious at a glance which one is currently visible. Picked clear of the
+// transport colors (green fwd / cyan rev / red rec / amber err) so an idle glow is never mistaken
+// for a transport state.
+static constexpr uint32_t kTrackHue[ShuttleEngine::kTracks] = {
+    0x7c4dff,   // track 1: indigo
+    0xffc000,   // track 2: amber
+};
+
 void ShuttleEngine::render(DisplayModel& m) {
     m.clear();
     const uint32_t now = _time ? _time->now_ms() : 0;
+    // Slow standby pulse so a loaded-but-stopped deck reads as "on, ready" instead of powered-off.
+    // Smooth raised-cosine over ~2.4 s, kept dim (0.35..0.60) since it is only an ambient idle glow.
+    const float ph      = static_cast<float>(now % 2400u) / 2400.f;
+    const float breathe = 0.35f + 0.25f * (0.5f - 0.5f * std::cos(6.2831853f * ph));
     for (DeckRef::Ref dk : { DeckRef::A, DeckRef::B }) {
         const int  i   = idx(dk);
         const int  s   = _active[i];
@@ -292,11 +355,16 @@ void ShuttleEngine::render(DisplayModel& m) {
         else if (_rolling[i][s] && _speed[i][s] < 0.f) { c = 0x00a0ff; b = 1.f; }
         else if (_rolling[i][s])    { c = 0x404040;  b = 0.5f; }
         else                        { c = 0x000000;  b = 0.f; }
-        m.play[i] = { c, b };
+        const bool live = err || _recording[i][s] || _rolling[i][s];
+        // Idle transport pad glows faintly in the focused track's hue (ready, not playing); live
+        // states keep their direction color.
+        m.play[i] = live ? DisplayModel::Indicator{ c, b }
+                         : DisplayModel::Indicator{ kTrackHue[s], breathe * 0.5f };
 
         if (_aux_held[i]) {
             // Alt+PITCH held: tape-slot selector for the focused track (selected bright, recorded mid,
             // empty dim).
+            m.ring[i].set_brightness(1.f);
             m.ring[i].set_hex_color(0x202020); m.ring[i].set_segment(0.f, 0.999f);
             m.ring[i].set_point_hex_color(0xffffff);
             for (int t = 0; t < kTapeSlots; t++) {
@@ -304,25 +372,36 @@ void ShuttleEngine::render(DisplayModel& m) {
                 m.ring[i].set_point(static_cast<uint8_t>(t * (kRingLeds / kTapeSlots)), pb);
             }
         } else if (_swap_show[i] > 0) {
-            // Just after a Rev swap: flash the focused-track number (1 or 2 dots) for a moment.
+            // Just after a Rev swap: flash the focused-track number (1 or 2 dots) for a moment, on the
+            // new track's hue so the color change itself reinforces the swap.
             _swap_show[i]--;
-            m.ring[i].set_hex_color(c); m.ring[i].set_segment(0.f, 0.999f);
+            m.ring[i].set_brightness(1.f);
+            m.ring[i].set_hex_color(kTrackHue[s]); m.ring[i].set_segment(0.f, 0.999f);
             m.ring[i].set_point_hex_color(0xffffff);
             for (int t = 0; t <= s; t++) m.ring[i].set_point(static_cast<uint8_t>(t * 4), 1.f);
         } else {
-            m.ring[i].set_hex_color(c); m.ring[i].set_segment(0.f, 0.999f);
-            if (_len[i][s] > 0) {                                // moving read-position dot
+            // Normal: live -> direction color at full; idle -> the focused track's hue breathing as an
+            // ambient "loaded and ready" standby (was previously black, which looked powered-off).
+            if (live) { m.ring[i].set_brightness(1.f);     m.ring[i].set_hex_color(c); }
+            else      { m.ring[i].set_brightness(breathe); m.ring[i].set_hex_color(kTrackHue[s]); }
+            m.ring[i].set_segment(0.f, 0.999f);
+            if (_len[i][s] > 0) {                                // read-position dot (moving when live)
                 m.ring[i].set_point_hex_color(0xffffff);
-                m.ring[i].add_point(static_cast<float>(_read[i][s] / static_cast<double>(_len[i][s])), 1.f);
+                m.ring[i].add_point(static_cast<float>(_read[i][s] / static_cast<double>(_len[i][s])),
+                                    live ? 1.f : 0.55f);
             }
         }
         m.ring[i].set_updated();
     }
+    // Routing switch position on the mode L/C/R LED (matches the tape engine).
+    if      (_route == Route::DoubleMono) m.mode_left   = { 0xffffff, 0.8f };
+    else if (_route == Route::Stereo)     m.mode_center = { 0xffffff, 0.8f };
+    else                                  m.mode_right  = { 0xffffff, 0.8f };
 }
 
 const char* ShuttleEngine::_path(DeckRef::Ref d, int slot) {
     char* p = _pbuf;
-    for (const char* s = "tapes/tape_"; *s; ) *p++ = *s++;
+    for (const char* s = "shuttle/tape_"; *s; ) *p++ = *s++;
     *p++ = (d == DeckRef::A) ? 'a' : 'b';
     *p++ = '_';
     *p++ = static_cast<char>('1' + slot);

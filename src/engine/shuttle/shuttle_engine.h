@@ -39,8 +39,14 @@ namespace spotykach {
 // the window always stays inside the recording (start slides over the unused tail as size shrinks).
 //
 // Per-track knobs (repoint on a Rev swap): PITCH=speed, MIX=volume, POS=loop start, SIZE=loop length,
-// Alt+PITCH=tape slot. Per-DECK (shared by both tracks, so a swap leaves them put): Alt+POS=pan.
-// Global: the MIX fader A/B blend.
+// Alt+POS=pan, Alt+PITCH=tape slot. Per-DECK: none. Global: the MIX fader A/B blend.
+//
+// ROUTING SWITCH (set_config ConfigId::Route, mirrors the panel L/C/R) - the four tracks are panned
+// individually into the stereo bus, and the switch picks where each track's pan comes from:
+//   - LEFT  (DoubleMono):       each track at its own manual Alt+POS pan.
+//   - CENTRE(Stereo):           auto-spread - a deck's two tracks hard L/R, for instant stereo width.
+//   - RIGHT (GenerativeStereo): each track at a random pan (re-rolled on entering the mode).
+// In CENTRE/RIGHT the manual Alt+POS pan is overridden (but retained, so LEFT restores it).
 //
 // The four tracks free-run at independent speeds, so they drift out of phase (the point - organic tape
 // phasing). The SEQ pad re-aligns all four to their loop start at once (one atomic gesture), so they
@@ -60,6 +66,8 @@ public:
 
     void  set_param(ParamId id, DeckRef::Ref d, float v) override;
     float param(ParamId id, DeckRef::Ref d) const override;
+    bool  set_config(ConfigId id, DeckRef::Ref, int value) override;  // routing switch -> per-track pan
+    Route route() const override { return _route; }                   // mode L/C/R LED
     void  set_aux_active(DeckRef::Ref d, bool held) override;   // Alt held -> show the slot selector
     bool  take_param_reseed(DeckRef::Ref d) override;           // Play-snap / Rev-swap soft-takeover
 
@@ -91,8 +99,10 @@ private:
     void  _render_track(DeckRef::Ref d, int s, const float* const* in, int ch, float* mono, size_t n);
     void  _window(int i, int s, uint32_t& start, uint32_t& len) const;  // POS/SIZE -> loop window frames
     void  _recompute_blend();                      // crossfade -> per-deck A/B gains
+    void  _recompute_pan();                        // route + pan positions -> per-track L/R gains
+    void  _roll_random_pans();                     // fresh random equal-power pans (GenerativeStereo)
     void  _request_load(DeckRef::Ref d, int s);    // start an SD->RAM load of a track's selected slot
-    const char* _path(DeckRef::Ref d, int slot);   // slot path, e.g. "tapes/tape_a_1.wav"
+    const char* _path(DeckRef::Ref d, int slot);   // slot path, e.g. "shuttle/tape_a_1.wav"
 
     static float speed_from_knob(float v);         // knob 0..1 -> signed speed [-kMaxSpeed..+kMaxSpeed]
     static float knob_for_speed(float s);          // inverse for s in (0..kMaxSpeed]: the Play snap target
@@ -132,13 +142,14 @@ private:
     Load     _load[2][kTracks]      = {};
     bool     _realign[2][kTracks]   = {};     // main-loop -> ISR: snap this track's read pointer to 0
     int      _declick[2][kTracks]   = {};     // realign declick: 2*kDeclickRamp..0, jump at kDeclickRamp
+    float    _pan[2][kTracks]  = { { 0.5f, 0.5f }, { 0.5f, 0.5f } };  // Alt+POS: manual per-track pan (0..1)
+    float    _rnd[2][kTracks]  = { { 0.5f, 0.5f }, { 0.5f, 0.5f } };  // GenerativeStereo random pan positions
+    float    _panL[2][kTracks] = { { kCenterGain, kCenterGain }, { kCenterGain, kCenterGain } };  // effective L/R
+    float    _panR[2][kTracks] = { { kCenterGain, kCenterGain }, { kCenterGain, kCenterGain } };  // (per route)
 
     // ---- Per-deck state ----------------------------------------------------------------------
     int  _active[2]    = { 0, 0 };            // focused track per deck (Rev swaps it)
     bool _want_reseed[2] = { false, false };  // Play-snap or Rev-swap -> platform reseeds pickup
-    float _pan[2]  = { 0.5f, 0.5f };          // Alt+POS, shared by both tracks of the deck
-    float _panL[2] = { kCenterGain, kCenterGain };
-    float _panR[2] = { kCenterGain, kCenterGain };
     bool _aux_held[2] = { false, false };
     bool _rescan[2]   = { false, false };
     bool _slot_used[2][kTapeSlots] = {};      // SD file existence (shared by a deck's two tracks)
@@ -149,7 +160,9 @@ private:
     // ---- Global ------------------------------------------------------------------------------
     float _xfade = 0.5f;
     float _gA = 1.f, _gB = 1.f;
-    char  _pbuf[20];
+    Route _route = Route::DoubleMono;     // routing switch position (set each loop via set_config)
+    uint32_t _rng = 0x9e3779b9u;          // LCG state for the GenerativeStereo random pans
+    char  _pbuf[24];   // holds "shuttle/tape_a_1.wav" + NUL
 };
 
 } // namespace spotykach

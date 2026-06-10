@@ -20,7 +20,7 @@ The headline control is **PITCH as a bipolar capstan-speed knob**: noon stops th
 | **POS** | `Pos` | per-track | loop window **start** (slides the loop through the recording) |
 | **SIZE** | `Size` | per-track | loop window **length** (full buffer down to a short stutter) |
 | **MIX** | `Mix` | per-track | track volume |
-| **Alt + PITCH** | `Aux` | per-track | tape-slot select (8 files/deck under `/tapes/`) -> loads the slot into RAM |
+| **Alt + PITCH** | `Aux` | per-track | tape-slot select (8 files/deck under `/shuttle/`) -> loads the slot into RAM |
 | **Alt + POS** | `AltPos` | per-deck | pan (equal-power) |
 | **Mix fader** | `Crossfade` | global | deck A/B blend |
 | **Play pad** | - | per-deck (focused) | toggle rolling; **snaps the track to unity (+1x)** on engage |
@@ -44,7 +44,7 @@ The varispeed read pointer wraps within the window (both directions); the Seq re
 
 - **Record** (Alt+Play) captures the live input into the focused track's buffer (overwrite from the start), monitored as it records. Deck A records input A, deck B records input B.
 
-- **Load** (Alt+PITCH selects a slot) drains an existing `/tapes/` WAV from the card into the track's RAM buffer over a few main-loop passes, then shuttles it like any other take. Reuses the platform's streaming service via the `SPK_USE_STREAM` capability flag (shared with the `tape` engine).
+- **Load** (Alt+PITCH selects a slot) drains an existing `/shuttle/` WAV from the card into the track's RAM buffer over a few main-loop passes, then shuttles it like any other take. Reuses the platform's streaming service via the `SPK_USE_STREAM` capability flag (shared with the `tape` engine).
 
 ## Architecture
 

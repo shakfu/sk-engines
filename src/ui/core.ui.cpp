@@ -124,7 +124,7 @@ void CoreUI::_init_values()
 void CoreUI::_reseed_focus(const DeckRef::Ref ref)
 {
     for (ParamId id : { ParamId::Pos, ParamId::Size, ParamId::Env, ParamId::Speed,
-                        ParamId::Mix, ParamId::ModAmp, ParamId::ModSpeed, ParamId::Aux }) {
+                        ParamId::Mix, ParamId::ModAmp, ParamId::ModSpeed, ParamId::Aux, ParamId::AltPos }) {
         mv(id)[ref].set(_engine.param(id, ref));
     }
 }

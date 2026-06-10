@@ -10,6 +10,7 @@ Priority is driven less by size than by what unblocks/gates what, and by whether
 | P2 | Faust DSP on hardware: CPU + voicing (reverb J-A, tape FX) | low | med | **hardware flash** | gates reverb + tape-FX merge to `main` |
 | P3 | Refactor delay engine onto shared primitives | med | med-high | **hardware flash** | none (primitives now in `dsp/`) |
 | P4 | Convert the build to CMake (spike done; flash-gated) | high | high | flash (host parity met) | strategic intent |
+| P5 | Fix tape engine GenerativeStereo re-roll-every-loop bug | trivial | low | host build + **flash** (by ear) | none (do now with build-only batch) |
 
 Hardware-batch note: the Faust DSP CPU/voicing check (P2), the delay refactor (P3), the mono-input *software fallback* (if P1 says "not normalled"), and the still-outstanding Phase-5 R4a granular-path flash-verify are all hardware-gated - do them together in one bench session.
 
@@ -97,3 +98,17 @@ A green flash is necessary but not sufficient. Items 1-4 are independent of the 
 4. **Build the compiler-enforced boundary (the actual headline justification).** The spike carries the grep-guard verbatim; it does NOT yet implement the per-target include roots (`target_include_directories(... PRIVATE)`) that turn a platform->engine include into a compile error instead of a grep hit. That needs the engine and platform split into separate targets with private includes - the real reason to adopt at all (see the top of this item); without it, CMake is only the aesthetic win this item explicitly says is not worth it.
 
 5. **Flash-verify each image you intend to run.** All four engines build host-side, but only a bench flash confirms boot + audio/IO per image. This is the acceptance gate above.
+
+## P5 - Tape engine GenerativeStereo re-rolls its random pans every loop
+
+`TapeEngine::set_config` (`src/engine/tape/tape_engine.cpp:148-156`) re-rolls the random pans on **every** call while in GenerativeStereo:
+
+```cpp
+if (_route == Route::GenerativeStereo) _roll_random_pans();
+```
+
+But the platform calls `set_config(ConfigId::Route, ...)` **every loop** (`src/ui/core.ui.cpp:632`), so the "random pan per deck" is re-randomized continuously instead of once on entry - contradicting the engine's own doc comment ("re-rolled on entering the mode", `tape_engine.h:29`). The result is jittering pans rather than a stable random placement.
+
+**Fix:** guard the action on an actual route transition, exactly as the shuttle engine now does (`src/engine/shuttle/shuttle_engine.cpp` `set_config` - track the previous `Route` and only re-roll / recompute when it changes). Found 2026-06-10 while wiring the routing switch + per-track pan into the shuttle engine; shuttle was written with the guard, tape was left as-is to keep the change scoped.
+
+Build-verifiable (compiles + the logic is inspectable), but the audible "pans no longer jitter" confirmation needs a flash - fold the code fix into the build-only batch now, confirm by ear in the next bench session.
