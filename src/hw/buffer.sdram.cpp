@@ -24,8 +24,8 @@ uint8_t* SDRAMBuffer::card_buffer() const
     return _card_buffer;
 }
 
-#if defined(SPK_ENGINE_TAPE)
-// Streaming rings for the tape engine: one ring PER DECK, 1 MB each (~5.5 s of mono read-ahead at
+#if defined(SPK_USE_STREAM)
+// Streaming rings for a streaming engine: one ring PER DECK, 1 MB each (~5.5 s of mono read-ahead at
 // 48 kHz, or ~2.7 s stereo) - a power of two as SpscRing requires - plus a 32 KB SD chunk scratch
 // shared by both decks (the main-loop pump services them sequentially). ~2 MB on top of the 48 MB
 // arena, well within the 64 MB SDRAM. Outside the engine arena so they never collide with engine buffers.

@@ -32,7 +32,9 @@ else ifeq ($(ENGINE), tape)
 C_DEFS += -DSPK_ENGINE_TAPE
 # Streaming tape engine = its IEngine wrapper (tape_engine.cpp). Its SD streaming service
 # (src/hw/stream_deck.cpp + fat_file.cpp) compiles via the platform src/hw/ wildcard, with bodies
-# guarded by SPK_ENGINE_TAPE so every other engine stays byte-identical.
+# guarded by SPK_USE_STREAM (the platform stream capability) so every non-streaming engine stays
+# byte-identical. SPK_USE_STREAM is the feature flag any engine needing SD streaming opts into.
+C_DEFS += -DSPK_USE_STREAM
 ENGINE_SOURCES = src/engine/tape/tape_engine.cpp
 else ifeq ($(ENGINE), reverb)
 C_DEFS += -DSPK_ENGINE_REVERB
@@ -41,6 +43,14 @@ C_DEFS += -DSPK_ENGINE_REVERB
 # (faust_arch.h) is hand-written + MIT. The kernels' delay-line state is placement-new'd into the SDRAM
 # arena, so SRAM stays flat; the link's -Wl,--print-memory-usage shows SRAM_EXEC (the binding region).
 ENGINE_SOURCES = src/engine/reverb/reverb_engine.cpp
+else ifeq ($(ENGINE), shuttle)
+C_DEFS += -DSPK_ENGINE_SHUTTLE
+# Buffer-based bipolar/reverse "varispeed shuttle" tape: 4 in-SDRAM mono tape buffers (2 decks x 2
+# tracks). RECORD needs only the arena; LOAD (load a tape slot from SD into RAM) opts into the shared
+# platform streaming service via SPK_USE_STREAM (same flag the tape engine sets), so the platform
+# constructs/pumps/injects the StreamDeck and ctx.stream is live on target.
+C_DEFS += -DSPK_USE_STREAM
+ENGINE_SOURCES = src/engine/shuttle/shuttle_engine.cpp
 else ifeq ($(ENGINE), reso)
 C_DEFS += -DSPK_ENGINE_RESO
 # stmlib's filters use M_PI, which strict -std=c++17 does not expose from <cmath> on arm-none-eabi.
@@ -76,7 +86,7 @@ GEN_INC = -I$(GEN_DIR) -I$(GEN_DIR)/gen -I$(GEN_DIR)/gen/gen_dsp
 ENGINE_SOURCES = $(GEN_DIR)/_ext_daisy.cpp src/engine/gen/genlib_arena.cpp
 # <<< gen:gigaverb <<<
 else
-$(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', 'edrums', 'reso', 'tape', or 'reverb')
+$(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', 'edrums', 'reso', 'tape', 'reverb', or 'shuttle')
 endif
 
 USE_FATFS = 1
@@ -126,10 +136,10 @@ include $(SYSTEM_FILES_DIR)/Makefile
 # that includes engine_select.h, so make it depend on a stamp whose content is rewritten only when
 # ENGINE differs -> app.o rebuilds exactly on a switch, no manual `make clean` needed.
 build/app.o: build/.engine-stamp
-# The tape engine's SD-streaming platform TUs are also engine-flag-dependent: their bodies are guarded
-# by SPK_ENGINE_TAPE (so other engines stay byte-identical), so they must rebuild on an engine switch
-# too - otherwise `make ENGINE=tape` over a stale non-tape build relinks empty objects (undefined
-# StreamDeck/FatFile/streamMem). Same stamp mechanism as app.o.
+# The SD-streaming platform TUs are also engine-flag-dependent: their bodies are guarded by
+# SPK_USE_STREAM (set by the streaming engines tape/shuttle, so non-streaming engines stay
+# byte-identical), so they must rebuild on an engine switch too - otherwise `make ENGINE=tape` over a
+# stale non-stream build relinks empty objects (undefined StreamDeck/FatFile/streamMem). Same stamp as app.o.
 build/stream_deck.o build/fat_file.o build/buffer.sdram.o: build/.engine-stamp
 # gen~ engines share the wrapper object basenames _ext_daisy.o / genlib_arena.o across exports (gen-dsp
 # fixes the filenames), so a gen_X -> gen_Y switch must recompile them or the link pulls the previous

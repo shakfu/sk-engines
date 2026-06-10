@@ -1,6 +1,6 @@
-// Compiled into the firmware only for the streaming `tape` engine (it lives in the src/hw wildcard, so
-// the guard keeps every other engine's build byte-identical).
-#if defined(SPK_ENGINE_TAPE)
+// Compiled into the firmware only for SPK_USE_STREAM engines (tape, shuttle) - it lives in the src/hw
+// wildcard, so the guard keeps every non-streaming engine's build byte-identical.
+#if defined(SPK_USE_STREAM)
 
 #include "fat_file.h"
 
@@ -57,4 +57,4 @@ bool FatFile::seek(uint32_t pos) {
     return f_lseek(&_f, pos) == FR_OK;
 }
 
-#endif // SPK_ENGINE_TAPE
+#endif // SPK_USE_STREAM

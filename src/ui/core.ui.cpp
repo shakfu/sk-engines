@@ -59,6 +59,7 @@ void CoreUI::init() {
     _engine_owns_display = _engine.capabilities() & CapOwnDisplay;
     _aux_select = _engine.capabilities() & CapAux;
     _alt_pos = _engine.capabilities() & CapAltPos;
+    _pitch_pickup = _engine.capabilities() & CapPitchPickup;
 };
 
 void CoreUI::_init_values()
@@ -254,7 +255,11 @@ void CoreUI::process()
             // straight to pitch. With pickup, Speed stayed pinned at its 0.5 seed until the pot was
             // swept exactly through centre, so on a melodic engine the knob appeared dead. The pickup
             // still guards the OTHER PITCH layers (Flux/Grit intensity, Aux) above.
-            auto speed_a = mv(ParamId::Speed)[DeckRef::A].in_value();
+            // CapPitchPickup engines (shuttle) route PITCH through the pickup-gated value so a
+            // Play->unity snap + take_param_reseed holds until the pot is swept across it; others map
+            // the raw pot straight through (a pitch knob should not go dead until swept through centre).
+            auto speed_a = _pitch_pickup ? mv(ParamId::Speed)[DeckRef::A].value()
+                                         : mv(ParamId::Speed)[DeckRef::A].in_value();
             if (!_aux_select && _pitch_quantized.test(DeckRef::A)) {
                 speed_a = snapped_speed(speed_a);
             }
@@ -273,7 +278,8 @@ void CoreUI::process()
         }
         else {
             // PITCH is absolute (raw pot), not pickup-gated - see the deck-A note above.
-            auto speed_b = mv(ParamId::Speed)[DeckRef::B].in_value();
+            auto speed_b = _pitch_pickup ? mv(ParamId::Speed)[DeckRef::B].value()
+                                         : mv(ParamId::Speed)[DeckRef::B].in_value();
             if (!_aux_select && _pitch_quantized.test(DeckRef::B)) {
                 speed_b = snapped_speed(speed_b);
             }

@@ -18,11 +18,13 @@ Current engines include:
 
 5. [tape](docs/engines/tape.md): dual streaming tape deck (two independent record/playback decks, SD-streamed, no in-memory length cap)
 
-6. [reverb](docs/engines/reverb.md): stereo reverb with two switchable algorithms (Dattorro plate / Zita-rev1 hall), generated from [Faust](https://faust.grame.fr) sources
+6. [shuttle](docs/engines/shuttle.md): buffer-based bipolar/reverse varispeed tape (four in-RAM tracks, PITCH as a capstan-speed knob - noon stops, CW forward, CCW reverse)
 
-7. [gigaverb](docs/engines/gigaverb.md): stereo reverb authored in Max/MSP **gen~** and translated to C++ via [gen-dsp](https://github.com/shakfu/gen-dsp) (Tom Erbe's gigaverb)
+7. [reverb](docs/engines/reverb.md): stereo reverb with two switchable algorithms (Dattorro plate / Zita-rev1 hall), generated from [Faust](https://faust.grame.fr) sources
 
-8. [passthrough](docs/engines/passthrough.md): minimal stereo passthrough engine demonstrating the platform API
+8. [gigaverb](docs/engines/gigaverb.md): stereo reverb authored in Max/MSP **gen~** and translated to C++ via [gen-dsp](https://github.com/shakfu/gen-dsp) (Tom Erbe's gigaverb)
+
+9. [passthrough](docs/engines/passthrough.md): minimal stereo passthrough engine demonstrating the platform API
 
 Engines can be authored in three ways:
 
@@ -76,6 +78,8 @@ The firmware is a fixed hardware/UI **platform** that hosts a swappable DSP **en
 - `make -j8 ENGINE=reso` — a resonator/pluck voice on the Mutable Instruments Rings DSP (modal / sympathetic-string / string / FM / string+reverb models on Alt+PITCH; three excite modes — discrete plucks, live-input resonator, scatter cloud). Vendored Rings/stmlib live under `src/engine/reso/thirdparty/`.
 
 - `make -j8 ENGINE=tape` — two independent mono **tape decks** (A/B) that play and record arbitrarily long takes to the SD card, removing the in-SDRAM loop-length cap. Per deck: Play pad = play, Alt+Play = record, PITCH = varispeed, Alt+POS = pan, MIX = volume, ENV = loop mode (none / loop / faded / Frippertronics), Alt+PITCH = tape-slot select (8 slots under `/tapes/`); the routing switch and mix fader place/blend the two decks. Streams mono float WAV through lock-free per-deck SDRAM rings drained by a main-loop FatFs pump.
+
+- `make -j8 ENGINE=shuttle` — a **buffer-based bipolar/reverse varispeed tape**: four in-RAM mono tracks (two per deck), all playing at once. PITCH is a capstan-speed knob (noon = stop, clockwise = forward to +2x, counter-clockwise = reverse to -2x); the Play pad snaps the focused track to unity. POS/SIZE set a per-track loop window, Alt+PITCH loads a `/tapes/` slot into RAM, the Rev pad swaps a deck's focused track, and the Seq pad re-aligns all four tracks to a common downbeat (declicked). Random-access in-SDRAM buffers (30 s/track) trade unbounded length for trivial reverse/freeze/looping.
 
 - `make -j8 ENGINE=reverb` — a stereo reverb with **two switchable algorithms** (a Dattorro plate and a Zita-rev1 hall, Alt+PITCH selects live), generated from [Faust](https://faust.grame.fr) sources by cyfaust. Regenerate the kernels with `make faust-gen`.
 

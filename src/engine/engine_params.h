@@ -87,6 +87,9 @@ enum Capability : uint32_t {
                                  // without it Alt+PITCH keeps its default meaning (granular: pitch-quantize)
     CapAltPos        = 1u << 8,  // engine claims the Alt+POS knob layer (ParamId::AltPos); without it
                                  // Alt+POS keeps its default meaning (POS still drives Pos, e.g. granular)
+    CapPitchPickup   = 1u << 9,  // route PITCH (ParamId::Speed) through the pickup-gated path instead of
+                                 // the raw pot, so an engine that snaps speed (shuttle's Play->unity) can
+                                 // hold the snap via take_param_reseed until the pot is swept across it
 };
 using Capabilities = uint32_t;
 

@@ -1,6 +1,6 @@
-// Compiled into the firmware only for the streaming `tape` engine (lives in the src/hw wildcard; the
-// guard keeps every other engine byte-identical).
-#if defined(SPK_ENGINE_TAPE)
+// Compiled into the firmware only for SPK_USE_STREAM engines (tape, shuttle) - lives in the src/hw
+// wildcard; the guard keeps every non-streaming engine byte-identical.
+#if defined(SPK_USE_STREAM)
 
 #include "stream_deck.h"
 
@@ -99,4 +99,4 @@ uint32_t StreamDeck::record_produce(DeckRef::Ref deck, const uint8_t* src, uint3
     return d.record.produce(src, n);
 }
 
-#endif // SPK_ENGINE_TAPE
+#endif // SPK_USE_STREAM

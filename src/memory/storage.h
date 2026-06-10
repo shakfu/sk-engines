@@ -258,10 +258,10 @@ class Storage {
 
             _deck_storage[DeckRef::A].process();
             _deck_storage[DeckRef::B].process();
-#if defined(SPK_ENGINE_TAPE)
-            // The tape engine streams to/from the SD over the same FatFs volume via its own FatFile, so
-            // the card must stay mounted for the whole session. Unmounting here (as non-streaming builds
-            // do once settings are read) would tear the volume out from under the tape stream - every
+#if defined(SPK_USE_STREAM)
+            // A streaming engine streams to/from the SD over the same FatFs volume via its own FatFile,
+            // so the card must stay mounted for the whole session. Unmounting here (as non-streaming
+            // builds do once settings are read) would tear the volume out from under the stream - every
             // f_open would then fail and record/play would silently no-op. Keep it mounted.
             (void)_can_unmount();
 #else

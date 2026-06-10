@@ -155,6 +155,7 @@ private:
     bool _engine_owns_display = false; // engine fills DisplayModel via render(); platform blits it (3b-2a)
     bool _aux_select = false;          // engine claims Alt+PITCH as a selector (CapAux -> ParamId::Aux)
     bool _alt_pos = false;             // engine claims the Alt+POS knob layer (CapAltPos -> ParamId::AltPos)
+    bool _pitch_pickup = false;        // route PITCH through the pickup-gated path (CapPitchPickup, e.g. shuttle)
     Settings& _settings;
     Storage& _storage;
     Calibrator _calibrator;

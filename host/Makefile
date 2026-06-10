@@ -42,6 +42,8 @@ RESO_SRC    = $(ROOT)/src/engine/reso/reso_engine.cpp
 REVERB_SRC  = $(ROOT)/src/engine/reverb/reverb_engine.cpp
 # The tape engine + its Faust tape-FX kernel (engine/tape/faust_kernel_tapefx.h, header pulled by the .cpp).
 TAPE_SRC    = $(ROOT)/src/engine/tape/tape_engine.cpp
+# The buffer-based shuttle engine (4 in-RAM tape tracks; bipolar/reverse varispeed). Self-contained.
+SHUTTLE_SRC = $(ROOT)/src/engine/shuttle/shuttle_engine.cpp
 # reso's DSP is the Mutable Instruments Rings engine + its stmlib support library (under $(RESO_TP)).
 RINGS_SRC   = $(RESO_TP)/rings/dsp/part.cc $(RESO_TP)/rings/dsp/string.cc \
               $(RESO_TP)/rings/dsp/resonator.cc $(RESO_TP)/rings/dsp/fm_voice.cc \
@@ -56,8 +58,9 @@ TEST_RESO    = $(BUILD)/test_reso
 TEST_REVERB  = $(BUILD)/test_reverb
 TEST_TAPE    = $(BUILD)/test_tape
 TEST_STREAM  = $(BUILD)/test_stream
+TEST_SHUTTLE = $(BUILD)/test_shuttle
 
-.PHONY: all clean run test test-granular test-edrums test-reso test-reverb test-tape test-stream
+.PHONY: all clean run test test-granular test-edrums test-reso test-reverb test-tape test-stream test-shuttle
 all: $(TARGET)
 
 $(TARGET): $(SRC) | $(BUILD)
@@ -80,6 +83,9 @@ $(TEST_REVERB): test_reverb.cpp $(LIB_SRC) $(REVERB_SRC) $(wildcard $(ROOT)/src/
 $(TEST_TAPE): test_tape.cpp $(LIB_SRC) $(TAPE_SRC) $(ROOT)/src/engine/tape/faust_kernel_tapefx.h | $(BUILD)
 	$(CXX) $(CXXFLAGS) test_tape.cpp $(LIB_SRC) $(TAPE_SRC) -o $@
 
+$(TEST_SHUTTLE): test_shuttle.cpp $(LIB_SRC) $(SHUTTLE_SRC) $(ROOT)/src/engine/shuttle/shuttle_engine.h | $(BUILD)
+	$(CXX) $(CXXFLAGS) test_shuttle.cpp $(LIB_SRC) $(SHUTTLE_SRC) -o $@
+
 # The SD-streaming core (SpscRing + Play/RecordStream) is self-contained header-only logic with no
 # engine/Daisy/FatFs deps, so its test compiles on its own.
 $(TEST_STREAM): test_stream.cpp $(ROOT)/src/memory/spsc_ring.h $(ROOT)/src/memory/audio_stream.h \
@@ -94,7 +100,7 @@ run: $(TARGET)
 
 # `test` runs both engine harnesses. Both inject the transport via EngineContext (granular drives the
 # real platform Transport; edrums uses a small stub ITransport) - the post-transport-decoupling way.
-test: test-granular test-edrums test-reso test-reverb test-tape test-stream
+test: test-granular test-edrums test-reso test-reverb test-tape test-stream test-shuttle
 
 test-granular: $(TEST)
 	./$(TEST)
@@ -113,6 +119,9 @@ test-tape: $(TEST_TAPE)
 
 test-stream: $(TEST_STREAM)
 	./$(TEST_STREAM)
+
+test-shuttle: $(TEST_SHUTTLE)
+	./$(TEST_SHUTTLE)
 
 clean:
 	rm -rf $(BUILD)

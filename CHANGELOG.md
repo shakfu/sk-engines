@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Buffer-based bipolar/reverse varispeed tape engine (`shuttle`).** `make ENGINE=shuttle` builds the random-access counterpart to the streaming `tape` engine: audio lives in SDRAM (not SD-streamed), so the read pointer is random-access and **reverse**, **freeze**, and **loop windowing** are trivial - the trade is a finite, RAM-capped length (currently 30 s/track). It runs **four independent mono tape tracks** - two per deck (A/B) - which free-run at their own speeds and sum into the stereo bus. Each track is a contiguous `float32` buffer carved from the SDRAM arena (1.44 M frames / 5.76 MB at 30 s/48 kHz; 4 tracks = 23 MB of the 48 MB arena), played by a **signed fractional read pointer** (`double`); reverse is a negative speed, freeze is speed 0 -> silence, ends wrap. `CapOwnDisplay | CapDualDeck | CapAux | CapAltPos | CapPitchPickup`. Host-verified (9 test groups), builds + links on target (~82% `SRAM_EXEC`), pending hardware bring-up. (`src/engine/shuttle/shuttle_engine.{h,cpp}`, `src/engine/engine_select.h`, `Makefile`, `docs/engines/shuttle.md`, `docs/dev/shuttle_impl.md`)
+
+- **Shuttle PITCH = bipolar capstan speed; Play snaps to unity.** PITCH is a per-track bipolar speed knob: a deadzone about **noon = stop (silence)**, clockwise = forward to **+2x**, counter-clockwise = **reverse to -2x**. Unity (+1x) lands off-centre, so the **Play pad snaps** the focused track to +1x and arms a one-shot pickup re-seed so the absolute pot must be swept across unity before it retakes the speed. (`src/engine/shuttle/shuttle_engine.cpp`)
+
+- **Shuttle four-track focus (Rev swap) + global re-align (Seq pad).** Each deck holds two tracks; all four play at once, but a deck's knobs (PITCH/POS/SIZE/MIX/Alt+PITCH) and ring address only the **focused** track. Tapping a deck's **Rev pad** swaps the focus (edrums mechanism: the backgrounded track keeps playing; a one-shot re-seed catches the pots without jumps). The four tracks drift out of phase by design; the **Seq pad re-aligns all four** to their loop start in one atomic gesture, declicked per audibly-rolling track (a ~1.3 ms fade-out -> jump -> fade-in, applied in the ISR off a flag so it is race-free and all four snap on the same block). (`src/engine/shuttle/shuttle_engine.{h,cpp}`)
+
+- **Shuttle loop window (POS / SIZE).** Each track plays a window `[start, start+length)` of its buffer rather than the whole recording: **SIZE** sets the length (full buffer down to a `kMinLoopFrames` stutter floor), **POS** slides the start across the uncovered tail (the window always stays inside the recording; at SIZE = full, POS is inert). The varispeed pointer wraps within the window both directions, and the Seq re-align snaps to the window start. Both are per-track (repoint on a Rev swap). (`src/engine/shuttle/shuttle_engine.cpp`)
+
+- **Shuttle audio source: record + SD load.** A track fills its buffer by **recording** the live input (Alt+Play, overwrite from the start) or by **loading** an existing `/tapes/` WAV from the card into RAM (Alt+PITCH selects the slot), drained over a few `prepare()` passes; the drain advances by `play_consume`'s actual returned byte count (zero-fill is destination-only), so an underrun is re-pulled, never baked in as silence. (`src/engine/shuttle/shuttle_engine.cpp`)
+
+- **`CapPitchPickup`: route PITCH through the pickup-gated path.** A new capability so an engine that snaps the speed (shuttle's Play->unity) can hold the snap via `take_param_reseed` - the absolute PITCH pot must be swept across the snapped value before it retakes control. Engines without it keep raw (un-gated) PITCH byte-for-byte. (`src/engine/engine_params.h`, `src/ui/core.ui.{h,cpp}`)
+
+- **Headless shuttle test.** `make -C host test-shuttle` runs `host/test_shuttle.cpp` (9 groups, via a controllable `FakeClock` for the pad debounce and a `FakeStream` for the SD-load drain): bipolar speed map, record + unity playback, reverse-wrap + silence-at-noon + loop, Play->unity snap (one re-seed), Rev swap + track independence, SD load, Seq re-align (all four atomic), realign declick (no large output step across the jump), and the POS/SIZE loop window. (`host/test_shuttle.cpp`, `host/Makefile`)
+
+### Changed
+
+- **SD streaming service gated by capability (`SPK_USE_STREAM`), not engine name.** The streaming platform (`StreamDeck`/`FatFile`, SDRAM rings, keep-card-mounted) was guarded by `#if defined(SPK_ENGINE_TAPE)`; it now keys on a Makefile-set `SPK_USE_STREAM` flag that both `tape` and `shuttle` define. The `app.cpp` construct/pump/inject of `_stream` is the one shared touch point (a hardware service the platform must own); the rest now reference the capability, so the next streaming engine is a one-line Makefile change. Non-streaming engines stay byte-identical (`tape` output unchanged - both macros are defined for a tape build). (`Makefile`, `src/app.cpp`, `src/hw/buffer.sdram.{h,cpp}`, `src/hw/stream_deck.cpp`, `src/hw/fat_file.cpp`, `src/memory/storage.h`)
+
 ## [0.2.4]
 
 ### Added
