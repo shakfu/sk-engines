@@ -82,6 +82,15 @@ void set_fx(TapeEngine& e, float drive, float chr, float wow, float rate) {
     e.set_param(ParamId::ModAmp, DeckRef::A, wow);
     e.set_mod_speed(DeckRef::A, rate, false);
 }
+// The post-FX filter rides the grit-modifier knobs: cutoff = GritIntensity, resonance = GritMix.
+void set_filter(TapeEngine& e, float cutoff, float reso) {
+    e.set_param(ParamId::GritIntensity, DeckRef::A, cutoff);
+    e.set_param(ParamId::GritMix,       DeckRef::A, reso);
+}
+float rms(const std::vector<float>& v) {
+    double s = 0.0; for (float x : v) s += (double)x * x;
+    return v.empty() ? 0.f : (float)std::sqrt(s / v.size());
+}
 
 } // namespace
 
@@ -92,6 +101,17 @@ int main() {
     EngineContext ctx = host::make_context(arena, time);
     ctx.stream = &stream;
 
+    // Build a fresh engine in its OWN arena, configure it, and run it. The Arena is a bump allocator
+    // that restarts at ctx.arena.base every construction, so two engines built from one shared ctx would
+    // alias the same kernel memory - harmless on the single-engine device, but it makes a test that
+    // compares two engines silently compare the SAME (last-written) kernel. Isolating the arena per
+    // engine is what makes the A/B comparisons below real.
+    auto isolated = [&](auto cfg, int warmup, int blocks, bool& fin) {
+        host::HostArena a; EngineContext c = host::make_context(a, time); c.stream = &stream;
+        TapeEngine e; e.init(c); cfg(e);
+        return run(e, warmup, blocks, fin);
+    };
+
     // --- 1. Param round-trip -------------------------------------------------------------------
     {
         TapeEngine e; e.init(ctx);
@@ -100,14 +120,22 @@ int main() {
         check(approx(e.param(ParamId::Size,     DeckRef::A), 0.42f), "SIZE (char) round-trips");
         check(approx(e.param(ParamId::ModAmp,   DeckRef::A), 0.73f), "MOD_AMT (wow) round-trips");
         check(approx(e.param(ParamId::ModSpeed, DeckRef::A), 0.28f), "MODFREQ (rate) round-trips");
+        // filter knobs (grit-modifier): cutoff = GritIntensity, resonance = GritMix
+        set_filter(e, 0.33f, 0.77f);
+        check(approx(e.param(ParamId::GritIntensity, DeckRef::A), 0.33f), "filter cutoff (grit+PITCH) round-trips");
+        check(approx(e.param(ParamId::GritMix,       DeckRef::A), 0.77f), "filter resonance (grit+MIX) round-trips");
+        // a fresh engine boots cutoff OPEN (so the LP is inert) and resonance at 0
+        TapeEngine fresh; fresh.init(ctx);
+        check(approx(fresh.param(ParamId::GritIntensity, DeckRef::A), 1.0f), "filter cutoff boots OPEN (1.0)");
+        check(approx(fresh.param(ParamId::GritMix,       DeckRef::A), 0.0f), "filter resonance boots 0");
     }
 
     // --- 2. Saturation: heavy drive changes the waveform, stays bounded + finite ----------------
     {
-        TapeEngine clean; clean.init(ctx); set_fx(clean, 0.0f, 0.3f, 0.0f, 0.4f); // no drive, no wow
-        TapeEngine hot;   hot.init(ctx);   set_fx(hot,   1.0f, 0.3f, 0.0f, 0.4f); // full drive, no wow
-        stream.phase[0] = 0.0; bool f1 = true; const auto c = run(clean, 40, 80, f1);
-        stream.phase[0] = 0.0; bool f2 = true; const auto h = run(hot,   40, 80, f2);
+        stream.phase[0] = 0.0; bool f1 = true;
+        const auto c = isolated([](TapeEngine& e){ set_fx(e, 0.0f, 0.3f, 0.0f, 0.4f); }, 40, 80, f1); // no drive
+        stream.phase[0] = 0.0; bool f2 = true;
+        const auto h = isolated([](TapeEngine& e){ set_fx(e, 1.0f, 0.3f, 0.0f, 0.4f); }, 40, 80, f2); // full drive
         const float d = sad(c, h), pk = peak(h);
         std::printf("saturation: SAD(clean,hot)=%.3f  hot_peak=%.3f  finite=%d\n", d, pk, (int)(f1 && f2));
         check(f1 && f2,       "saturation output is finite");
@@ -119,10 +147,10 @@ int main() {
 
     // --- 3. Wow/flutter: depth > 0 pitch-modulates the output -----------------------------------
     {
-        TapeEngine dry; dry.init(ctx); set_fx(dry, 0.0f, 0.3f, 0.0f, 0.5f); // no wow
-        TapeEngine wet; wet.init(ctx); set_fx(wet, 0.0f, 0.3f, 1.0f, 0.5f); // full wow depth
-        stream.phase[0] = 0.0; bool f1 = true; const auto a = run(dry, 60, 160, f1);
-        stream.phase[0] = 0.0; bool f2 = true; const auto b = run(wet, 60, 160, f2);
+        stream.phase[0] = 0.0; bool f1 = true;
+        const auto a = isolated([](TapeEngine& e){ set_fx(e, 0.0f, 0.3f, 0.0f, 0.5f); }, 60, 160, f1); // no wow
+        stream.phase[0] = 0.0; bool f2 = true;
+        const auto b = isolated([](TapeEngine& e){ set_fx(e, 0.0f, 0.3f, 1.0f, 0.5f); }, 60, 160, f2); // full wow
         const float d = sad(a, b);
         std::printf("wow/flutter: SAD(dry,wet)=%.3f  finite=%d\n", d, (int)(f1 && f2));
         check(f1 && f2, "wow/flutter output is finite");
@@ -137,6 +165,32 @@ int main() {
         stream.playing[0] = true;                        // restore for any later runs
         std::printf("gate: stopped-deck peak=%.5f\n", peak(v));
         check(peak(v) < 1e-4f, "a stopped deck is silent (FX/audio gated on playback)");
+    }
+
+    // --- 5. Post-FX low-pass: low cutoff attenuates a high tone; resonance boosts near the corner ---
+    {
+        stream.inc = 2.0 * M_PI * 6000.0 / host::kSampleRate;   // 6 kHz source so the low-pass clearly bites
+        // colouring FX off so the filter dominates; each engine in its own arena (see `isolated`).
+        auto frms = [&](float cutoff, float reso, bool& fin) {
+            stream.phase[0] = 0.0;
+            return rms(isolated([&](TapeEngine& e){ set_fx(e, 0,0,0,0.4f); set_filter(e, cutoff, reso); }, 60, 80, fin));
+        };
+        bool f1 = true, f2 = true, f3 = true, f4 = true;
+        const float ro = frms(1.0f, 0.0f, f1);   // cutoff open
+        const float rc = frms(0.2f, 0.0f, f2);   // cutoff low
+        std::printf("filter: rms_open=%.4f rms_closed=%.4f  finite=%d\n", ro, rc, (int)(f1 && f2));
+        check(f1 && f2,           "filter output is finite");
+        check(rc < 0.30f * ro,    "low cutoff attenuates a 6 kHz tone (low-pass is wired)");
+        // resonance: a tone near the corner (cutoff~0.81 -> fc~6 kHz) is boosted at high Q vs flat,
+        // and the output soft-limiter keeps even the resonant peak bounded near 0 dBFS.
+        const float rflat = frms(0.81f, 0.0f, f3);   // Q ~ 0.7 (flat)
+        stream.phase[0] = 0.0;
+        const auto pkv = isolated([&](TapeEngine& e){ set_fx(e, 0,0,0,0.4f); set_filter(e, 0.81f, 0.9f); }, 60, 80, f4); // Q ~ 8
+        const float rpeak = rms(pkv);
+        std::printf("filter reso: rms_flat=%.4f rms_peak=%.4f  peak=%.3f  finite=%d\n", rflat, rpeak, peak(pkv), (int)(f3 && f4));
+        check(f3 && f4,             "resonant filter output is finite");
+        check(rpeak > 1.3f * rflat, "resonance boosts a tone near the cutoff (Q is wired)");
+        check(peak(pkv) < 1.5f,     "soft-limiter bounds the resonant peak near 0 dBFS");
     }
 
     if (g_failures == 0) { std::printf("OK: all tape FX checks passed\n"); return 0; }

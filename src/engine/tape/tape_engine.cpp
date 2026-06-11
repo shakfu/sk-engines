@@ -16,15 +16,17 @@ namespace spotykach {
 // 0..1 values straight into the captured zones (the .dsp does the musical scaling).
 struct TapeFx {
     tfx_tapefx::mydsp dsp;
-    FAUSTFLOAT* z[4] = { nullptr, nullptr, nullptr, nullptr }; // drive, char, wow, rate
+    FAUSTFLOAT* z[6] = { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr }; // drive, char, wow, rate, cutoff, reso
 
     struct Cap : UI {
         TapeFx* fx;
         void bind(const char* l, FAUSTFLOAT* zp) {
-            if      (std::strcmp(l, "drive") == 0) fx->z[0] = zp;
-            else if (std::strcmp(l, "char")  == 0) fx->z[1] = zp;
-            else if (std::strcmp(l, "wow")   == 0) fx->z[2] = zp;
-            else if (std::strcmp(l, "rate")  == 0) fx->z[3] = zp;
+            if      (std::strcmp(l, "drive")  == 0) fx->z[0] = zp;
+            else if (std::strcmp(l, "char")   == 0) fx->z[1] = zp;
+            else if (std::strcmp(l, "wow")    == 0) fx->z[2] = zp;
+            else if (std::strcmp(l, "rate")   == 0) fx->z[3] = zp;
+            else if (std::strcmp(l, "cutoff") == 0) fx->z[4] = zp;
+            else if (std::strcmp(l, "reso")   == 0) fx->z[5] = zp;
         }
         void addHorizontalSlider(const char* l, FAUSTFLOAT* zp, FAUSTFLOAT, FAUSTFLOAT, FAUSTFLOAT, FAUSTFLOAT) override { bind(l, zp); }
         void addVerticalSlider  (const char* l, FAUSTFLOAT* zp, FAUSTFLOAT, FAUSTFLOAT, FAUSTFLOAT, FAUSTFLOAT) override { bind(l, zp); }
@@ -45,7 +47,7 @@ void TapeEngine::init(const EngineContext& ctx) {
         if (void* m = ar.alloc<uint8_t>(sizeof(TapeFx), alignof(TapeFx))) {
             _fx[i] = new (m) TapeFx();
             _fx[i]->init(sr);
-            for (int p = 0; p < 4; p++) _fx[i]->set(p, _fx_n[i][p]); // seed from the cached defaults
+            for (int p = 0; p < 6; p++) _fx[i]->set(p, _fx_n[i][p]); // seed from the cached defaults
         }
     }
 }
@@ -91,9 +93,12 @@ void TapeEngine::process(const float* const* in, float** out, size_t size) {
     // Total per-deck gains = MIX-knob volume x mix-fader A/B blend x pan (L/R).
     const float La = _gain[0] * _gA * pLa, Ra = _gain[0] * _gA * pRa,
                 Lb = _gain[1] * _gB * pLb, Rb = _gain[1] * _gB * pRb;
+    // SoftLimit the summed bus: two decks plus the filter's resonant peak (Q up to ~10) can overshoot
+    // 0 dBFS, and there is no codec headroom past +/-1. The cubic soft-clip (same one the edrums/granular
+    // buses use) is ~transparent below unity and gently tames peaks instead of hard-clipping them.
     for (size_t i = 0; i < n; i++) {
-        out[0][i] = monoA[i] * La + monoB[i] * Lb;
-        out[1][i] = monoA[i] * Ra + monoB[i] * Rb;
+        out[0][i] = daisysp::SoftLimit(monoA[i] * La + monoB[i] * Lb);
+        out[1][i] = daisysp::SoftLimit(monoA[i] * Ra + monoB[i] * Rb);
     }
 }
 
@@ -116,6 +121,11 @@ void TapeEngine::set_param(ParamId id, DeckRef::Ref d, float v) {
     else if (id == ParamId::Pos)    { _fx_n[i][0] = v; if (_fx[i]) _fx[i]->set(0, v); }
     else if (id == ParamId::Size)   { _fx_n[i][1] = v; if (_fx[i]) _fx[i]->set(1, v); }
     else if (id == ParamId::ModAmp) { _fx_n[i][2] = v; if (_fx[i]) _fx[i]->set(2, v); }
+    // Post-FX low-pass filter: held grit + PITCH = cutoff, held grit + MIX = resonance. The platform
+    // already routes the grit-modifier knobs to these ParamIds (it sends them for any engine), so the
+    // tape engine just reinterprets `GritIntensity`/`GritMix` as the filter knobs - no platform change.
+    else if (id == ParamId::GritIntensity) { _fx_n[i][4] = v; if (_fx[i]) _fx[i]->set(4, v); } // cutoff
+    else if (id == ParamId::GritMix)       { _fx_n[i][5] = v; if (_fx[i]) _fx[i]->set(5, v); } // resonance
 }
 
 void TapeEngine::set_mod_speed(DeckRef::Ref d, float v, bool /*sync*/) {
@@ -134,6 +144,8 @@ float TapeEngine::param(ParamId id, DeckRef::Ref d) const {
     if (id == ParamId::Size)    return _fx_n[i][1]; // character
     if (id == ParamId::ModAmp)  return _fx_n[i][2]; // wow/flutter depth
     if (id == ParamId::ModSpeed) return _fx_n[i][3]; // wow/flutter rate
+    if (id == ParamId::GritIntensity) return _fx_n[i][4]; // filter cutoff (seeds the grit+PITCH pickup open)
+    if (id == ParamId::GritMix)       return _fx_n[i][5]; // filter resonance (seeds the grit+MIX pickup)
     return 0.f;
 }
 

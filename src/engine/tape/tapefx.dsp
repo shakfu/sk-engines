@@ -17,10 +17,12 @@ declare description "Tape wow/flutter + Jiles-Atherton hysteresis (sk-engines ta
 import("stdfaust.lib");
 hy = library("hysteresis.lib");
 
-drive = hslider("drive", 0.3, 0, 1, 0.001); // saturation amount (input drive into the J-A curve)
-chr   = hslider("char",  0.3, 0, 1, 0.001); // tape character (J-A reversibility c)
-wowf  = hslider("wow",   0.3, 0, 1, 0.001); // wow + flutter depth
-rate  = hslider("rate",  0.4, 0, 1, 0.001); // wow + flutter rate
+drive  = hslider("drive",  0.3, 0, 1, 0.001); // saturation amount (input drive into the J-A curve)
+chr    = hslider("char",   0.3, 0, 1, 0.001); // tape character (J-A reversibility c)
+wowf   = hslider("wow",    0.3, 0, 1, 0.001); // wow + flutter depth
+rate   = hslider("rate",   0.4, 0, 1, 0.001); // wow + flutter rate
+cutoff = hslider("cutoff", 1.0, 0, 1, 0.001); // post-FX low-pass cutoff (grit+PITCH); 1 = fully open
+reso   = hslider("reso",   0.0, 0, 1, 0.001); // post-FX low-pass resonance/Q (grit+MIX)
 
 // --- wow & flutter: pitch wobble via a modulated fractional delay -------------------------------
 // Periodic (reel rotation), not random - wow slow, flutter as f + 2f + 3f harmonics (cf. ChowTape
@@ -51,4 +53,13 @@ c   = 0.25 + chr * 0.65;                           // 0.25 open/dynamic .. 0.9 c
 // stays bounded even when driven hard.
 sat = hy.ja_processor(Ms, a, alpha, k, c, ba.db2linear(drive * 54.0), 1.0);
 
-process = wowflutter : sat;
+// --- resonant low-pass (playback tone control, AFTER the saturation) -----------------------------
+// A 2-pole resonant low-pass shaped like a dub/tape tone filter. Cutoff is exponential so the sweep
+// is even across the knob; resonance is squared so the low half of the knob stays gentle and only
+// the top adds a strong peak. At cutoff=1 the corner sits ~20 kHz, i.e. transparent (the engine boots
+// here so the filter is inert until swept down). Q starts at 0.7 (flat Butterworth) -> ~10 (resonant).
+fcHz = 40.0 * pow(500.0, cutoff);   // ~40 Hz .. 20 kHz
+Q    = 0.7 + reso * reso * 9.3;     // 0.7 (flat) .. 10 (strong peak)
+lp   = fi.resonlp(fcHz, Q, 1.0);
+
+process = wowflutter : sat : lp;

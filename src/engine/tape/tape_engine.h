@@ -128,15 +128,18 @@ private:
     bool     _err_fmt[2]      = { false, false };  // that flash is a wrong-format reject (strobe), not a miss
     uint32_t _last_trig_ms[2] = { 0, 0 };  // now_ms() of each deck's last accepted toggle (debounce)
 
-    // Per-deck tape FX (Faust kernel: wow/flutter + Jiles-Atherton hysteresis), placement-new'd in the
-    // SDRAM arena at init(); only applied to the playback signal. Knobs: POS=drive, SIZE=character,
-    // MOD_AMT=wow/flutter depth, MODFREQ=wow/flutter rate. _fx_n caches the four 0..1 values per deck
-    // (order: drive, char, wow, rate) for param() readback.
+    // Per-deck tape FX (Faust kernel: wow/flutter + Jiles-Atherton hysteresis + post-FX resonant
+    // low-pass), placement-new'd in the SDRAM arena at init(); only applied to the playback signal.
+    // Knobs: POS=drive, SIZE=character, MOD_AMT=wow/flutter depth, MODFREQ=wow/flutter rate; the filter
+    // rides the grit-modifier pad (held grit + PITCH=cutoff, held grit + MIX=resonance). _fx_n caches the
+    // six 0..1 values per deck (order: drive, char, wow, rate, cutoff, reso) for param() readback.
     TapeFx* _fx[2] = { nullptr, nullptr };
-    // Boot the FX OFF (all zero): a non-zero default both colours the sound at boot and, because the
-    // platform seeds the knob pickup from these, can soft-takeover-lock a param above zero (a pot below
-    // the seed never crosses it, so the value cannot be turned down). Zero = neutral and freely reducible.
-    float   _fx_n[2][4] = { { 0.f, 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f, 0.f } };  // drive, char, wow, rate
+    // Boot the colouring FX OFF (drive/char/wow/rate = 0): a non-zero default both colours the sound at
+    // boot and, because the platform seeds the knob pickup from these, can soft-takeover-lock a param
+    // above zero (a pot below the seed never crosses it, so it can't be turned down). Zero = neutral and
+    // freely reducible. The filter is the inverse: cutoff boots OPEN (1.0) so the low-pass is inert until
+    // swept down, and seeding the grit+PITCH pickup at 1.0 means you turn DOWN to engage it; reso boots 0.
+    float   _fx_n[2][6] = { { 0.f, 0.f, 0.f, 0.f, 1.f, 0.f }, { 0.f, 0.f, 0.f, 0.f, 1.f, 0.f } };  // drive, char, wow, rate, cutoff, reso
 };
 
 } // namespace spotykach
