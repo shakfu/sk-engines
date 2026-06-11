@@ -5,6 +5,7 @@
 #include "memory/wav.h"
 
 #include <cstdint>
+#include <cstring>
 
 namespace spotykach {
 
@@ -21,33 +22,71 @@ public:
     // Device sample rate; the streaming path does no resampling, so a non-48k file would play at the
     // wrong pitch. Matches the rate wav.h writes into recorded headers.
     static constexpr uint32_t kPlaybackSampleRate = 48000;
+    static constexpr uint32_t kMaxChunks = 64;   // scan bound: refuse a pathological chunk list rather than loop
 
     // `f` must be an open file positioned at 0. Returns false on a missing/invalid/unsupported header.
+    //
+    // Spec-compliant chunk walk. After the 12-byte RIFF/WAVE header, the file is a list of chunks, each
+    // `<4-byte id><LE32 size><body>` plus a single pad byte when `size` is odd. We step that list,
+    // capturing `fmt ` and stopping at `data`, and SKIP every chunk we don't recognise (`fact`, `LIST`,
+    // `JUNK`, `bext`, `cue `, ...) by its size - so `data` is found no matter how much metadata precedes
+    // it, exactly as a conformant reader must. We walk via seek/read instead of a fixed buffer, so there
+    // is no offset ceiling (the old 256-byte window mis-handled externally-authored files whose metadata
+    // pushed `data` further in). The mono/float32/48k checks at `data` are NOT WAV-spec strictness - they
+    // are engine-capability gates: the streaming path hands raw body bytes straight to the engine's float
+    // frames with no conversion, so a non-native file would be reinterpreted as garbage. A reject here
+    // becomes the deck's error flash (via start_play), not a mis-play. kWav* track the build (float32
+    // default, int16 under LOFI_INT16).
     bool begin(IByteFile* f) {
         _f = f; _remaining = 0; _data_start = 0; _data_size = 0;
-        // Wider than the canonical 44-byte header: an externally-authored WAV often prepends `fact` /
-        // `LIST` metadata chunks before `data`, pushing it well past 64 bytes (ffmpeg float output lands
-        // it near offset 90). The chunk scanner needs the whole header region in this buffer to find
-        // `data`; 256 covers real-world metadata, and anything larger is rejected (safe) rather than
-        // mis-parsed.
-        uint8_t hdr[256];
-        const uint32_t got = f->read(hdr, sizeof(hdr));
-        WavHeader h{}; size_t header_size = 0;
-        if (!wav_header(hdr, got, h, header_size)) return false;
-        // Format guard: the streaming path hands raw body bytes straight to the engine's float frames
-        // with NO conversion, so anything but the native record format is reinterpreted as garbage (the
-        // distortion seen loading 16-bit / 32-bit-int / stereo files). Reject mismatches here - the
-        // caller (start_play) turns a false into the deck's error flash. kWav* track the build (float32
-        // default, int16 under LOFI_INT16); the engine is mono at the device's 48 kHz.
-        if (h.AudioFormat   != kWavAudioFormat)    return false;
-        if (h.BitsPerSample != kWavBitsPerSample)  return false;
-        if (h.NbrChannels   != 1)                  return false;
-        if (h.SampleRate    != kPlaybackSampleRate) return false;
-        if (!f->seek(static_cast<uint32_t>(header_size))) return false;
-        _data_start = static_cast<uint32_t>(header_size);
-        _data_size  = h.DataSize;
-        _remaining  = h.DataSize;
-        return true;
+
+        uint8_t riff[12];
+        if (f->read(riff, sizeof(riff)) != sizeof(riff)) return false;
+        if (std::memcmp(riff, "RIFF", 4) != 0 || std::memcmp(riff + 8, "WAVE", 4) != 0) return false;
+
+        uint16_t audioFormat = 0, channels = 0, bits = 0;
+        uint32_t sampleRate = 0;
+        bool haveFmt = false;
+
+        uint32_t pos = 12;                               // first chunk begins right after RIFF/WAVE
+        for (uint32_t guard = 0; guard < kMaxChunks; guard++) {
+            uint8_t ch[8];
+            if (!f->seek(pos)) return false;
+            if (f->read(ch, sizeof(ch)) != sizeof(ch)) return false;  // ran off the end before `data`
+            const uint32_t size = read_val<uint32_t>(ch, 4);
+            const uint32_t body = pos + 8;
+
+            if (std::memcmp(ch, "fmt ", 4) == 0) {
+                if (size < 16) return false;             // malformed: WAVEFORMAT is at least 16 bytes
+                uint8_t fb[16];
+                if (f->read(fb, sizeof(fb)) != sizeof(fb)) return false;
+                audioFormat = read_val<uint16_t>(fb, 0);
+                channels    = read_val<uint16_t>(fb, 2);
+                sampleRate  = read_val<uint32_t>(fb, 4);
+                bits        = read_val<uint16_t>(fb, 14);
+                // WAVE_FORMAT_EXTENSIBLE: the real format tag is the first 2 bytes of the SubFormat GUID
+                // (at body+24, past cbSize(2)+wValidBitsPerSample(2)+dwChannelMask(4)).
+                if (audioFormat == 0xFFFE && size >= 40) {
+                    uint8_t tag[2];
+                    if (!f->seek(body + 24) || f->read(tag, sizeof(tag)) != sizeof(tag)) return false;
+                    audioFormat = read_val<uint16_t>(tag, 0);
+                }
+                haveFmt = true;
+            } else if (std::memcmp(ch, "data", 4) == 0) {
+                if (!haveFmt)                           return false;  // `fmt ` must precede `data`
+                if (audioFormat != kWavAudioFormat)     return false;  // engine-capability gates (below)
+                if (bits        != kWavBitsPerSample)   return false;
+                if (channels    != 1)                   return false;
+                if (sampleRate  != kPlaybackSampleRate) return false;
+                if (!f->seek(body)) return false;
+                _data_start = body;
+                _data_size  = size;
+                _remaining  = size;
+                return true;
+            }
+            pos = body + size + (size & 1u);             // next chunk; chunks are word-aligned
+        }
+        return false;                                    // no `data` within kMaxChunks
     }
 
     uint32_t read(uint8_t* dst, uint32_t n) override {

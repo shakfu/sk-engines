@@ -352,6 +352,64 @@ int main() {
             for (uint32_t i = 0; i < body && body_ok; i++) if (out[i] != (uint8_t)(i & 0xff)) body_ok = false;
             check(body_ok, "robustness: body after the metadata chunk reads back intact");
         }
+
+        // Spec-compliant chunk walk: build a WAV from an explicit chunk list so we can reproduce the
+        // exact real-world layouts a conformant reader must accept (any unknown chunk, any order, any
+        // amount of leading metadata, odd-sized chunks with their pad byte).
+        auto put = [&](std::vector<uint8_t>& v, const char* id, const std::vector<uint8_t>& d) {
+            tag(v, id); le32(v, (uint32_t)d.size()); v.insert(v.end(), d.begin(), d.end());
+            if (d.size() & 1) v.push_back(0);          // chunks are word-aligned: pad odd sizes
+        };
+        auto fmt_body = [&](uint16_t af, uint16_t ch, uint16_t bits, uint32_t sr, bool ext18) {
+            std::vector<uint8_t> b; const uint16_t ba = ch * (bits / 8);
+            le16(b, af); le16(b, ch); le32(b, sr); le32(b, sr * ba); le16(b, ba); le16(b, bits);
+            if (ext18) le16(b, 0);                      // cbSize=0 -> an 18-byte (non-PCM) fmt chunk
+            return b;
+        };
+        auto wrap = [&](std::vector<uint8_t> v) {       // patch the RIFF size, hand back the bytes
+            const uint32_t riff = (uint32_t)v.size() - 8;
+            v[4] = riff & 0xff; v[5] = (riff >> 8) & 0xff; v[6] = (riff >> 16) & 0xff; v[7] = (riff >> 24) & 0xff;
+            return v;
+        };
+        auto bodyramp = [&](uint32_t n) { std::vector<uint8_t> d(n); for (uint32_t i = 0; i < n; i++) d[i] = (uint8_t)(i & 0xff); return d; };
+        auto reads_body = [&](std::vector<uint8_t> bytes, uint32_t n) {
+            MemFile mf; mf.buf = std::move(bytes); mf.cur = 0; WavStreamReader r;
+            if (!r.begin(&mf)) return false;
+            std::vector<uint8_t> out(n); if (r.read(out.data(), n) != n) return false;
+            for (uint32_t i = 0; i < n; i++) if (out[i] != (uint8_t)(i & 0xff)) return false;
+            return true;
+        };
+
+        // (a) The exact externally-authored layout that broke on hardware: an 18-byte float `fmt ` +
+        // `fact` + a 62-byte `LIST`/INFO block push `data` to offset 128. Must parse and stream intact.
+        {
+            std::vector<uint8_t> v; tag(v, "RIFF"); le32(v, 0); tag(v, "WAVE");
+            put(v, "fmt ", fmt_body(kWavAudioFormat, 1, kWavBitsPerSample, 48000, /*ext18=*/true));
+            put(v, "fact", std::vector<uint8_t>(4, 0));
+            put(v, "LIST", std::vector<uint8_t>(62, 0xAB));
+            put(v, "data", bodyramp(body));
+            check(reads_body(wrap(v), body), "spec: fmt18 + fact + LIST (data@128, the hardware-noise layout) parses + streams");
+        }
+        // (b) Metadata past the OLD 256-byte window: a 300-byte JUNK chunk. The old buffer reader gave up
+        // here; the file-walking reader must seek through and still find `data`.
+        check(reads_body(make_wav(kWavAudioFormat, 1, kWavBitsPerSample, 48000, 300, body), body),
+              "spec: data behind a 300-byte chunk (past the old 256-byte window) parses");
+        // (c) A chunk BEFORE `fmt ` (legal ordering) must be skipped, not mistaken for fmt/data.
+        {
+            std::vector<uint8_t> v; tag(v, "RIFF"); le32(v, 0); tag(v, "WAVE");
+            put(v, "JUNK", std::vector<uint8_t>(20, 0));
+            put(v, "fmt ", fmt_body(kWavAudioFormat, 1, kWavBitsPerSample, 48000, false));
+            put(v, "data", bodyramp(body));
+            check(reads_body(wrap(v), body), "spec: a chunk before fmt is skipped, fmt+data still found");
+        }
+        // (d) An odd-sized chunk's pad byte must be accounted for, or `data` mis-aligns into garbage.
+        {
+            std::vector<uint8_t> v; tag(v, "RIFF"); le32(v, 0); tag(v, "WAVE");
+            put(v, "fmt ", fmt_body(kWavAudioFormat, 1, kWavBitsPerSample, 48000, false));
+            put(v, "JUNK", std::vector<uint8_t>(3, 0x7));   // odd size -> 1 pad byte
+            put(v, "data", bodyramp(body));
+            check(reads_body(wrap(v), body), "spec: odd-sized chunk pad byte handled (data stays aligned)");
+        }
     }
 
     if (g_failures == 0) { std::printf("OK: all stream checks passed\n"); return 0; }
