@@ -8,7 +8,7 @@ It runs **four independent mono tape tracks** - two per deck (A/B). All four fre
 
 The headline control is **PITCH as a bipolar capstan-speed knob**: noon stops the tape (silence), clockwise plays forward up to +2x, counter-clockwise plays in reverse down to -2x. Unity (+1x) lands off-centre, so the **Play pad snaps** the focused track to normal speed.
 
-> **Status: host-verified, pending hardware bring-up.** All nine host-test groups pass and > `make ENGINE=shuttle` builds + links on target (SRAM_EXEC ~82%, SDRAM arena reserved whole). Not yet > flashed. Implementation notes and the memory-variant menu live in `docs/dev/shuttle_impl.md`.
+> **Status: host-verified, pending hardware bring-up.** All ten host-test groups pass and > `make ENGINE=shuttle` builds + links on target (SRAM_EXEC ~82%, SDRAM arena reserved whole). Not yet > flashed. Implementation notes and the memory-variant menu live in `docs/dev/shuttle_impl.md`.
 
 ---
 
@@ -46,6 +46,8 @@ The varispeed read pointer wraps within the window (both directions); the Seq re
 
 - **Load** (Alt+PITCH selects a slot) drains an existing `/shuttle/` WAV from the card into the track's RAM buffer over a few main-loop passes, then shuttles it like any other take. Reuses the platform's streaming service via the `SPK_USE_STREAM` capability flag (shared with the `tape` engine). A loaded file must be **mono 32-bit-float WAV at 48 kHz** (other formats are rejected); convert sources with [`scripts/convert_tape_audio.py`](../../scripts/convert_tape_audio.py) - pass `--engine shuttle` so it warns past the ~30 s RAM cap - or the one-liners in [`docs/preparing-audio.md`](../preparing-audio.md).
 
+- **Boot preload.** On power-up, **all four tracks** are filled from the card if their files exist - track *t* of each deck loads slot *t*'s file (deck A: `tape_a_1/_2.wav` -> tracks 0/1; deck B: `tape_b_1/_2.wav`) - so a freshly powered shuttle is ready to jam without a manual load. (The RAM engine can't stream lazily the way the `tape` engine does, so it loads up front.) It is **per-track conditional** (a track whose slot file is absent is left empty) and, because a deck's two tracks share one SD stream, **serialized per deck** (the two decks load in parallel). Since the card mounts cooperatively early in boot, the load waits for the volume to come up, then is abandoned after a short deadline if there is no card / no files.
+
 ## Architecture
 
 - **Contiguous per-track buffers** carved from the SDRAM arena at `init()`; `kBufSeconds * sample_rate` frames each (30 s -> 1.44 M frames -> 5.76 MB; 4 tracks = 23 MB of the 48 MB arena).
@@ -62,7 +64,7 @@ Capabilities: `CapOwnDisplay | CapDualDeck | CapAux | CapAltPos | CapPitchPickup
 
 - `src/engine/shuttle/shuttle_engine.{h,cpp}` - the engine.
 
-- `host/test_shuttle.cpp` - the headless test (9 groups).
+- `host/test_shuttle.cpp` - the headless test (10 groups).
 
 - Platform: `CapPitchPickup` (`engine_params.h`, `ui/core.ui.{h,cpp}`); `SPK_USE_STREAM` capability flag gating the SD streaming service (`Makefile`, `app.cpp`, `hw/buffer.sdram.{h,cpp}`, `hw/stream_deck.cpp`, `hw/fat_file.cpp`, `memory/storage.h`).
 

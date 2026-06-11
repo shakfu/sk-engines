@@ -38,29 +38,42 @@ struct FakeClock : ITimeSource {
     uint32_t now_us() const override { return ms * 1000u; }
 };
 
-// A memory-backed IStreamDeck: start_play serves `file` (a frame ramp) through play_consume, exactly
-// like the real SD stream feeding the engine's load drain. Only the load path is modelled.
+// A memory-backed IStreamDeck: start_play serves a deck's `file` (a frame ramp) through play_consume,
+// exactly like the real SD stream feeding the engine's load drain. Per-deck so A and B load independently;
+// `exists_a`/`exists_b` model whether each deck's slot-0 file is present on the card (default = empty card,
+// so the engine's boot preload probe finds nothing and does not fire).
 struct FakeStream : IStreamDeck {
-    std::vector<float> file;
-    bool playing = false;
-    uint32_t pos = 0;
-    uint32_t play_consume(DeckRef::Ref, uint8_t* dst, uint32_t n) override {
+    std::vector<float> file[2];
+    bool     playing[2] = { false, false };
+    uint32_t pos[2]     = { 0, 0 };
+    uint8_t  slots_a = 0, slots_b = 0;   // bit s set = slot s's file exists on the card (boot-preload probe)
+    static int di(DeckRef::Ref d) { return (d == DeckRef::A) ? 0 : 1; }
+    uint32_t play_consume(DeckRef::Ref d, uint8_t* dst, uint32_t n) override {
+        const int i = di(d);
         const uint32_t frames = n / sizeof(float);
-        const uint32_t avail  = static_cast<uint32_t>(file.size()) - pos;
+        const uint32_t avail  = static_cast<uint32_t>(file[i].size()) - pos[i];
         const uint32_t k      = frames < avail ? frames : avail;
-        std::memcpy(dst, file.data() + pos, k * sizeof(float));
-        pos += k;
+        std::memcpy(dst, file[i].data() + pos[i], k * sizeof(float));
+        pos[i] += k;
         return k * sizeof(float);
     }
     uint32_t record_produce(DeckRef::Ref, const uint8_t*, uint32_t n) override { return n; }
-    bool is_playing(DeckRef::Ref)   const override { return playing; }
+    bool is_playing(DeckRef::Ref d)   const override { return playing[di(d)]; }
     bool is_recording(DeckRef::Ref) const override { return false; }
-    bool start_play(DeckRef::Ref, const char*)   override { playing = true; pos = 0; return true; }
+    bool start_play(DeckRef::Ref d, const char*)   override { const int i = di(d); playing[i] = true; pos[i] = 0; return true; }
     bool start_record(DeckRef::Ref, const char*) override { return false; }
-    void stop(DeckRef::Ref)         override { playing = false; }
+    void stop(DeckRef::Ref d)         override { playing[di(d)] = false; }
     void set_loop(DeckRef::Ref, bool) override {}
-    uint32_t loop_frames(DeckRef::Ref) const override { return playing ? static_cast<uint32_t>(file.size()) : 0; }
-    bool exists(const char*) const override { return true; }
+    uint32_t loop_frames(DeckRef::Ref d) const override { const int i = di(d); return playing[i] ? static_cast<uint32_t>(file[i].size()) : 0; }
+    bool exists(const char* p) const override {            // path is "shuttle/tape_<a|b>_<N>.wav", N = slot+1
+        const char* a = std::strstr(p, "_a_");
+        const char* b = std::strstr(p, "_b_");
+        const char* m = a ? a : b;
+        if (!m) return false;
+        const int slot = m[3] - '1';                       // the char after "_a_"/"_b_" is the 1-based file number
+        if (slot < 0 || slot >= 8) return false;
+        return ((a ? slots_a : slots_b) >> slot) & 1u;
+    }
 };
 
 // Smooth deterministic test signal (frac=0 at unity playback -> exact, no interpolation error).
@@ -230,8 +243,8 @@ int main() {
     // ---- 6. SD-into-RAM load through a fake stream ------------------------------------------
     {
         FakeStream fs;
-        fs.file.resize(500);
-        for (size_t i = 0; i < fs.file.size(); i++) fs.file[i] = sig(i);
+        fs.file[0].resize(500);
+        for (size_t i = 0; i < fs.file[0].size(); i++) fs.file[0][i] = sig(i);
         EngineContext ctx = base; ctx.time = &clock; ctx.stream = &fs;
         ShuttleEngine e; e.init(ctx);
 
@@ -346,6 +359,24 @@ int main() {
         play_block(e, outL);
         check(e.read_position(DeckRef::A, 0) == static_cast<float>(e.loop_start(DeckRef::A, 0)),
               "Seq realign snaps to the loop window start, not frame 0");
+    }
+
+    // ---- 10. Boot preload: fill all four tracks (track t <- slot t), per-track conditional ------
+    {
+        FakeStream fs;
+        fs.slots_a = 0b11;   // deck A: slots 0 AND 1 present -> both tracks load
+        fs.slots_b = 0b01;   // deck B: only slot 0 present  -> track 0 loads, track 1 left empty
+        fs.file[0].resize(300); for (size_t i = 0; i < 300; i++) fs.file[0][i] = sig(i);       // deck A content
+        fs.file[1].resize(200); for (size_t i = 0; i < 200; i++) fs.file[1][i] = sig(i + 40);  // deck B content
+        EngineContext ctx = base; ctx.time = &clock; ctx.stream = &fs;
+        ShuttleEngine e; e.init(ctx);
+        // No manual load - just pump prepare() like the main loop. The boot preload fills each track from
+        // its slot's file, serialized per deck (a deck's two tracks share one stream).
+        for (int p = 0; p < 6; p++) e.prepare();
+        check(e.buffer_frames(DeckRef::A, 0) == 300, "preload loads deck A track 0 (slot 0 present)");
+        check(e.buffer_frames(DeckRef::A, 1) == 300, "preload loads deck A track 1 (slot 1 present, serialized after track 0)");
+        check(e.buffer_frames(DeckRef::B, 0) == 200, "preload loads deck B track 0 (slot 0 present)");
+        check(e.buffer_frames(DeckRef::B, 1) == 0,   "preload skips deck B track 1 (slot 1 absent)");
     }
 
     if (g_failures == 0) std::printf("  OK\n");

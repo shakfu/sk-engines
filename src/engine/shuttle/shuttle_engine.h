@@ -121,6 +121,7 @@ private:
     static constexpr uint32_t kLoadChunk  = 8192;      // frames pulled from the stream per prepare() pass
     static constexpr int      kDeclickRamp = 64;       // realign fade half-length (~1.3 ms/side at 48 kHz)
     static constexpr uint32_t kMinLoopFrames = 64;     // shortest SIZE window (avoids a degenerate loop)
+    static constexpr uint32_t kPreloadDeadlineMs = 3000; // stop retrying the boot preload after this (no card / empty)
 
     IStreamDeck*       _stream = nullptr;
     const ITimeSource* _time   = nullptr;
@@ -152,6 +153,12 @@ private:
     bool _want_reseed[2] = { false, false };  // Play-snap or Rev-swap -> platform reseeds pickup
     bool _aux_held[2] = { false, false };
     bool _rescan[2]   = { false, false };
+    // Boot preload: fill all four tracks from the card (track t of each deck <- slot t's file), serialized
+    // per deck (one shared stream). `_armed` until done/deadline; `_mounted` once a probe confirms the
+    // card is up; `_next[i]` = the next track to load on deck i (kTracks = that deck is finished).
+    bool    _preload_armed   = true;
+    bool    _preload_mounted = false;
+    uint8_t _preload_next[2] = { 0, 0 };
     bool _slot_used[2][kTapeSlots] = {};      // SD file existence (shared by a deck's two tracks)
     uint32_t _err_until[2]    = { 0, 0 };
     uint32_t _last_trig_ms[2] = { 0, 0 };

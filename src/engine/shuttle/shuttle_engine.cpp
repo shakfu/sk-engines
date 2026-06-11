@@ -56,6 +56,38 @@ void ShuttleEngine::_request_load(DeckRef::Ref d, int s) {
 // effectively serialized; a track whose load has not started yet simply waits a pass.
 void ShuttleEngine::prepare() {
     if (!_stream) return;
+
+    // Boot preload: fill ALL FOUR tracks from the card so a freshly powered shuttle is ready to jam
+    // without a manual Alt+PITCH load (the tape engine streams slot 0 lazily on Play, but this RAM engine
+    // must load up front). Each track t loads slot t's file (deck A: tape_a_1/_2.wav -> tracks 0/1; deck
+    // B: tape_b_1/_2.wav). A deck's two tracks share one SD stream, so per deck the loads are serialized
+    // (request the next track only when that deck's stream is free); the two decks load in parallel.
+    // The card mounts cooperatively later in this same loop, so first wait for the volume to come up
+    // (any successful exists() probe), retrying across passes; give up after a deadline if no card/files.
+    if (_preload_armed) {
+        if (!_preload_mounted) {
+            for (DeckRef::Ref d : { DeckRef::A, DeckRef::B })
+                for (int s = 0; s < kTracks && !_preload_mounted; s++)
+                    if (_stream->exists(_path(d, s))) _preload_mounted = true;
+            if (!_preload_mounted && _time && _time->now_ms() > kPreloadDeadlineMs)
+                _preload_armed = false;                         // no card / no files within the boot window
+        }
+        if (_preload_mounted) {
+            for (DeckRef::Ref d : { DeckRef::A, DeckRef::B }) {
+                const int i = idx(d);
+                const bool busy = _load[i][0] != Load::Idle || _load[i][1] != Load::Idle;
+                if (_preload_next[i] < kTracks && !busy) {
+                    const int s = _preload_next[i]++;           // advance whether we load or skip this track
+                    if (_len[i][s] == 0 && _stream->exists(_path(d, s))) {
+                        _tape_slot[i][s] = s;                   // track t <- slot t's file
+                        _request_load(d, s);                    // -> Priming; the deck is now busy until it drains
+                    }
+                }
+            }
+            if (_preload_next[0] >= kTracks && _preload_next[1] >= kTracks) _preload_armed = false;
+        }
+    }
+
     for (DeckRef::Ref d : { DeckRef::A, DeckRef::B }) {
         const int i = idx(d);
         if (_rescan[i]) { _rescan[i] = false; for (int s = 0; s < kTapeSlots; s++) _slot_used[i][s] = _stream->exists(_path(d, s)); }
