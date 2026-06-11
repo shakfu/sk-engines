@@ -43,6 +43,9 @@ Compilation options: -lang cpp -fpga-mem-th 4 -ct 1 -es 1 -mcd 16 -mdd 1024 -mdy
 #define RESTRICT __restrict__
 #endif
 
+static float mydsp_faustpower3_f(float value) {
+	return value * value * value;
+}
 static float mydsp_faustpower2_f(float value) {
 	return value * value;
 }
@@ -68,21 +71,20 @@ class mydsp : public dsp {
 	FAUSTFLOAT fHslider3;
 	float fRec4[2];
 	float fRec5[2];
-	float fConst7;
 	float fRec6[2];
 	float fRec7[2];
-	float fConst8;
+	float fConst7;
 	float fRec8[2];
 	float fRec9[2];
-	float fConst9;
+	float fConst8;
 	float fRec10[2];
 	float fRec11[2];
 	float fVec2[3];
 	float fRec3[2];
 	float fRec0[2];
-	float fConst10;
+	float fConst9;
 	float fRec1[2];
-	float fConst11;
+	float fConst10;
 	
  public:
 	mydsp() {
@@ -152,11 +154,10 @@ class mydsp : public dsp {
 		fConst4 = fConst1 / fConst3;
 		fConst5 = 2.0f * fConst4;
 		fConst6 = 6.2831855f / fConst0;
-		fConst7 = 37.699112f / fConst0;
-		fConst8 = 75.398224f / fConst0;
-		fConst9 = 113.097336f / fConst0;
-		fConst10 = 2.0f * fConst1;
-		fConst11 = 1.0f / fConst3;
+		fConst7 = 12.566371f / fConst0;
+		fConst8 = 18.849556f / fConst0;
+		fConst9 = 2.0f * fConst1;
+		fConst10 = 1.0f / fConst3;
 	}
 	
 	virtual void instanceResetUserInterface() {
@@ -249,18 +250,18 @@ class mydsp : public dsp {
 		float fSlow3 = 7.2e+02f / std::max<float>(0.01f, 3.8e+02f * fSlow2);
 		float fSlow4 = 0.0031622776f * fSlow0;
 		float fSlow5 = 6e+02f * static_cast<float>(fHslider2);
-		float fSlow6 = static_cast<float>(fHslider3);
-		float fSlow7 = fConst6 * (2.0f * fSlow6 + 0.5f);
+		float fSlow6 = mydsp_faustpower3_f(static_cast<float>(fHslider3));
+		float fSlow7 = fConst6 * (2.4f * fSlow6 + 0.1f);
 		float fSlow8 = std::sin(fSlow7);
 		float fSlow9 = std::cos(fSlow7);
-		float fSlow10 = fSlow6 + 1.0f;
-		float fSlow11 = fConst7 * fSlow10;
+		float fSlow10 = 11.5f * fSlow6 + 0.5f;
+		float fSlow11 = fConst6 * fSlow10;
 		float fSlow12 = std::sin(fSlow11);
 		float fSlow13 = std::cos(fSlow11);
-		float fSlow14 = fConst8 * fSlow10;
+		float fSlow14 = fConst7 * fSlow10;
 		float fSlow15 = std::sin(fSlow14);
 		float fSlow16 = std::cos(fSlow14);
-		float fSlow17 = fConst9 * fSlow10;
+		float fSlow17 = fConst8 * fSlow10;
 		float fSlow18 = std::sin(fSlow17);
 		float fSlow19 = std::cos(fSlow17);
 		float fSlow20 = 0.00049410586f * fSlow0;
@@ -329,8 +330,8 @@ class mydsp : public dsp {
 			float fTemp42 = fTemp41 - (fConst2 * fRec0[1] + fRec1[1]);
 			fRec0[0] = fRec0[1] + fConst5 * fTemp42;
 			float fTemp43 = fRec0[1] + fConst4 * fTemp42;
-			fRec1[0] = fRec1[1] + fConst10 * fTemp43;
-			float fTemp44 = fConst11 * fTemp42;
+			fRec1[0] = fRec1[1] + fConst9 * fTemp43;
+			float fTemp44 = fConst10 * fTemp42;
 			float fRec2 = fTemp44;
 			output0[i0] = static_cast<FAUSTFLOAT>(fSlow1 * fRec2);
 			iVec0[1] = iVec0[0];

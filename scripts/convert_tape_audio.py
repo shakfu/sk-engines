@@ -6,8 +6,18 @@ float WAV at 48 kHz** (`AudioFormat 3`). The firmware does NO conversion on the 
 path - it reads file body bytes straight into float frames - so any other encoding is
 reinterpreted as garbage. As of the format-validation fix the firmware *rejects* a
 non-conforming file instead (the deck's amber error LED strobes), but it still won't
-play it. This script wraps ffmpeg (or sox) to convert arbitrary inputs to the supported
-format, optionally naming the outputs as deck slot files.
+play it. This script decodes arbitrary inputs to raw float with ffmpeg (or sox) and then
+writes the WAV container itself, optionally naming the outputs as deck slot files.
+
+Why write the header ourselves instead of letting ffmpeg write the `.wav`: ffmpeg's float
+encoder emits a `fact` chunk, and a source exported from a DAW (Logic, etc.) carries a
+`LIST`/INFO metadata block too - both land BETWEEN `fmt ` and `data`, pushing the audio
+body well past the canonical offset 44 (Logic output lands `data` at byte 128). A firmware
+WAV reader that assumes a fixed body offset then plays that metadata as audio = NOISE; an
+older reader with a small header window rejects the file outright = silence. We instead
+emit a byte-identical copy of the 44-byte header the firmware's OWN recorder writes (`fmt `
+size 16, no `fact`, no `LIST`, `data` at offset 44), so the output plays on every firmware
+version regardless of how its header parser works.
 
 Supported/target format (what the firmware accepts):
     container : WAV (RIFF)
@@ -53,14 +63,37 @@ def die(msg):
     sys.exit(1)
 
 
-def ffmpeg_cmd(src, dst):
-    return ["ffmpeg", "-nostdin", "-y", "-loglevel", "error",
-            "-i", src, "-ac", "1", "-ar", str(TARGET_RATE), "-c:a", "pcm_f32le", dst]
+def ffmpeg_cmd(src):
+    # Decode to headerless raw mono 48k float32 on stdout; we add the WAV header ourselves.
+    return ["ffmpeg", "-nostdin", "-loglevel", "error",
+            "-i", src, "-ac", "1", "-ar", str(TARGET_RATE), "-f", "f32le", "-"]
 
 
-def sox_cmd(src, dst):
-    return ["sox", src, "-c", "1", "-r", str(TARGET_RATE),
-            "-e", "floating-point", "-b", str(TARGET_BITS), dst]
+def sox_cmd(src):
+    # `-t f32` = raw 32-bit float; output rate/channels make sox resample + down-mix. Raw on stdout.
+    return ["sox", src, "-t", "f32", "-r", str(TARGET_RATE), "-c", "1", "-"]
+
+
+def canonical_header(data_bytes):
+    """The exact 44-byte header the firmware's recorder writes (see src/memory/wav.h WavHeader):
+    `fmt ` size 16, float/mono/48k, then `data` - no `fact`/`LIST`, so the body sits at offset 44."""
+    byte_rate  = TARGET_RATE * (TARGET_BITS // 8)        # mono: blockalign == bytes/sample
+    block_align = TARGET_BITS // 8
+    return (b"RIFF" + struct.pack("<I", 36 + data_bytes) + b"WAVE"
+            + b"fmt " + struct.pack("<IHHIIHH", 16, TARGET_FMT, 1, TARGET_RATE,
+                                    byte_rate, block_align, TARGET_BITS)
+            + b"data" + struct.pack("<I", data_bytes))
+
+
+def convert(tool_cmd, src, dst):
+    """Decode `src` to raw float via the tool, then write a canonical-header WAV to `dst`.
+    Returns the audio duration in seconds. Raises subprocess.CalledProcessError on a decode failure."""
+    raw = subprocess.run(tool_cmd(src), check=True, stdout=subprocess.PIPE).stdout
+    raw = raw[:len(raw) - (len(raw) % 4)]               # whole float frames only (defensive)
+    with open(dst, "wb") as f:
+        f.write(canonical_header(len(raw)))
+        f.write(raw)
+    return len(raw) / (TARGET_RATE * (TARGET_BITS // 8))
 
 
 def verify(path):
@@ -133,20 +166,18 @@ def main():
         dst = os.path.join(out_dir, name)
 
         try:
-            subprocess.run(build(src, dst), check=True)
+            seconds = convert(build, src, dst)
         except subprocess.CalledProcessError:
-            print(f"FAIL  {src}: {args.tool} could not convert it", file=sys.stderr); rc = 1; continue
+            print(f"FAIL  {src}: {args.tool} could not decode it", file=sys.stderr); rc = 1; continue
 
         detail = ""
         if not args.no_verify:
             ok, detail = verify(dst)
             if not ok:
                 print(f"FAIL  {src} -> {dst}: {detail}", file=sys.stderr); rc = 1; continue
-            if max_seconds:
-                seconds = float(detail.split("s,")[0].split(", ")[-1])
-                if seconds > max_seconds:
-                    print(f"WARN  {dst}: {seconds:.1f}s exceeds the shuttle ~{max_seconds}s RAM cap "
-                          f"(it will be truncated on load)", file=sys.stderr)
+        if max_seconds and seconds > max_seconds:
+            print(f"WARN  {dst}: {seconds:.1f}s exceeds the shuttle ~{max_seconds}s RAM cap "
+                  f"(it will be truncated on load)", file=sys.stderr)
         print(f"ok    {src} -> {dst}" + (f"   [{detail}]" if detail else ""))
 
     sys.exit(rc)

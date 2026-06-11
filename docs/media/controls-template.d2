@@ -1,0 +1,178 @@
+# Spotykach control-surface TEMPLATE
+#
+# The hardware is the FIXED platform; every engine re-uses the same physical
+# controls. This is a blank template: the left cell of each row is the fixed
+# control name, the right cell is a "[ ... ]" slot to fill in with what that
+# control DOES in a given engine. Copy this file per engine and replace the
+# placeholders. See docs/manual.md for the granular-engine population.
+
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    pad: 40
+  }
+}
+
+title: |md
+  # Spotykach Control Surface -- Engine Template
+  _Fixed platform controls (left) -> per-engine function (right, fill in)_
+| {
+  near: top-center
+  style.font-size: 26
+}
+
+classes: {
+  knob:   { style: { fill: "#ebf4ff"; stroke: "#90cdf4"; stroke-width: 2 } }
+  pad:    { style: { fill: "#fffaf0"; stroke: "#fbd38d"; stroke-width: 2 } }
+  shared: { style: { fill: "#faf5ff"; stroke: "#d6bcfa"; stroke-width: 2 } }
+  io:     { style: { fill: "#f0fff4"; stroke: "#9ae6b4"; stroke-width: 2 } }
+}
+
+panel: Front panel {
+  grid-columns: 3
+  grid-gap: 60
+  style.stroke: "#cbd5e0"
+
+  # ----------------------------------------------------------------- DECK A
+  deckA: Deck A {
+    style.stroke: "#90cdf4"
+
+    knobsA: Knobs (7) {
+      class: knob
+      shape: sql_table
+      Pitch:     "[  fn  ]"
+      Position:  "[  fn  ]"
+      Size:      "[  fn  ]"
+      Envelope:  "[  fn  ]"
+      "Mix (SOS)": "[  fn  ]"
+      Cycle:     "[  LFO rate  ]"
+      Glow:      "[  mod depth  ]"
+    }
+
+    padsA: Pads (5) {
+      class: pad
+      shape: sql_table
+      Play:    "[  fn  ]"
+      Reverse: "[  fn  ]"
+      Grit:    "[  fx fn  ]"
+      Flux:    "[  fx fn  ]"
+      Seq:     "[  fn  ]"
+    }
+
+    ringA: "LED Ring A (32px)" {
+      class: knob
+      shape: circle
+      label: "Ring A\n[ what it shows ]"
+    }
+  }
+
+  # --------------------------------------------------------------- SHARED
+  center: Shared / Transport {
+    style.stroke: "#d6bcfa"
+
+    xfade: Crossfade {
+      class: shared
+      shape: sql_table
+      Crossfade: "[  A/B blend  ]"
+    }
+
+    switches: Switches (74HC165) {
+      class: shared
+      shape: sql_table
+      "Mode (L/C/R)":     "[  fn  ]"
+      "Routing (L/C/R)":  "[  fn  ]"
+      "CV target (U/C/D)": "[  fn  ]"
+      "Out trims A/B":    "[  fn  ]"
+    }
+
+    transport: Transport {
+      class: shared
+      shape: sql_table
+      Tap:  "[  tap tempo / +mod  ]"
+      Alt:  "modifier (held)"
+      Spot: "[  fn  ]"
+    }
+
+    clockled: "Clock LED" {
+      class: shared
+      shape: circle
+      label: "Clock\n[ src color ]"
+    }
+  }
+
+  # ----------------------------------------------------------------- DECK B
+  deckB: Deck B {
+    style.stroke: "#90cdf4"
+
+    knobsB: Knobs (7) {
+      class: knob
+      shape: sql_table
+      Pitch:     "[  fn  ]"
+      Position:  "[  fn  ]"
+      Size:      "[  fn  ]"
+      Envelope:  "[  fn  ]"
+      "Mix (SOS)": "[  fn  ]"
+      Cycle:     "[  LFO rate  ]"
+      Glow:      "[  mod depth  ]"
+    }
+
+    padsB: Pads (5) {
+      class: pad
+      shape: sql_table
+      Play:    "[  fn  ]"
+      Reverse: "[  fn  ]"
+      Grit:    "[  fx fn  ]"
+      Flux:    "[  fx fn  ]"
+      Seq:     "[  fn  ]"
+    }
+
+    ringB: "LED Ring B (32px)" {
+      class: knob
+      shape: circle
+      label: "Ring B\n[ what it shows ]"
+    }
+  }
+}
+
+# ---------------------------------------------------------------------- I/O
+io: I/O jacks (fixed) {
+  grid-columns: 4
+  grid-gap: 40
+  style.stroke: "#9ae6b4"
+
+  audio: Audio {
+    class: io
+    shape: sql_table
+    "In L/R":        "codec 48k"
+    "Out A / Out B": "mono + trims"
+    "Stereo out":    "TRS"
+  }
+
+  cv: CV in (7) {
+    class: io
+    shape: sql_table
+    "Size/Pos A/B": "[  target by sw  ]"
+    "Mix A/B":      "[  fn  ]"
+    "V/Oct A/B":    "[  fn  ]"
+    "Crossfade CV": "[  fn  ]"
+  }
+
+  gates: Clock / Gate {
+    class: io
+    shape: sql_table
+    "Clock in (TRS 4PPQN)": "sync"
+    "Gate in A/B":          "[  fn  ]"
+    "Gate out A/B":         "[  fn  ]"
+  }
+
+  modmidi: Mod CV / MIDI {
+    class: io
+    shape: sql_table
+    "Mod CV out A/B": "[  src  ] 0..+5V"
+    "MIDI in/out":    "24 PPQN + notes"
+  }
+}
+
+panel -> io: {
+  style: { stroke: "#cbd5e0"; stroke-dash: 4 }
+}

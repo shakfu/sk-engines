@@ -27,8 +27,13 @@ rate  = hslider("rate",  0.4, 0, 1, 0.001); // wow + flutter rate
 // FlutterProcess). maxdel is a compile-time buffer size; the platform runs at 48 kHz.
 maxdel   = 2400;       // 50 ms @ 48 kHz
 basedel  = 1200.0;     // 25 ms nominal (room to swing either way)
-wowHz    = 0.5 + rate * 2.0;   // 0.5 .. 2.5 Hz
-fltHz    = 6.0 + rate * 6.0;   // 6 .. 12 Hz
+// Cubic rate curve so the low end is favored: the bottom of the knob barely moves (very slow
+// drift, ~10 s period) and the frequency climbs to a reasonable wobble only near the top. Even
+// at mid-knob the wow is slower than a real reel's nominal 0.5 Hz, fixing the "too fast at the
+// lowest levels" feel of the old linear map (which floored at 0.5 Hz wow / 6 Hz flutter).
+rc       = rate * rate * rate; // favor very low frequencies, increase slowly
+wowHz    = 0.1 + rc * 2.4;     // 0.1 .. 2.5 Hz
+fltHz    = 0.5 + rc * 11.5;    // 0.5 .. 12 Hz
 // os.oscrs (recursive "magic circle" sine) is table-free - os.osc would emit a 64K-entry static sine
 // table (256 KB) that lands in SRAM and overflows the region; the LFOs need no such table.
 wowLFO   = os.oscrs(wowHz);

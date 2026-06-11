@@ -1,0 +1,135 @@
+# Spotykach engines architecture
+#
+# Fixed hardware/UI PLATFORM hosts ONE swappable DSP engine per firmware build.
+# Selection is a build-time choice (ENGINE=<name> -> engine_select.h). The
+# platform speaks only IEngine; engines own their DSP privately.
+# Dependencies point downward. See docs/architecture.md + docs/engine-layout.md.
+
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    pad: 40
+  }
+}
+direction: down
+
+title: |md
+  # Spotykach -- Platform + Swappable Engine
+  _One board, one interaction language, many instruments. One engine per binary._
+| {
+  near: top-center
+  style.font-size: 26
+}
+
+classes: {
+  root:    { style: { fill: "#faf5ff"; stroke: "#d6bcfa"; stroke-width: 2 } }
+  plat:    { style: { fill: "#ebf4ff"; stroke: "#90cdf4"; stroke-width: 2 } }
+  seam:    { style: { fill: "#fffff0"; stroke: "#f6e05e"; stroke-width: 3; bold: true } }
+  native:  { style: { fill: "#f0fff4"; stroke: "#9ae6b4"; stroke-width: 2 } }
+  faust:   { style: { fill: "#fff5f7"; stroke: "#fbb6ce"; stroke-width: 2 } }
+  gen:     { style: { fill: "#e6fffa"; stroke: "#81e6d9"; stroke-width: 2 } }
+  infra:   { style: { fill: "#f7fafc"; stroke: "#cbd5e0"; stroke-width: 2 } }
+  hal:     { style: { fill: "#fff5f5"; stroke: "#feb2b2"; stroke-width: 2 } }
+}
+
+# ---------------------------------------------------------------- boot / root
+boot: "app.cpp / main.cpp\n(composition root)\nengine_select.h picks ActiveEngine" {
+  class: root
+}
+
+# ------------------------------------------------------------------- platform
+platform: PLATFORM (fixed, shared by every engine) {
+  class: plat
+  ui:       "CoreUI (src/ui)\npots - pads - CV - MIDI - LEDs\nMValue pickup - gesture grammar"
+  transport: "Transport (src/transport)\nshared clock: internal / TRS / MIDI\ntap tempo - ticks - clock out"
+  storage:  "Storage / Settings (src/memory)\nSD tapes (6x6) - config.txt - QSPI cal"
+}
+
+# ----------------------------------------------------------------- the seam
+seam: "IEngine  --  THE SEAM (src/engine/iengine.h)" {
+  class: seam
+  contract: "Contract headers\nengine_params (ParamId / Capabilities)\ndisplay_model - engine_context - itransport" {
+    class: seam
+  }
+}
+
+# ------------------------------------------------------- engines (1 per build)
+engines: "ENGINES  (build-time: ENGINE=<name>, only one compiles/links)" {
+  style.stroke: "#cbd5e0"
+
+  nativegrp: Native DSP {
+    style.stroke: "#9ae6b4"
+    granular:    "granular*\ndual-deck looper/granular" { class: native }
+    delay:       "delay" { class: native }
+    edrums:      "edrums" { class: native }
+    reso:        "reso" { class: native }
+    shuttle:     "shuttle" { class: native }
+    passthrough: "passthrough\n(reference, header-only)" { class: native }
+  }
+
+  faustgrp: "Faust kernel engines" {
+    style.stroke: "#fbb6ce"
+    reverb: "reverb\ndattorro / zita" { class: faust }
+    tape:   "tape\nwow/flutter + hysteresis" { class: faust }
+  }
+
+  gengrp: "gen~ engines" {
+    style.stroke: "#81e6d9"
+    gigaverb: "gigaverb\nGenEngine<W> adapter" { class: gen }
+  }
+}
+
+# --------------------------------------------------------- shared engine infra
+infra: "Shared engine infrastructure (codegen runtimes, engine-coupled)" {
+  class: infra
+  faustarch: "faust_arch.h\nFaust dsp/UI/Meta shim" { class: infra }
+  geninfra:  "gen/  GenEngine<W>\n+ genlib_arena (SDRAM)" { class: infra }
+}
+
+# ------------------------------------------------------------- primitives + hal
+dsp: "src/dsp  (engine-agnostic primitives)\nlutsinosc - smooth - deline - hann - divider" {
+  class: infra
+}
+hal: "src/hw  (HAL)\nDaisy peripherals - Hardware - SDRAM arena pool" {
+  class: hal
+}
+
+# --------------------------------------------------------------------- edges
+boot -> platform: owns + wires
+boot -> seam: instantiates ActiveEngine
+platform -> seam: drives via IEngine {
+  style.stroke: "#ecc94b"
+}
+seam -> platform: queries (LED / transport state) {
+  style: { stroke: "#ecc94b"; stroke-dash: 3 }
+}
+
+seam.contract -> engines.nativegrp: implements {
+  style.stroke-dash: 2
+}
+seam.contract -> engines.faustgrp: implements {
+  style.stroke-dash: 2
+}
+seam.contract -> engines.gengrp: implements {
+  style.stroke-dash: 2
+}
+
+engines.faustgrp.reverb -> infra.faustarch
+engines.faustgrp.tape -> infra.faustarch
+engines.gengrp.gigaverb -> infra.geninfra
+
+engines -> dsp: may use
+infra -> dsp: may use
+platform -> hal: peripherals
+engines -> hal: "EngineContext arena (no direct libDaisy)" {
+  style.stroke-dash: 2
+}
+
+note: |md
+  **Read downward.** Nothing below depends on anything above.
+  `*` granular is the reference engine; everything except its DSP is reusable platform.
+  Engines never include libDaisy directly -- hardware is injected via `EngineContext`.
+| {
+  near: bottom-center
+  style.font-size: 13
+}

@@ -11,6 +11,7 @@ Priority is driven less by size than by what unblocks/gates what, and by whether
 | P3 | Refactor delay engine onto shared primitives | med | med-high | **hardware flash** | none (primitives now in `dsp/`) |
 | P4 | Convert the build to CMake (spike done; flash-gated) | high | high | flash (host parity met) | strategic intent |
 | P5 | Fix tape engine GenerativeStereo re-roll-every-loop bug | trivial | low | host build + **flash** (by ear) | none (do now with build-only batch) |
+| P6 | Tape wow/flutter rate: try quadratic curve + lower maximums | trivial | low | **flash** (by ear) | none (optional voicing experiment) |
 
 Hardware-batch note: the Faust DSP CPU/voicing check (P2), the delay refactor (P3), the mono-input *software fallback* (if P1 says "not normalled"), and the still-outstanding Phase-5 R4a granular-path flash-verify are all hardware-gated - do them together in one bench session.
 
@@ -112,3 +113,21 @@ But the platform calls `set_config(ConfigId::Route, ...)` **every loop** (`src/u
 **Fix:** guard the action on an actual route transition, exactly as the shuttle engine now does (`src/engine/shuttle/shuttle_engine.cpp` `set_config` - track the previous `Route` and only re-roll / recompute when it changes). Found 2026-06-10 while wiring the routing switch + per-track pan into the shuttle engine; shuttle was written with the guard, tape was left as-is to keep the change scoped.
 
 Build-verifiable (compiles + the logic is inspectable), but the audible "pans no longer jitter" confirmation needs a flash - fold the code fix into the build-only batch now, confirm by ear in the next bench session.
+
+## P6 - Tape wow/flutter rate: experiment with a quadratic curve and lower maximums
+
+Optional voicing tweak, not a defect. The MODFREQ ("cycle") knob -> wow/flutter rate map in `src/engine/tape/tapefx.dsp` was changed 2026-06-11 from a linear map with too-high a floor (`0.5 .. 2.5 Hz` wow / `6 .. 12 Hz` flutter) to a **cubic** curve with a low floor:
+
+```
+rc    = rate * rate * rate; // favor very low frequencies, increase slowly
+wowHz = 0.1 + rc * 2.4;     // 0.1 .. 2.5 Hz
+fltHz = 0.5 + rc * 11.5;    // 0.5 .. 12 Hz
+```
+
+This is good enough as-is (the lowest levels are now a slow drift rather than a fast warble), but it's worth experimenting with two softer variants:
+
+- **Quadratic instead of cubic** (`rc = rate * rate`): a gentler favor-low. Cubic keeps the rate very slow until ~0.7 of knob travel, which may push the usable fast-wobble range too far up; quadratic spreads it out more evenly.
+
+- **Lower the maximums somewhat**: drop the `2.4` / `11.5` multipliers so the top of the knob tops out below the current 2.5 Hz wow / 12 Hz flutter, if even the maxima feel too fast.
+
+Levers are the three lines above; re-tune and `make faust-gen` (regenerates `faust_kernel_tapefx.h`), then evaluate by ear on hardware. Purely subjective, so it's flash-gated (no host test can judge it) and low priority - fold into the next bench session alongside the P2 tape voicing pass. See `docs/engines/tape.md`.
