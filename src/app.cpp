@@ -66,8 +66,10 @@ class AppImpl {
   private:
     NOCOPY(AppImpl)
 
+    #if DEBUG || defined(METER)
+    StopwatchTimer _log_timer; // throttles the serial log (debug info and/or the CPU meter)
+    #endif
     #if DEBUG
-    StopwatchTimer _log_timer;
     void logDebugInfo();
     #endif
     bool _log_enabled;
@@ -160,7 +162,7 @@ void AppImpl::Init()
     #endif
 
     Log::StartLog(false);
-#if DEBUG
+#if DEBUG || defined(METER)
     _log_timer.Init();
 #endif
 
@@ -201,10 +203,12 @@ void AppImpl::Loop()
         _stream.process();   // pump the slow SD play/record I/O for the streaming engine
         #endif
         
-        #if DEBUG
+        #if DEBUG || defined(METER)
         if(_log_timer.HasPassedMs(250))
         {
+            #if DEBUG
             logDebugInfo();
+            #endif
             _log_timer.Restart();
 
             #ifdef METER

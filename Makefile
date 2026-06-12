@@ -109,9 +109,12 @@ $(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', 'ed
 endif
 
 # Opt-in (make ... METER=1): enable the on-device CPU load meter (app.cpp's CpuLoadMeter). It prints
-# Max/Avg/Min processing load % over the serial log each housekeeping pass - read it over USB serial.
+# Max/Avg/Min processing load % over the serial log (LOGGER_EXTERNAL) every ~250 ms. INFS_LOG=1 turns
+# the logger from a no-op into the real one (see common.h); the meter print is compiled under METER, so
+# this works at the shipping -O2 without the full DEBUG build. Read it over USB serial.
 ifeq ($(METER), 1)
 C_DEFS += -DMETER
+C_DEFS += -DINFS_LOG=1
 endif
 
 USE_FATFS = 1
