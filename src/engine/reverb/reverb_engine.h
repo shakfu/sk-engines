@@ -13,26 +13,36 @@ struct ReverbVoice; // defined in reverb_engine.cpp (wraps one generated kernel 
 
 // ReverbEngine - a multi-algorithm reverb whose DSP is Faust-generated. Each algorithm is a
 // cyfaust-generated kernel (src/engine/reverb/<name>.dsp -> faust_kernel_<name>.h, one per namespace
-// rv_<name>); Alt+PITCH (ParamId::Aux, CapAux) selects which one is live. Currently: a Dattorro plate
-// and a Zita-rev1 hall.
-// Stereo in -> stereo out; the platform's live audio is reverberated and wet/dry is a knob.
+// rv_<name>); the physical Reel/Slice/Drift mode switch (ConfigId::Mode) selects which one is live.
+// Currently: a Dattorro plate and a Zita-rev1 hall (plus a gen~ gigaverb under SPK_REVERB_GIGAVERB).
+//
+// Route-aware (ConfigId::Route), like the rest of the instrument:
+//   * Stereo / GenerativeStereo -> ONE stereo voice (deck A's selection) reverberates the stereo pair;
+//     deck A's knobs + switch drive it, deck B's strip is inert.
+//   * DoubleMono -> an independent MONO reverb per deck (deck A -> left, deck B -> right): each deck's
+//     strip drives its own side, both switches live. Stereo voices are run mono (input fanned to both
+//     channels, one output kept), so each side costs a full stereo reverb (dual ~= 2x the single cost).
+// A full set of voices is allocated PER DECK up front, so the route is a runtime branch in process()
+// with no reallocation. The active voice's compute() is allocation-free -> ISR-safe.
 //
 // Memory: a reverb kernel is hundreds of KB of comb/allpass/FDN delay-line state (Dattorro ~126 KB,
 // Zita ~937 KB) - far too big for SRAM. Every kernel is placement-new'd into the injected SDRAM arena
-// at init() (the pattern ResoEngine uses for Rings); only pointers live in this object. All kernels
-// are constructed up front and the active one's compute() is called per block, so switching is a
-// pointer flip with no audio-thread allocation. (Combining them into one Faust process would run every
-// algorithm every sample - Faust has no branch elision - so separate kernels are the CPU-cheap design.)
+// at init() (the pattern ResoEngine uses for Rings); only pointers live in this object. Per-deck
+// allocation is ~2.1 MB (Faust) / ~6.2 MB (with gigaverb) - trivial against the 48 MB arena.
 //
 // Knob map (reverb-agnostic roles; the 0..1 knob is linear-mapped into each slider's native range):
-//   SOS   (Mix)    -> Mix    (wet/dry)        POS   (Pos)   -> Decay (tail length)
-//   ENV   (Env)    -> Damp   (HF damping)     PITCH (Speed) -> Tone  (plate: prefilter / hall: low RT60)
+//   SOS   (Mix)    -> Mix    (wet/dry)        PITCH (Speed) -> Decay (tail length; biggest knob)
+//   ENV   (Env)    -> Damp   (HF damping)     POS   (Pos)   -> Tone  (plate: prefilter / hall: low RT60)
 //   SIZE  (Size)   -> SizeA  (plate: input diffusion / hall: pre-delay)
 //   MODAMT(ModAmp) -> SizeB  (plate: tank diffusion  / hall: tail EQ, low-mid peak +/-15 dB)
-//   Alt+PITCH (Aux) -> reverb algorithm select
+//   Reel/Slice/Drift switch (ConfigId::Mode) -> reverb algorithm select (per deck)
 class ReverbEngine : public IEngine {
 public:
-    static constexpr int kReverbCount = 2; // dattorro, zita (keep in sync with RV_NAMES / init())
+#if defined(SPK_REVERB_GIGAVERB)
+    static constexpr int kReverbCount = 3; // dattorro, zita, gigaverb (Alt+PITCH selects; keep in sync with init())
+#else
+    static constexpr int kReverbCount = 2; // dattorro, zita (keep in sync with init())
+#endif
 
     ReverbEngine() = default;
     ~ReverbEngine() override = default;
@@ -41,27 +51,30 @@ public:
     void prepare() override {}
     void process(const float* const* in, float** out, size_t size) override;
 
-    Capabilities capabilities() const override { return CapOwnDisplay | CapAux; }
+    // CapDualDeck: the engine is per-deck capable (used in DoubleMono route). It has no platform runtime
+    // effect on knob delivery (both decks' knobs are sent regardless), but advertises the engine's nature.
+    Capabilities capabilities() const override { return CapOwnDisplay | CapDualDeck; }
 
     void  set_param(ParamId id, DeckRef::Ref deck, float value) override;
     float param(ParamId id, DeckRef::Ref deck) const override;
-    void  set_aux_active(DeckRef::Ref deck, bool active) override;
+    bool  set_config(ConfigId id, DeckRef::Ref deck, int value) override; // Mode -> voice; Route -> topology
+    Route route() const override { return _route; }                       // report topology for the route LED
     void  render(DisplayModel& m) override;
 
 private:
     NOCOPY(ReverbEngine)
 
-    ReverbVoice* _rv[kReverbCount] = { nullptr, nullptr }; // each placement-new'd in the SDRAM arena
-    int          _active = 0;     // index into _rv
+    // One full set of voices PER DECK (so deck A's hall and deck B's hall are separate delay-line state),
+    // each deck's selected voice, knob cache, and output peak. In a stereo route only deck A's set runs
+    // (as the stereo voice); in DoubleMono both run (each mono). All placement-new'd in the SDRAM arena.
+    ReverbVoice* _rv[DeckRef::Count][kReverbCount] = {};
+    int          _active[DeckRef::Count] = { 0, 0 };
+    float        _v[DeckRef::Count][6] = { { 0.4f, 0.7f, 0.5f, 0.6f, 0.5f, 0.5f },
+                                           { 0.4f, 0.7f, 0.5f, 0.6f, 0.5f, 0.5f } }; // Mix,Decay,Damp,Tone,SizeA,SizeB
+    float        _peak[DeckRef::Count] = { 0.f, 0.f };
+    Route        _route = Route::Stereo; // ConfigId::Route; selects the process() topology
 
-    void apply_all_knobs();      // push the six cached knob values into the active reverb
-
-    // Cached normalised (0..1) knob values, returned by param() so the platform's MValue pickup tracks.
-    // Indexed by the six knob roles (see kKnobCount in the .cpp); kept here as a fixed array.
-    float _v[6]   = { 0.4f, 0.7f, 0.5f, 0.6f, 0.5f, 0.5f }; // Mix,Decay,Damp,Tone,SizeA,SizeB
-    float _v_aux  = 0.f;        // raw Alt+PITCH selector value (0..1), readback for the MValue pickup
-    bool  _aux_held = false;    // platform: Alt+PITCH selector currently held -> draw the selector
-    float _peak   = 0.f;        // output peak for the ring level-meter render
+    void apply_all_knobs(DeckRef::Ref deck); // push that deck's cached knobs into its active reverb
 };
 
 };

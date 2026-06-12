@@ -8,6 +8,11 @@
 #include "engine/reverb/faust_kernel_dattorro.h"
 #include "engine/reverb/faust_kernel_zita.h"
 
+#if defined(SPK_REVERB_GIGAVERB)
+#include "engine/gigaverb/_ext_daisy.h" // gigaverb_daisy::wrapper_* (gen~ export C interface)
+#include "engine/gen/genlib_arena.h"    // genlib_arena_bind: point gen~'s allocator at our arena slice
+#endif
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -81,7 +86,9 @@ struct ReverbVoice {
     virtual void init(int sample_rate) = 0;
     virtual void compute(FAUSTFLOAT** in, FAUSTFLOAT** out, int n) = 0;
     virtual const char* name() const = 0;
-    void set_knob(Knob k, float v) { role[k].set(v); }
+    // virtual so a non-Faust voice (GigaverbVoice) can route knobs through its own param API instead
+    // of the Role/zone table; Dattorro/Zita use this default.
+    virtual void set_knob(Knob k, float v) { role[k].set(v); }
 };
 
 namespace {
@@ -135,13 +142,66 @@ struct ZitaVoice : ReverbVoice {
     const char* name() const override { return "HALL"; }
 };
 
+#if defined(SPK_REVERB_GIGAVERB)
+// --- Gigaverb (gen~) ---------------------------------------------------------------------------
+// A third voice whose DSP is the gen~ "gigaverb" export rather than a Faust kernel. gen~ exposes no
+// control zones, so this voice ignores the Role/zone table and overrides set_knob to translate the
+// six reverb roles into gen~ setparameter() calls by index (the same 8-param map gigaverb_engine.h
+// uses standalone; the two params the panel does not drive - 3 early, 6 spread - keep gen~ defaults).
+// The gen~ State (12 delay lines, ~1.59 MB) is allocated by wrapper_create() from the genlib bump
+// allocator, which ReverbEngine::init points at a dedicated arena slice before this voice is built.
+struct GigaverbVoice : ReverbVoice {
+    void* _st = nullptr;
+    long  _block;
+    float _mix = 0.4f; // wet/dry, knob up = wetter (matches _v[K_Mix] default); see compute()
+    explicit GigaverbVoice(long block) : _block(block) {}
+
+    // Reverb role -> gen~ parameter index. K_Mix is NOT here: gigaverb has no wet/dry parameter (its
+    // `dry` param only adds dry passthrough and cannot null the always-on wet tail), so this voice owns
+    // the crossfade in compute() instead - keeping "knob up = wetter" consistent with Plate/Hall.
+    static int gen_index(Knob k) {
+        switch (k) {
+            case K_Decay: return 4; // revtime
+            case K_Damp:  return 1; // damping
+            case K_Tone:  return 0; // bandwidth
+            case K_SizeA: return 5; // roomsize
+            case K_SizeB: return 7; // tail
+            default:      return -1;
+        }
+    }
+    static constexpr int kDryParam = 2; // gen~ "dry": pinned to 0 so the export is pure wet; mix is ours
+
+    void init(int sr) override {
+        _st = gigaverb_daisy::wrapper_create(static_cast<float>(sr), _block);
+        if (_st) gigaverb_daisy::wrapper_set_param(_st, kDryParam, 0.f);
+    }
+    void set_knob(Knob k, float v) override {
+        if (k == K_Mix) { _mix = v; return; }
+        if (!_st) return;
+        const int idx = gen_index(k);
+        if (idx < 0) return;
+        const float lo = gigaverb_daisy::wrapper_param_min(_st, idx);
+        const float hi = gigaverb_daisy::wrapper_param_max(_st, idx);
+        gigaverb_daisy::wrapper_set_param(_st, idx, lo + v * (hi - lo));
+    }
+    void compute(FAUSTFLOAT** in, FAUSTFLOAT** out, int n) override {
+        if (!_st) return;
+        gigaverb_daisy::wrapper_perform(_st, in, 2, out, 2, n); // out = pure wet (dry pinned to 0)
+        const float w = _mix, d = 1.f - _mix; // crossfade wet against the dry input
+        for (int c = 0; c < 2; c++)
+            for (int i = 0; i < n; i++) out[c][i] = w * out[c][i] + d * in[c][i];
+    }
+    const char* name() const override { return "GVERB"; }
+};
+#endif // SPK_REVERB_GIGAVERB
+
 // ParamId (physical knob) -> reverb role. Returns K_Count for ids this engine does not map.
 Knob role_for(ParamId id) {
     switch (id) {
         case ParamId::Mix:    return K_Mix;   // SOS
-        case ParamId::Pos:    return K_Decay; // POS
+        case ParamId::Speed:  return K_Decay; // PITCH (biggest knob) -> Decay, the main character control
         case ParamId::Env:    return K_Damp;  // ENV
-        case ParamId::Speed:  return K_Tone;  // PITCH
+        case ParamId::Pos:    return K_Tone;  // POS   -> Tone
         case ParamId::Size:   return K_SizeA; // SIZE
         case ParamId::ModAmp: return K_SizeB; // MOD_AMT
         default:              return K_Count;
@@ -153,93 +213,149 @@ Knob role_for(ParamId id) {
 void ReverbEngine::init(const EngineContext& ctx)
 {
     Arena ar(ctx.arena);
-    // Construct every reverb up front in the SDRAM arena (Dattorro ~126 KB, Zita ~937 KB of state).
-    if (void* m = ar.alloc<uint8_t>(sizeof(DattorroVoice), alignof(DattorroVoice))) _rv[0] = new (m) DattorroVoice();
-    if (void* m = ar.alloc<uint8_t>(sizeof(ZitaVoice),     alignof(ZitaVoice)))     _rv[1] = new (m) ZitaVoice();
-
     const int sr = static_cast<int>(ctx.sample_rate);
-    for (auto* rv : _rv) if (rv) rv->init(sr);
+    // One full set of voices PER DECK so each deck's selected reverb has independent delay-line state
+    // (DoubleMono runs both at once). Dattorro ~126 KB + Zita ~937 KB (+ gigaverb ~2 MB) per deck.
+    for (int d = 0; d < DeckRef::Count; d++) {
+        if (void* m = ar.alloc<uint8_t>(sizeof(DattorroVoice), alignof(DattorroVoice))) _rv[d][0] = new (m) DattorroVoice();
+        if (void* m = ar.alloc<uint8_t>(sizeof(ZitaVoice),     alignof(ZitaVoice)))     _rv[d][1] = new (m) ZitaVoice();
 
-    _active = 0;
-    apply_all_knobs(); // seed the active reverb from the cached defaults
-    _peak = 0.f;
+#if defined(SPK_REVERB_GIGAVERB)
+        // gen~ uses its own global bump allocator (resets to offset 0 on bind), so each gigaverb instance
+        // needs a disjoint slab. The genlib data objects are allocated per-call (no global name registry),
+        // so two instances are independent. Bind THIS deck's slab right before its voices' init() so
+        // GigaverbVoice::init -> wrapper_create lands in it. ~1.59 MB measured; 2 MB leaves margin.
+        static constexpr size_t kGigaverbArenaBytes = 2u * 1024u * 1024u;
+        void* gv_slab = ar.alloc<uint8_t>(kGigaverbArenaBytes, 32);
+        if (gv_slab) {
+            if (void* m = ar.alloc<uint8_t>(sizeof(GigaverbVoice), alignof(GigaverbVoice)))
+                _rv[d][2] = new (m) GigaverbVoice(static_cast<long>(ctx.block_size));
+            genlib_arena_bind(gv_slab, kGigaverbArenaBytes);
+        }
+#endif
+
+        for (int v = 0; v < kReverbCount; v++) if (_rv[d][v]) _rv[d][v]->init(sr);
+        _active[d] = 0;
+        apply_all_knobs(static_cast<DeckRef::Ref>(d));
+        _peak[d] = 0.f;
+    }
+    _route = Route::Stereo;
 }
 
-void ReverbEngine::apply_all_knobs()
+void ReverbEngine::apply_all_knobs(DeckRef::Ref deck)
 {
-    ReverbVoice* rv = _rv[_active];
+    ReverbVoice* rv = _rv[deck][_active[deck]];
     if (!rv) return;
-    for (int k = 0; k < K_Count; k++) rv->set_knob(static_cast<Knob>(k), _v[k]);
+    for (int k = 0; k < K_Count; k++) rv->set_knob(static_cast<Knob>(k), _v[deck][k]);
 }
 
 void ReverbEngine::process(const float* const* in, float** out, size_t size)
 {
-    ReverbVoice* rv = _rv[_active];
-    if (!rv || !in || !in[0] || !in[1]) {
-        if (out && out[0]) std::memset(out[0], 0, size * sizeof(float));
-        if (out && out[1]) std::memset(out[1], 0, size * sizeof(float));
+    if (!out || !out[0] || !out[1]) return;
+
+    if (_route == Route::DoubleMono) {
+        // Two independent MONO reverbs: in[d] -> deck d's selected voice -> out[d]. The Faust voices are
+        // stereo, so each is fed mono (input fanned to both channels) with one output kept; the discarded
+        // channel lands in a throwaway scratch. compute() is allocation-free -> ISR-safe.
+        static constexpr size_t kMaxBlock = 128; // platform block is 96
+        float scratch[kMaxBlock];
+        const int n = static_cast<int>(size < kMaxBlock ? size : kMaxBlock);
+        for (int d = 0; d < DeckRef::Count; d++) {
+            ReverbVoice* rv  = _rv[d][_active[d]];
+            const float* din = in ? in[d] : nullptr;
+            if (!rv || !din) { std::memset(out[d], 0, size * sizeof(float)); _peak[d] = 0.f; continue; }
+            FAUSTFLOAT* ins[2]  = { const_cast<float*>(din), const_cast<float*>(din) };
+            FAUSTFLOAT* outs[2] = { out[d], scratch };
+            rv->compute(ins, outs, n);
+            float peak = 0.f;
+            for (int i = 0; i < n; i++) peak = std::fmax(peak, std::fabs(out[d][i]));
+            _peak[d] = peak;
+        }
         return;
     }
-    // FAUSTFLOAT == float; compute() treats inputs as const (RESTRICT), so the const_cast is safe.
-    // compute() is allocation-free -> ISR-safe.
+
+    // Stereo / GenerativeStereo: ONE stereo voice (deck A's selection) reverberates the stereo pair.
+    ReverbVoice* rv = _rv[DeckRef::A][_active[DeckRef::A]];
+    if (!rv || !in || !in[0] || !in[1]) {
+        std::memset(out[0], 0, size * sizeof(float));
+        std::memset(out[1], 0, size * sizeof(float));
+        _peak[0] = _peak[1] = 0.f;
+        return;
+    }
     FAUSTFLOAT* ins[2]  = { const_cast<float*>(in[0]), const_cast<float*>(in[1]) };
     FAUSTFLOAT* outs[2] = { out[0], out[1] };
     rv->compute(ins, outs, static_cast<int>(size));
-
     float peak = 0.f;
     for (size_t i = 0; i < size; i++) {
         peak = std::fmax(peak, std::fabs(out[0][i]));
         peak = std::fmax(peak, std::fabs(out[1][i]));
     }
-    _peak = peak;
+    _peak[0] = _peak[1] = peak;
 }
 
-void ReverbEngine::set_param(ParamId id, DeckRef::Ref /*deck*/, float v)
+// Knobs and the mode switch act per deck. In a stereo route only deck A's voice is heard (deck B's
+// strip updates an idle voice); in DoubleMono each deck drives its own side.
+void ReverbEngine::set_param(ParamId id, DeckRef::Ref deck, float v)
 {
     v = std::clamp(v, 0.f, 1.f);
-    if (id == ParamId::Aux) {
-        _v_aux = v;
-        const int idx = std::min(std::max(static_cast<int>(v * (kReverbCount - 1) + 0.5f), 0), kReverbCount - 1);
-        if (idx != _active && _rv[idx]) { _active = idx; apply_all_knobs(); }
-        return;
-    }
     const Knob k = role_for(id);
-    if (k == K_Count) return;
-    _v[k] = v;
-    if (ReverbVoice* rv = _rv[_active]) rv->set_knob(k, v);
+    if (k == K_Count || deck >= DeckRef::Count) return;
+    _v[deck][k] = v;
+    if (ReverbVoice* rv = _rv[deck][_active[deck]]) rv->set_knob(k, v);
 }
 
-float ReverbEngine::param(ParamId id, DeckRef::Ref /*deck*/) const
+float ReverbEngine::param(ParamId id, DeckRef::Ref deck) const
 {
-    if (id == ParamId::Aux) return _v_aux;
     const Knob k = role_for(id);
-    return (k == K_Count) ? 0.f : _v[k];
+    if (k == K_Count || deck >= DeckRef::Count) return 0.f;
+    return _v[deck][k];
 }
 
-void ReverbEngine::set_aux_active(DeckRef::Ref /*deck*/, bool active) { _aux_held = active; }
+// ConfigId::Route sets the process() topology; ConfigId::Mode (the Reel/Slice/Drift switch) selects the
+// voice per deck. Both decks' switches are tracked even in a stereo route (deck B's just isn't heard
+// until DoubleMono). Route wire values: 0=Stereo, 1=DoubleMono, 2=GenerativeStereo (see core.ui.cpp).
+bool ReverbEngine::set_config(ConfigId id, DeckRef::Ref deck, int value)
+{
+    if (id == ConfigId::Route) {
+        const Route r = value == 2 ? Route::GenerativeStereo : value == 1 ? Route::DoubleMono : Route::Stereo;
+        if (r == _route) return false;
+        _route = r;
+        return true;
+    }
+    if (id != ConfigId::Mode || deck >= DeckRef::Count) return false;
+    const int idx = std::clamp(value, 0, kReverbCount - 1);
+    if (idx == _active[deck] || !_rv[deck][idx]) return false;
+    _active[deck] = idx;
+    apply_all_knobs(deck); // re-seed this deck's now-active reverb from its cached knob values
+    return true;
+}
 
 void ReverbEngine::render(DisplayModel& m)
 {
     m.clear();
-    // Plate = cool blue, Hall = violet; the play pads carry the active-reverb colour.
+    // Plate = cool blue, Hall = violet, Gigaverb = mint.
+#if defined(SPK_REVERB_GIGAVERB)
+    const uint32_t kColor[kReverbCount] = { 0x00aaffu, 0x8800ffu, 0x00ff88u };
+#else
     const uint32_t kColor[kReverbCount] = { 0x00aaffu, 0x8800ffu };
-    const uint32_t color = kColor[_active];
+#endif
+    // The 3 mode LEDs (left/center/right) mirror the platform convention: they show the ROUTE.
+    DisplayModel::Indicator* mode_led[3] = { &m.mode_left, &m.mode_center, &m.mode_right };
+    const int route_led = (_route == Route::DoubleMono) ? 0 : (_route == Route::GenerativeStereo) ? 2 : 1;
+    *mode_led[route_led] = { 0xffffffu, 0.8f };
 
-    const float level = _peak > 1.f ? 1.f : _peak;
-    for (int r = 0; r < 2; r++) {
-        if (_aux_held) {
-            // While Alt+PITCH is held, show the selector: one dot per reverb, the active one lit.
-            m.ring[r].set_hex_color(color);
-            for (int i = 0; i < kReverbCount; i++) {
-                const float pos = (kReverbCount > 1) ? static_cast<float>(i) / (kReverbCount - 1) : 0.f;
-                m.ring[r].add_point(pos, i == _active ? 1.f : 0.15f, true);
-            }
-        } else if (level > 1e-4f) {
-            m.ring[r].set_hex_color(color);
-            m.ring[r].set_segment(0.f, level * 0.999f);
+    // Per-deck ring level + play colour in each deck's selected-voice colour. In a stereo route both
+    // sides show deck A's (single) voice; in DoubleMono each shows its own.
+    const bool dual = (_route == Route::DoubleMono);
+    for (int d = 0; d < DeckRef::Count; d++) {
+        const uint32_t color = kColor[_active[dual ? d : DeckRef::A]];
+        const float level = _peak[d] > 1.f ? 1.f : _peak[d];
+        if (level > 1e-4f) {
+            m.ring[d].set_hex_color(color);
+            m.ring[d].set_segment(0.f, level * 0.999f);
         }
-        m.ring[r].set_updated();
-        m.play[r] = { color, 1.f };
+        m.ring[d].set_updated();
+        m.play[d] = { color, 1.f };
     }
 }
 

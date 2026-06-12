@@ -1,13 +1,14 @@
-// Headless test for the reverb engine (Faust-generated Dattorro plate + Zita-rev1 hall; Alt+PITCH
-// selects). Exercised through the public IEngine surface only:
-//   1. Param round-trip (set_param/param) for the six knob roles + the Aux selector.
+// Headless test for the reverb engine (Faust-generated Dattorro plate + Zita-rev1 hall; the physical
+// Reel/Slice/Drift mode switch selects per deck; route-aware). Exercised through the public IEngine surface:
+//   1. Param round-trip (set_param/param) for the six knob roles, plus Mode and Route change/no-change
+//      semantics (deck B's mode switch is a live per-deck selector now).
 //   2. Both algorithms: output is finite, a wet setting rings out (a tail), wet tail > dry tail.
 //   3. Every reverb binds all SIX knob roles - sweeping each role 0->1 changes the output. This is the
 //      regression guard for the one silent failure mode of the bind-table design: a role bound to no
 //      Faust zone would no-op a knob with no compile error.
-//   4. The Aux selector: it quantizes to a reverb index (round(v*(N-1))) and actually swaps the kernel
-//      - plate and hall produce different output, and Aux values either side of the 0.5 boundary pick
-//      the expected algorithm (bit-identical output to the endpoint they round to).
+//   4. The Mode switch selects the live reverb by index and swaps the kernel - plate and hall differ.
+//   5. DoubleMono route: an independent mono reverb per deck - the two decks run different voices on the
+//      same input and differ, and a deck with a silent input stays silent (channel isolation, no crosstalk).
 
 #include <cmath>
 #include <cstdint>
@@ -40,10 +41,10 @@ struct LCG {
 // Run one reverb config to completion and return the left-channel output (burst + tail). A fresh
 // engine per call (re-init zeroes the kernel state); calls are sequential so sharing the arena is fine.
 // aux selects the algorithm; the six knobs are set to mid, then `mix` and (if not Count) `role` override.
-std::vector<float> response(EngineContext& ctx, float aux, float mix, ParamId role, float roleval) {
+std::vector<float> response(EngineContext& ctx, int voice, float mix, ParamId role, float roleval) {
     ReverbEngine e;
     e.init(ctx);
-    e.set_param(ParamId::Aux,    DeckRef::A, aux); // pick algorithm first (re-applies cached knobs)
+    e.set_config(ConfigId::Mode, DeckRef::A, voice); // pick algorithm first (re-applies cached knobs)
     e.set_param(ParamId::Mix,    DeckRef::A, mix);
     e.set_param(ParamId::Pos,    DeckRef::A, 0.5f);
     e.set_param(ParamId::Env,    DeckRef::A, 0.5f);
@@ -83,8 +84,8 @@ float tail_energy(const std::vector<float>& v) {
 
 const char* kAlgo[2] = { "plate", "hall" };
 const struct { ParamId id; const char* name; } kRoles[6] = {
-    { ParamId::Mix,    "Mix"    }, { ParamId::Pos,   "Decay" }, { ParamId::Env,    "Damp"  },
-    { ParamId::Speed,  "Tone"   }, { ParamId::Size,  "SizeA" }, { ParamId::ModAmp, "SizeB" },
+    { ParamId::Mix,    "Mix"    }, { ParamId::Speed, "Decay" }, { ParamId::Env,    "Damp"  },
+    { ParamId::Pos,    "Tone"   }, { ParamId::Size,  "SizeA" }, { ParamId::ModAmp, "SizeB" },
 };
 
 } // namespace
@@ -99,15 +100,17 @@ int main() {
         ReverbEngine e; e.init(ctx);
         for (auto r : kRoles) { e.set_param(r.id, DeckRef::A, 0.37f);
             check(approx(e.param(r.id, DeckRef::A), 0.37f), "knob param round-trips"); }
-        e.set_param(ParamId::Aux, DeckRef::A, 1.0f); check(approx(e.param(ParamId::Aux, DeckRef::A), 1.0f), "Aux param round-trips (1.0)");
-        e.set_param(ParamId::Aux, DeckRef::A, 0.0f); check(approx(e.param(ParamId::Aux, DeckRef::A), 0.0f), "Aux param round-trips (0.0)");
+        check(e.set_config(ConfigId::Mode, DeckRef::A, 1),  "Mode switch to a new voice reports a change");
+        check(!e.set_config(ConfigId::Mode, DeckRef::A, 1), "Mode switch to the same voice reports no change");
+        check(e.set_config(ConfigId::Mode, DeckRef::B, 1),  "deck B's mode switch is a live per-deck selector");
+        check(e.set_config(ConfigId::Route, DeckRef::A, 1),  "Route change reports a change");
+        check(!e.set_config(ConfigId::Route, DeckRef::A, 1), "same Route reports no change");
     }
 
     // --- 2. Both algorithms: finite, wet rings out, wet tail > dry tail -------------------------
     for (int a = 0; a < ReverbEngine::kReverbCount; a++) {
-        const float aux = ReverbEngine::kReverbCount > 1 ? float(a) / (ReverbEngine::kReverbCount - 1) : 0.f;
-        const auto wet = response(ctx, aux, 1.0f, ParamId::Count, 0.f);
-        const auto dry = response(ctx, aux, 0.0f, ParamId::Count, 0.f);
+        const auto wet = response(ctx, a, 1.0f, ParamId::Count, 0.f);
+        const auto dry = response(ctx, a, 0.0f, ParamId::Count, 0.f);
         const float wt = tail_energy(wet), dt = tail_energy(dry);
         std::printf("[%s] finite=%d  wet_tail=%.3f  dry_tail=%.3f\n", kAlgo[a], (int)(all_finite(wet) && all_finite(dry)), wt, dt);
         check(all_finite(wet) && all_finite(dry), "output is finite");
@@ -117,28 +120,59 @@ int main() {
 
     // --- 3. Every reverb binds all six knob roles (sweeping each 0->1 changes the output) -------
     for (int a = 0; a < ReverbEngine::kReverbCount; a++) {
-        const float aux = ReverbEngine::kReverbCount > 1 ? float(a) / (ReverbEngine::kReverbCount - 1) : 0.f;
         for (auto r : kRoles) {
             std::vector<float> lo, hi;
-            if (r.id == ParamId::Mix) { lo = response(ctx, aux, 0.0f, ParamId::Count, 0.f); hi = response(ctx, aux, 1.0f, ParamId::Count, 0.f); }
-            else                      { lo = response(ctx, aux, 1.0f, r.id, 0.0f);          hi = response(ctx, aux, 1.0f, r.id, 1.0f); }
+            if (r.id == ParamId::Mix) { lo = response(ctx, a, 0.0f, ParamId::Count, 0.f); hi = response(ctx, a, 1.0f, ParamId::Count, 0.f); }
+            else                      { lo = response(ctx, a, 1.0f, r.id, 0.0f);          hi = response(ctx, a, 1.0f, r.id, 1.0f); }
             const float d = sad(lo, hi);
             std::printf("[%s] role %-5s sweep SAD=%.3f\n", kAlgo[a], r.name, d);
             check(d > 1.0f, "knob role audibly drives the output (role is bound to a Faust zone)");
         }
     }
 
-    // --- 4. Aux selector: quantizes to an index and swaps the kernel ----------------------------
+    // --- 4. Mode switch (deck A) selects the voice; the two voices differ -----------------------
     {
-        const auto plate    = response(ctx, 0.0f, 1.0f, ParamId::Count, 0.f);
-        const auto plate_lo = response(ctx, 0.4f, 1.0f, ParamId::Count, 0.f); // round(0.4)=0 -> plate
-        const auto hall     = response(ctx, 1.0f, 1.0f, ParamId::Count, 0.f);
-        const auto hall_hi  = response(ctx, 0.6f, 1.0f, ParamId::Count, 0.f); // round(0.6)=1 -> hall
-        std::printf("aux: SAD(plate,plate@0.4)=%.3f  SAD(hall,hall@0.6)=%.3f  SAD(plate,hall)=%.3f\n",
-                    sad(plate, plate_lo), sad(hall, hall_hi), sad(plate, hall));
-        check(sad(plate, plate_lo) == 0.f, "Aux 0.4 selects the same algorithm as 0.0 (plate)");
-        check(sad(hall,  hall_hi)  == 0.f, "Aux 0.6 selects the same algorithm as 1.0 (hall)");
-        check(sad(plate, hall) > 1.0f,     "plate and hall produce different output (Aux swaps the kernel)");
+        const auto plate = response(ctx, 0, 1.0f, ParamId::Count, 0.f); // Mode pos 0 -> plate
+        const auto hall  = response(ctx, 1, 1.0f, ParamId::Count, 0.f); // Mode pos 1 -> hall
+        std::printf("mode: SAD(plate,hall)=%.3f\n", sad(plate, hall));
+        check(sad(plate, hall) > 1.0f, "plate and hall produce different output (Mode switch swaps the kernel)");
+    }
+
+    // --- 5. DoubleMono route: an independent mono reverb per deck -------------------------------
+    {
+        ReverbEngine e; e.init(ctx);
+        e.set_config(ConfigId::Route, DeckRef::A, 1); // 1 = DoubleMono
+        for (auto d : { DeckRef::A, DeckRef::B }) {
+            e.set_param(ParamId::Mix, d, 1.0f); e.set_param(ParamId::Speed, d, 0.5f); e.set_param(ParamId::Env, d, 0.5f);
+            e.set_param(ParamId::Pos, d, 0.5f); e.set_param(ParamId::Size, d, 0.5f);  e.set_param(ParamId::ModAmp, d, 0.5f);
+        }
+        float il[host::kBlock], ir[host::kBlock], ol[host::kBlock], orr[host::kBlock];
+        const float* in[2] = { il, ir }; float* o[2] = { ol, orr };
+
+        // 5a. Per-deck VOICE independence: deck A = plate, deck B = hall, SAME input to both -> outputs differ.
+        e.set_config(ConfigId::Mode, DeckRef::A, 0); // plate
+        e.set_config(ConfigId::Mode, DeckRef::B, 1); // hall
+        LCG rng{ 777u }; std::vector<float> a, b;
+        for (int blk = 0; blk < kBurst + kTail; blk++) {
+            for (size_t i = 0; i < host::kBlock; i++) { const float x = (blk < kBurst) ? 0.5f * rng.next() : 0.f; il[i] = x; ir[i] = x; }
+            e.process(in, o, host::kBlock);
+            for (size_t i = 0; i < host::kBlock; i++) { a.push_back(ol[i]); b.push_back(orr[i]); }
+        }
+        std::printf("doublemono: finite=%d  SAD(deckA plate, deckB hall)=%.3f\n", int(all_finite(a) && all_finite(b)), sad(a, b));
+        check(all_finite(a) && all_finite(b), "doublemono output is finite");
+        check(sad(a, b) > 1.0f, "deck A (plate) and deck B (hall) differ -> independent per-deck voices");
+
+        // 5b. Deck ISOLATION: feed deck A only (deck B input silent) -> deck B output stays silent (no bleed).
+        e.set_config(ConfigId::Mode, DeckRef::B, 0); // both plate now
+        LCG rng2{ 888u }; a.clear(); b.clear();
+        for (int blk = 0; blk < kBurst + kTail; blk++) {
+            for (size_t i = 0; i < host::kBlock; i++) { il[i] = (blk < kBurst) ? 0.5f * rng2.next() : 0.f; ir[i] = 0.f; }
+            e.process(in, o, host::kBlock);
+            for (size_t i = 0; i < host::kBlock; i++) { a.push_back(ol[i]); b.push_back(orr[i]); }
+        }
+        std::printf("doublemono: deckA tail=%.3f  deckB(silent in) tail=%.6f\n", tail_energy(a), tail_energy(b));
+        check(tail_energy(a) > 1.0f, "deck A reverberates its own input");
+        check(tail_energy(b) < 1e-3f, "deck B stays silent when its input is silent (deck isolation, no crosstalk)");
     }
 
     if (g_failures == 0) { std::printf("OK: all reverb checks passed\n"); return 0; }

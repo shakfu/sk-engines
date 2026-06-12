@@ -20,7 +20,7 @@ Current engines include:
 
 6. [shuttle](docs/engines/shuttle.md): buffer-based bipolar/reverse varispeed tape (four in-RAM tracks, PITCH as a capstan-speed knob - noon stops, CW forward, CCW reverse)
 
-7. [reverb](docs/engines/reverb.md): stereo reverb with two switchable algorithms (Dattorro plate / Zita-rev1 hall), generated from [Faust](https://faust.grame.fr) sources
+7. [reverb](docs/engines/reverb.md): route-aware stereo reverb with switchable algorithms (Dattorro plate / Zita-rev1 hall, generated from [Faust](https://faust.grame.fr) sources; optional gen~ gigaverb as a third voice) - the Reel/Slice/Drift switch selects the algorithm, and DoubleMono routing runs an independent mono reverb on each deck
 
 8. [gigaverb](docs/engines/gigaverb.md): stereo reverb authored in Max/MSP **gen~** and translated to C++ via [gen-dsp](https://github.com/shakfu/gen-dsp) (Tom Erbe's gigaverb)
 

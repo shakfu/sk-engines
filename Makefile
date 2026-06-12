@@ -43,6 +43,25 @@ C_DEFS += -DSPK_ENGINE_REVERB
 # (faust_arch.h) is hand-written + MIT. The kernels' delay-line state is placement-new'd into the SDRAM
 # arena, so SRAM stays flat; the link's -Wl,--print-memory-usage shows SRAM_EXEC (the binding region).
 ENGINE_SOURCES = src/engine/reverb/reverb_engine.cpp
+# Opt-in (make ENGINE=reverb REVERB_GIGAVERB=1): fold the gen~ "gigaverb" export in as a third reverb
+# voice selectable via Alt+PITCH. Pulls in the same gen~ glue the standalone gigaverb build uses (the
+# arena-bound genlib runtime + the export's _ext_daisy wrapper) and its required defines/includes. Plain
+# `make ENGINE=reverb` stays a lean two-voice build with no gen~ toolchain dependency.
+ifeq ($(REVERB_GIGAVERB), 1)
+C_DEFS += -DSPK_REVERB_GIGAVERB
+C_DEFS += -DGENLIB_NO_JSON
+C_DEFS += -DDAISY_EXT_NAME=gigaverb
+C_DEFS += -DGEN_EXPORTED_NAME=gen_exported
+C_DEFS += -DGEN_EXPORTED_HEADER=\"gen_exported.h\"
+C_DEFS += -DGEN_EXPORTED_CPP=\"gen_exported.cpp\"
+C_DEFS += -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter
+GEN_DIR = src/engine/gigaverb
+GEN_INC = -I$(GEN_DIR) -I$(GEN_DIR)/gen -I$(GEN_DIR)/gen/gen_dsp
+ENGINE_SOURCES += $(GEN_DIR)/_ext_daisy.cpp src/engine/gen/genlib_arena.cpp
+endif
+# The reverb is route-aware: ONE stereo voice in Stereo/GenerativeStereo, two independent MONO reverbs
+# (one per deck) in DoubleMono - chosen at runtime by the Route switch, no build flag. Pair with METER=1
+# to read the two-voice (DoubleMono) CPU load on device.
 else ifeq ($(ENGINE), shuttle)
 C_DEFS += -DSPK_ENGINE_SHUTTLE
 # Buffer-based bipolar/reverse "varispeed shuttle" tape: 4 in-SDRAM mono tape buffers (2 decks x 2
@@ -87,6 +106,12 @@ ENGINE_SOURCES = $(GEN_DIR)/_ext_daisy.cpp src/engine/gen/genlib_arena.cpp
 # <<< gen:gigaverb <<<
 else
 $(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', 'edrums', 'reso', 'tape', 'reverb', or 'shuttle')
+endif
+
+# Opt-in (make ... METER=1): enable the on-device CPU load meter (app.cpp's CpuLoadMeter). It prints
+# Max/Avg/Min processing load % over the serial log each housekeeping pass - read it over USB serial.
+ifeq ($(METER), 1)
+C_DEFS += -DMETER
 endif
 
 USE_FATFS = 1

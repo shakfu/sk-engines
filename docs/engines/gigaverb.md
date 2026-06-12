@@ -49,10 +49,14 @@ make ENGINE=gigaverb program-dfu           # flash (device in DFU mode first)
 make gen-engines                               # regenerate from the vendored export (keeps the knob map)
 ```
 
+## Also available inside the `reverb` engine
+
+Beyond the standalone `ENGINE=gigaverb` build, this export can be folded into the [`reverb` engine](reverb.md) as a **third selectable voice** alongside the Faust plate and hall: `make ENGINE=reverb REVERB_GIGAVERB=1`. There it is wrapped as a `GigaverbVoice` (driving the same gen~ export by parameter index), gets its own per-deck gen~ arena slice, and - unlike this standalone build - synthesizes a true wet/dry crossfade in software (pins `dry` to 0 and blends against the input) so its Mix knob matches the Faust voices. See [reverb.md](reverb.md#optional-third-voice-gen-gigaverb).
+
 ## Notes / TODO
 
 - No display: `capabilities() = 0`, so the platform shows its default UI. A meter would need `render()`.
 
 - Reverb tail / CPU not measured on hardware. Fits SRAM_EXEC at 83% with headroom before `-Os` is needed.
 
-- The `Mix` knob drives gigaverb's `dry` level (not a wet/dry blend); retune the map if a true mix is wanted.
+- The `Mix` knob drives gigaverb's `dry` level (not a wet/dry blend) in this standalone build; retune the map if a true mix is wanted (the `reverb` fold-in does this for you).
