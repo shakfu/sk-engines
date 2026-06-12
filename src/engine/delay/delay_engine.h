@@ -8,24 +8,35 @@
 #include "nocopy.h"
 
 #include <cstddef>
+#include <cstdint>
 
 namespace spotykach {
 
-// A tempo-synced stereo delay - the second engine to consume the platform transport (proving the
-// shared clock beyond granular). Two independent delay lines (left = deck A, right = deck B), each on
-// the platform's direct (no-modifier) knobs: SIZE -> musical division (the delay time locks to the
-// transport tempo, stepping through 1/2 .. 1/16T incl. dotted + triplets), POS -> feedback, SOS ->
-// wet/dry mix, PITCH -> transpose the taps (+/-1 octave, centre = unity) via a crossfading pitch
-// shifter on the wet output. The platform clock is injected read-only via EngineContext (ITransport);
-// no recording/tape/sequencer - so capabilities() is just CapOwnDisplay | CapDualDeck.
+// A tempo-synced stereo delay with selectable CHARACTER and stereo TOPOLOGY - the second engine to
+// consume the platform transport (it reads tempo; it does not subscribe to ticks).
 //
-// Buffer note (drives the future EngineBuffers generalization): the delay needs a big chunk of float
-// SDRAM but EngineContext only offers the granular-shaped `source` buffers. It treats source[deck] as
-// opaque float memory with a fixed safe cap (the 42 s granular loop buffer dwarfs a few seconds of
-// delay), so the engine stays granular-free. A real generalization would have EngineBuffers expose a
-// typed/byte-sized arena the engine sub-allocates; deferred until more engines need it.
+//   SIZE  -> musical division (tempo-locked)     POS   -> feedback
+//   SOS   -> wet/dry mix                         PITCH -> output transpose (+/-1 octave, centre = unity)
+//   ENV   -> feedback tone (a one-pole low-pass in the loop: up = open/clean, down = darker repeats)
+//   Reel/Slice/Drift switch (ConfigId::Mode, per deck) -> character: Clean / Tape / Shimmer
+//   Route switch (ConfigId::Route)                     -> topology: Stereo / DoubleMono / Ping-pong
+//
+// Character (changes only the feedback path; knob meanings stay fixed across modes):
+//   Clean   - clean digital repeats (identical to the original delay when ENV is up).
+//   Tape    - a wow/flutter LFO on the read time + the tone low-pass + soft saturation: warbly,
+//             degrading dub/analog repeats.
+//   Shimmer - the feedback is pitch-shifted +12 each pass, so repeats climb into an octave wash.
+// Topology:
+//   DoubleMono - two independent mono delays (deck A -> L with its own controls, deck B -> R with its).
+//   Stereo     - linked: both delays share deck A's controls (a coherent stereo delay; deck B inert).
+//   Ping-pong  - linked + cross-feedback: each deck's colored feedback feeds the OTHER, so echoes bounce.
+//
+// The platform clock is injected read-only via EngineContext (ITransport). capabilities() =
+// CapOwnDisplay | CapDualDeck. Each tap's delay line is borrowed SDRAM (arena-sub-allocated, ~6 s).
 class DelayEngine : public IEngine {
 public:
+    enum Mode : uint8_t { Clean = 0, Tape, Shimmer, ModeCount };
+
     DelayEngine() = default;
     ~DelayEngine() override = default;
 
@@ -37,51 +48,60 @@ public:
 
     void  set_param(ParamId id, DeckRef::Ref deck, float value) override;
     float param(ParamId id, DeckRef::Ref deck) const override;
-
-    void render(DisplayModel& m) override;
+    bool  set_config(ConfigId id, DeckRef::Ref deck, int value) override; // Mode -> character; Route -> topology
+    Route route() const override { return _route; }                       // report topology for the route LED
+    void  render(DisplayModel& m) override;
 
 private:
     NOCOPY(DelayEngine)
 
-    // One delay line + its smoothed controls. process() runs per sample on the audio path.
-    struct Tap {
-        float* buf   = nullptr;  // delay memory (borrowed from the SDRAM arena)
-        size_t len   = 0;        // usable float capacity
-        size_t w     = 0;        // write index
-        float  sr    = 48000.f;  // sample rate (delay time is derived from tempo + sr)
-        float  min_d = 1.f;      // delay range in samples (set from sample rate / buffer length)
-        float  max_d = 1.f;
-        // Tempo-synced delay time: SIZE picks a musical division (`div` index into kDivBeats ->
-        // `beats` quarter-note beats); target_d = sr*(60/bpm)*beats, recomputed per block by the
-        // engine and one-pole smoothed so a tempo change glides.
-        int    div   = 0;
-        float  beats = 0.25f;
-        float  target_d = 1.f;
-        // Other controls (normalised 0..1) + per-sample one-pole smoothed working values.
-        float  fb = 0.f, mix = 0.f, ratio = 1.f;
-        float  s_delay = 1.f, s_fb = 0.f, s_mix = 0.f, s_ratio = 1.f;
-        float  peak = 0.f;       // decayed input peak, for the display
-
-        // Crossfading delay-line pitch shifter on the wet output (PITCH knob). Two read heads half a
-        // window apart with a raised-cosine crossfade, so wraparound is seamless; bypassed at unity.
-        static constexpr size_t kPSWin = 2048;
-        float  ps[kPSWin] = {};
-        size_t pw = 0;
+    // Crossfading two-head delay-line pitch shifter. Reused for the PITCH output transpose and the
+    // Shimmer feedback shift: two read heads half a window apart, raised-cosine crossfaded so the
+    // wraparound is seamless; transparent at unity ratio. Read rate = `ratio` (output transposed by it).
+    struct Shifter {
+        static constexpr size_t kWin = 2048;
+        float  buf[kWin] = {};
+        size_t w = 0;
         float  phase = 0.f;
+        float  process(float x, float ratio);
+        float  read(float off) const;
+        void   clear() { for (size_t i = 0; i < kWin; i++) buf[i] = 0.f; w = 0; phase = 0.f; }
+    };
+
+    // One delay line + its smoothed controls. read_color()/write_out() are split (rather than one
+    // process()) so Ping-pong can compute both taps' feedback, then write each from the OTHER's.
+    struct Tap {
+        float*  buf = nullptr;
+        size_t  len = 0, w = 0;
+        float   sr = 48000.f, min_d = 1.f, max_d = 1.f;
+        int     div = 0;
+        float   beats = 0.25f, target_d = 1.f;
+        float   fb = 0.f, mix = 0.f, ratio = 1.f, tone_coef = 1.f; // targets (set per block from _param)
+        uint8_t mode = Clean;
+        float   s_delay = 1.f, s_fb = 0.f, s_mix = 0.f, s_ratio = 1.f; // per-sample smoothed
+        float   tone_lp = 0.f;   // one-pole state for the feedback tone filter
+        float   wow_ph = 0.f, wow_inc = 0.f, wow_depth = 0.f; // tape wow/flutter LFO
+        float   peak = 0.f;
+        float   _x = 0.f, _wet = 0.f; // stashed input + read wet (for the read/write split)
+        Shifter out_shift;       // PITCH output transpose
+        Shifter fb_shift;        // Shimmer feedback shift (+12)
 
         void  init(void* mem, float sample_rate, size_t length);
-        void  set_div(float norm);  // SIZE 0..1 -> musical-division index + beats
+        void  set_div(float norm);   // SIZE 0..1 -> musical-division index + beats
+        void  set_tone(float env);   // ENV 0..1 -> feedback low-pass coefficient
         void  set_target(float bpm); // recompute target_d from bpm (per block)
-        float process(float x);     // returns the wet/dry-mixed output
-        float pitch(float x);       // pitch-shift one sample by s_ratio
-        float readps(float off) const; // fractional read `off` samples behind the pitch-buffer write
+        float read_color(float x_in); // smooth + read the tap + colorize -> the feedback signal (pre *fb)
+        float write_out(float fbsig); // write x + fb*fbsig, return the wet/dry-mixed (PITCH-transposed) output
     };
 
     static DeckRef::Ref _safe(DeckRef::Ref d) { return d < DeckRef::Count ? d : DeckRef::A; }
+    void apply_params(Tap& t, DeckRef::Ref src); // derive a tap's targets from _param[*][src] + _mode[src]
 
-    const ITransport* _transport = nullptr; // platform clock: delay time syncs to its tempo
-    Tap   _tap[DeckRef::Count];
-    float _param[static_cast<size_t>(ParamId::Count)][DeckRef::Count] = {};
+    const ITransport* _transport = nullptr;
+    Tap     _tap[DeckRef::Count];
+    uint8_t _mode[DeckRef::Count] = { Clean, Clean }; // per-deck character (ConfigId::Mode)
+    Route   _route = Route::Stereo;                   // ConfigId::Route topology
+    float   _param[static_cast<size_t>(ParamId::Count)][DeckRef::Count] = {};
 };
 
 };

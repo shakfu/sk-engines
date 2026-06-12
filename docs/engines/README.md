@@ -79,7 +79,7 @@ The **Built via** column links to the development method ([`../engine-types/`](.
 | Engine | `ENGINE=` | What it is | Built via | Doc |
 |---|---|---|---|---|
 | Granular looper | `granular` (default) | the full instrument: dual granular looper/sampler | [native C++](../engine-types/cpp.md) | [granular.md](granular.md) |
-| Stereo delay | `delay` | tempo-synced dual delay line | [native C++](../engine-types/cpp.md) | [delay.md](delay.md) |
+| Stereo delay | `delay` | tempo-synced delay; Clean/Tape/Shimmer characters (mode switch) + Stereo/DoubleMono/Ping-pong topologies (route switch) | [native C++](../engine-types/cpp.md) | [delay.md](delay.md) |
 | Edrums | `edrums` | dual Euclidean drum machine (synthesized) | [native C++](../engine-types/cpp.md) | [edrums.md](edrums.md) |
 | Reso | `reso` | dual resonator / pluck voice (Mutable Instruments Rings DSP) | [native C++](../engine-types/cpp.md) | [reso.md](reso.md) |
 | Tape | `tape` | dual streaming SD record/playback decks (no in-memory length cap) + tape FX (wow/flutter, hysteresis) | [native C++](../engine-types/cpp.md) + [Faust](../engine-types/faust.md) | [tape.md](tape.md) |

@@ -35,6 +35,7 @@ ENGINE_SRC  = $(wildcard $(ROOT)/src/engine/*.cpp)
 DAISYSP_SRC = $(wildcard $(DAISYSP)/*/*.cpp)
 LIB_SRC     = $(CORE_SRC) $(DSP_SRC) $(TRANSPORT_SRC) $(ENGINE_SRC) $(DAISYSP_SRC)
 # The edrums/reso/reverb engines live under src/engine/<name>/ (outside the wildcards above); add for tests.
+DELAY_SRC   = $(ROOT)/src/engine/delay/delay_engine.cpp
 EDRUMS_SRC  = $(ROOT)/src/engine/edrums/edrums_engine.cpp
 RESO_SRC    = $(ROOT)/src/engine/reso/reso_engine.cpp
 # The reverb engine's adapter; its Faust kernels are checked-in headers (engine/reverb/faust_kernel_*.h,
@@ -72,9 +73,10 @@ TEST_TAPE    = $(BUILD)/test_tape
 TEST_STREAM  = $(BUILD)/test_stream
 TEST_SHUTTLE = $(BUILD)/test_shuttle
 TEST_REVERB_GIGA = $(BUILD)/test_reverb_giga
+TEST_DELAY   = $(BUILD)/test_delay
 BENCH_REVERB     = $(BUILD)/bench_reverb
 
-.PHONY: all clean run test test-granular test-edrums test-reso test-reverb test-reverb-giga test-tape test-stream test-shuttle bench-reverb
+.PHONY: all clean run test test-granular test-edrums test-reso test-reverb test-reverb-giga test-delay test-tape test-stream test-shuttle bench-reverb
 all: $(TARGET)
 
 $(TARGET): $(SRC) | $(BUILD)
@@ -96,6 +98,9 @@ $(TEST_REVERB): test_reverb.cpp $(LIB_SRC) $(REVERB_SRC) $(wildcard $(ROOT)/src/
 
 $(TEST_TAPE): test_tape.cpp $(LIB_SRC) $(TAPE_SRC) $(ROOT)/src/engine/tape/faust_kernel_tapefx.h | $(BUILD)
 	$(CXX) $(CXXFLAGS) test_tape.cpp $(LIB_SRC) $(TAPE_SRC) -o $@
+
+$(TEST_DELAY): test_delay.cpp $(LIB_SRC) $(DELAY_SRC) $(ROOT)/src/engine/delay/delay_engine.h | $(BUILD)
+	$(CXX) $(CXXFLAGS) test_delay.cpp $(LIB_SRC) $(DELAY_SRC) -o $@
 
 $(TEST_SHUTTLE): test_shuttle.cpp $(LIB_SRC) $(SHUTTLE_SRC) $(ROOT)/src/engine/shuttle/shuttle_engine.h | $(BUILD)
 	$(CXX) $(CXXFLAGS) test_shuttle.cpp $(LIB_SRC) $(SHUTTLE_SRC) -o $@
@@ -129,7 +134,7 @@ run: $(TARGET)
 
 # `test` runs both engine harnesses. Both inject the transport via EngineContext (granular drives the
 # real platform Transport; edrums uses a small stub ITransport) - the post-transport-decoupling way.
-test: test-granular test-edrums test-reso test-reverb test-reverb-giga test-tape test-stream test-shuttle
+test: test-granular test-edrums test-reso test-reverb test-reverb-giga test-delay test-tape test-stream test-shuttle
 
 test-granular: $(TEST)
 	./$(TEST)
@@ -145,6 +150,9 @@ test-reverb: $(TEST_REVERB)
 
 test-reverb-giga: $(TEST_REVERB_GIGA)
 	./$(TEST_REVERB_GIGA)
+
+test-delay: $(TEST_DELAY)
+	./$(TEST_DELAY)
 
 test-tape: $(TEST_TAPE)
 	./$(TEST_TAPE)
