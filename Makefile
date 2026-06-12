@@ -271,6 +271,20 @@ gen-engines:
 	done
 	@echo "regenerated gen~ engines"
 
+# Run the Python script test suites (scripts/test_*.py). These cover host-side utilities
+# like convert_tape_audio.py and need neither hardware nor a firmware build. pytest is part
+# of the `dev` dependency group declared in pyproject.toml ([dependency-groups], PEP 735),
+# installed into the repo-local .venv. Override the interpreter with `TEST_PY=/path/to/python`.
+# `make test-scripts` installs the dev group on first use (when pytest is missing);
+# `make test-scripts-deps` (re)installs it on demand. Needs pip >= 25.1 for `--group`.
+TEST_PY ?= .venv/bin/python
+.PHONY: test-scripts test-scripts-deps
+test-scripts-deps:
+	$(TEST_PY) -m pip install -q --group dev
+test-scripts:
+	@$(TEST_PY) -c 'import pytest' 2>/dev/null || $(TEST_PY) -m pip install -q --group dev
+	$(TEST_PY) -m pytest scripts/
+
 # Vendored Daisy archives. The core Makefile's link step (-ldaisy -ldaisysp) needs these built, but a
 # fresh checkout has source-only submodules, so a bare `make` used to fail at link with "cannot find
 # -ldaisy". Wire each archive as a file prerequisite of the elf with its own build rule: a plain `make`

@@ -9,6 +9,11 @@ build-cmake/
 
 thirdparty/
 
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
 # testing
 *.dSYM
 runner
