@@ -127,6 +127,41 @@ int main() {
         check(maxabs(o.l) < 8.0f, "high-feedback output stays bounded (soft-clipped, no runaway)");
     }
 
+    // --- 6. Modulation: MODFREQ + MOD_AMT modulate the delay time -------------------------------
+    {
+        DelayEngine plain, modu;
+        cfg(plain, ctx, 0.6f, 0.7f, DelayEngine::Clean, 1);
+        cfg(modu,  ctx, 0.6f, 0.7f, DelayEngine::Clean, 1);
+        for (auto d : { DeckRef::A, DeckRef::B }) { modu.set_mod_speed(d, 0.6f, false); modu.set_param(ParamId::ModAmp, d, 0.8f); }
+        const auto a = run(plain), b = run(modu);
+        std::printf("mod: SAD(plain,modulated)=%.2f\n", sad(a.l, b.l));
+        check(finite(b.l), "modulated output finite");
+        check(sad(a.l, b.l) > 1.0f, "MODFREQ + MOD_AMT modulate the delay time (chorus/vibrato)");
+    }
+
+    // --- 7. Freeze (Play pad): the loop sustains; an unfrozen delay decays ----------------------
+    {
+        auto late_tail = [&](bool freeze) {
+            DelayEngine e; cfg(e, ctx, 0.3f, 1.0f, DelayEngine::Clean, 1); // fb 0.3 (decays fast), wet only
+            LCG rng{ 99u };
+            float il[host::kBlock], ir[host::kBlock], ol[host::kBlock], orr[host::kBlock];
+            const float* in[2] = { il, ir }; float* out[2] = { ol, orr };
+            const int prime = 60, hold = 220; // prime > one delay period; hold = several periods of silence
+            float late = 0.f;
+            for (int b = 0; b < prime + hold; b++) {
+                if (b == prime && freeze) { e.on_play_pad(DeckRef::A, false); e.on_play_pad(DeckRef::B, false); }
+                for (size_t i = 0; i < host::kBlock; i++) { const float x = (b < prime) ? 0.5f * rng.next() : 0.f; il[i] = x; ir[i] = x; }
+                e.process(in, out, host::kBlock);
+                if (b >= prime + hold - 40) for (size_t i = 0; i < host::kBlock; i++) late += std::fabs(ol[i]);
+            }
+            return late;
+        };
+        const float fz = late_tail(true), nf = late_tail(false);
+        std::printf("freeze: late-tail frozen=%.2f unfrozen=%.4f\n", fz, nf);
+        check(fz > 1.0f, "Freeze sustains the loop");
+        check(fz > nf * 5.0f, "Freeze sustains far longer than an unfrozen (decaying) delay");
+    }
+
     if (g_failures == 0) { std::printf("OK: all delay checks passed\n"); return 0; }
     std::printf("FAILED: %d check(s)\n", g_failures);
     return 1;

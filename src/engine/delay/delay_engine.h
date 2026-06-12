@@ -48,6 +48,8 @@ public:
 
     void  set_param(ParamId id, DeckRef::Ref deck, float value) override;
     float param(ParamId id, DeckRef::Ref deck) const override;
+    void  set_mod_speed(DeckRef::Ref deck, float value, bool sync) override; // MODFREQ -> mod LFO rate
+    bool  on_play_pad(DeckRef::Ref deck, bool reverse) override;             // Play pad -> Freeze toggle
     bool  set_config(ConfigId id, DeckRef::Ref deck, int value) override; // Mode -> character; Route -> topology
     Route route() const override { return _route; }                       // report topology for the route LED
     void  render(DisplayModel& m) override;
@@ -80,7 +82,8 @@ private:
         uint8_t mode = Clean;
         float   s_delay = 1.f, s_fb = 0.f, s_mix = 0.f, s_ratio = 1.f; // per-sample smoothed
         float   tone_lp = 0.f;   // one-pole state for the feedback tone filter
-        float   wow_ph = 0.f, wow_inc = 0.f, wow_depth = 0.f; // tape wow/flutter LFO
+        float   mod_ph = 0.f, mod_rate = 0.f, mod_depth = 0.f; // delay-time mod LFO (MODFREQ/MOD_AMT; Tape adds a floor)
+        bool    frozen = false;  // Play-pad freeze: loop the buffer at unity feedback, ignoring new input
         float   peak = 0.f;
         float   _x = 0.f, _wet = 0.f; // stashed input + read wet (for the read/write split)
         Shifter out_shift;       // PITCH output transpose
@@ -99,8 +102,10 @@ private:
 
     const ITransport* _transport = nullptr;
     Tap     _tap[DeckRef::Count];
-    uint8_t _mode[DeckRef::Count] = { Clean, Clean }; // per-deck character (ConfigId::Mode)
-    Route   _route = Route::Stereo;                   // ConfigId::Route topology
+    uint8_t _mode[DeckRef::Count]  = { Clean, Clean }; // per-deck character (ConfigId::Mode)
+    float   _mod_rate[DeckRef::Count] = { 0.f, 0.f };  // per-deck mod LFO rate in Hz (MODFREQ)
+    bool    _freeze[DeckRef::Count]   = { false, false }; // per-deck Freeze (Play pad)
+    Route   _route = Route::Stereo;                    // ConfigId::Route topology
     float   _param[static_cast<size_t>(ParamId::Count)][DeckRef::Count] = {};
 };
 

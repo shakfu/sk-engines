@@ -31,6 +31,9 @@ The division table (`kDivBeats`, ascending so SIZE up = longer): `1/16T, 1/16, 1
 | **SOS** | `Mix` | wet/dry mix |
 | **PITCH** | `Speed` | transpose the heard wet (±1 octave, centre = unity) |
 | **ENV** | `Env` | feedback tone — a one-pole low-pass in the loop: up = open/clean, down = darker repeats (dub) |
+| **MODFREQ** | `set_mod_speed` | mod-LFO rate (~0.05 .. 12 Hz) — chorus/flange/vibrato when paired with MOD_AMT |
+| **MOD_AMT** | `ModAmp` | mod-LFO depth — modulates the delay time 0 .. ~12 ms (all characters; Tape keeps a small floor) |
+| **Play pad** | `on_play_pad` | **Freeze** (per deck): loop the buffer at unity feedback; the input still passes dry so you can play over it |
 | **Reel/Slice/Drift switch** | `ConfigId::Mode` (per deck) | **character**: Clean / Tape / Shimmer |
 | **Route switch** | `ConfigId::Route` | **topology**: Stereo / DoubleMono / Ping-pong |
 
@@ -57,8 +60,9 @@ Knob meanings are fixed across characters — the mode only changes the feedback
 ## Notes / possible improvements
 
 - Sync is always on; there is no free-running mode (retired). A tempo-free fine (ms) mode on an Alt layer is still open.
-- Feedback is capped (`·0.95`); Tape/Shimmer additionally soft-clip the loop.
-- Still open: dotted/triplet display glyphs; a Freeze/hold on a pad; time modulation (chorus/flange) on MODFREQ/MOD_AMT; ducking; more characters (diffuse/reverse).
+- Feedback is capped (`·0.95`); Tape/Shimmer additionally soft-clip the loop, and Freeze loops it at unity (the soft-clip keeps Tape/Shimmer frozen loops from running away while they evolve).
+- The mod LFO is one per tap (MODFREQ rate / MOD_AMT depth); in Tape it has a rate+depth floor, which is that character's wow/flutter, so Tape warbles even with the mod knobs down.
+- Still open: dotted/triplet display glyphs; ducking (sidechain the wet to the dry envelope); more characters (diffuse / reverse); a tempo-free fine (ms) mode.
 
 ## Files
 

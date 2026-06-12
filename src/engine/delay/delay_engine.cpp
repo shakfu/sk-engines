@@ -67,7 +67,7 @@ void DelayEngine::Tap::init(void* mem, float sample_rate, size_t length)
     s_delay = min_d; s_fb = 0.f; s_mix = 0.f; s_ratio = 1.f;
     fb = 0.f; mix = 0.f; ratio = 1.f; tone_coef = 1.f;
     tone_lp = 0.f; peak = 0.f; _x = 0.f; _wet = 0.f;
-    wow_ph = 0.f; wow_inc = kTwoPi * 0.7f / sr; wow_depth = 0.0015f * sr; // ~0.7 Hz wow, +/-1.5 ms
+    mod_ph = 0.f; mod_rate = 0.f; mod_depth = 0.f; frozen = false;
     out_shift.clear(); fb_shift.clear();
     if (buf) for (size_t i = 0; i < len; i++) buf[i] = 0.f;
 }
@@ -106,11 +106,15 @@ float DelayEngine::Tap::read_color(float x_in)
     s_mix   += (mix      - s_mix)   * kSmooth;
     s_ratio += (ratio    - s_ratio) * kSmooth;
 
+    // Delay-time modulation: the user LFO (MODFREQ rate / MOD_AMT depth) gives chorus/flange/vibrato;
+    // Tape adds a floor so it always warbles a touch even with the mod knobs down (its character).
+    float rate = mod_rate, depth = mod_depth;
+    if (mode == Tape) { if (rate < 0.5f) rate = 0.7f; depth += 0.0015f * sr; } // ~0.7 Hz, +1.5 ms floor
     float d = s_delay;
-    if (mode == Tape) {                          // wow/flutter: a slow LFO on the read time
-        wow_ph += wow_inc;
-        if (wow_ph >= kTwoPi) wow_ph -= kTwoPi;
-        d += std::sin(wow_ph) * wow_depth;
+    if (depth > 0.5f) {
+        mod_ph += kTwoPi * rate / sr;
+        if (mod_ph >= kTwoPi) mod_ph -= kTwoPi;
+        d += std::sin(mod_ph) * depth;
         if (d < min_d) d = min_d;
     }
     float rp = static_cast<float>(w) - d;
@@ -133,7 +137,11 @@ float DelayEngine::Tap::read_color(float x_in)
 float DelayEngine::Tap::write_out(float fbsig)
 {
     if (!buf) return _x;
-    const float w_in = _x + s_fb * fbsig;
+    // Freeze: loop the buffer at unity feedback, ignoring new input (you still hear the input dry, so
+    // you can play over the held loop). Clean stays an exact loop; Tape/Shimmer evolve under the soft-clip.
+    const float fb_eff = frozen ? 1.f : s_fb;
+    const float x_eff  = frozen ? 0.f : _x;
+    const float w_in   = x_eff + fb_eff * fbsig;
     // Clean stays bit-for-bit; Tape/Shimmer soft-clip the loop so the colored feedback can't run away
     // (transparent below ~0.6, gently saturating above).
     buf[w] = (mode == Clean) ? w_in : std::tanh(w_in * 0.8f) * 1.25f;
@@ -175,7 +183,10 @@ void DelayEngine::apply_params(Tap& t, DeckRef::Ref src)
     t.mix   = _param[static_cast<size_t>(ParamId::Mix)][s];
     t.ratio = std::exp2((_param[static_cast<size_t>(ParamId::Speed)][s] - 0.5f) * 2.f); // +/-1 octave
     t.set_tone(_param[static_cast<size_t>(ParamId::Env)][s]);
-    t.mode  = _mode[s];
+    t.mode      = _mode[s];
+    t.mod_rate  = _mod_rate[s];
+    t.mod_depth = _param[static_cast<size_t>(ParamId::ModAmp)][s] * 0.012f * t.sr; // MOD_AMT -> 0..12 ms
+    t.frozen    = _freeze[s];
 }
 
 void DelayEngine::process(const float* const* in, float** out, size_t size)
@@ -212,6 +223,22 @@ float DelayEngine::param(ParamId id, DeckRef::Ref deck) const
     return _param[static_cast<size_t>(id)][_safe(deck)];
 }
 
+// MODFREQ -> the mod LFO rate: ~0.05 Hz (slow chorus) .. ~12.8 Hz (vibrato), exponential. (The MOD_AMT
+// depth arrives as ParamId::ModAmp via set_param.) The sync flag is unused - the LFO is free-running.
+void DelayEngine::set_mod_speed(DeckRef::Ref deck, float value, bool /*sync*/)
+{
+    value = value < 0.f ? 0.f : (value > 1.f ? 1.f : value);
+    _mod_rate[_safe(deck)] = 0.05f * std::exp2(value * 8.f);
+}
+
+// Play pad toggles Freeze for that deck (loop the buffer at unity feedback). The Rev variant (reverse)
+// is left for a future gesture. Returns false (no "empty" concept for a delay).
+bool DelayEngine::on_play_pad(DeckRef::Ref deck, bool reverse)
+{
+    if (!reverse) { const auto d = _safe(deck); _freeze[d] = !_freeze[d]; }
+    return false;
+}
+
 // ConfigId::Mode (the Reel/Slice/Drift switch, per deck) selects the character; ConfigId::Route selects
 // the topology. Route wire values: 0=Stereo, 1=DoubleMono, 2=GenerativeStereo (see core.ui.cpp).
 bool DelayEngine::set_config(ConfigId id, DeckRef::Ref deck, int value)
@@ -245,10 +272,13 @@ void DelayEngine::render(DisplayModel& m)
 
     const bool linked = (_route != Route::DoubleMono);
     for (int c = 0; c < 2; c++) {
-        const uint8_t md = _mode[linked ? DeckRef::A : c]; // linked routes show deck A's character on both
+        const int     src = linked ? DeckRef::A : c;       // linked routes mirror deck A
+        const uint8_t md  = _mode[src];
         m.ring[c].set_hex_color(kModeColor[md]);
         m.ring[c].set_segment(0.f, static_cast<float>(_tap[c].div + 1) / kDivCount); // division arc, stepped by SIZE
         m.ring[c].set_updated();
-        m.play[c] = { 0x00ff00, _tap[c].peak > 1e-3f ? 1.f : 0.15f }; // lit by input signal
+        // Play pad: white when frozen, else green lit by the input signal.
+        m.play[c] = _freeze[src] ? DisplayModel::Indicator{ 0xffffffu, 1.f }
+                                 : DisplayModel::Indicator{ 0x00ff00u, _tap[c].peak > 1e-3f ? 1.f : 0.15f };
     }
 }

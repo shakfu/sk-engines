@@ -10,7 +10,7 @@ Current engines include:
 
 1. [granular](docs/engines/granular.md): dual-deck granular looper (the original reference and default engine)
 
-2. [delay](docs/engines/delay.md): tempo-synchronized stereo delay with switchable characters (Clean / Tape / Shimmer on the Reel/Slice/Drift switch) and stereo topologies (Stereo / DoubleMono / Ping-pong on the route switch), plus a feedback tone control
+2. [delay](docs/engines/delay.md): tempo-synchronized stereo delay with switchable characters (Clean / Tape / Shimmer on the Reel/Slice/Drift switch) and stereo topologies (Stereo / DoubleMono / Ping-pong on the route switch), plus a feedback tone control, a modulation LFO (chorus/flange/vibrato), and a Play-pad freeze
 
 3. [edrums](docs/engines/edrums.md): four-voice Euclidean drum machine
 
@@ -71,7 +71,7 @@ The firmware is a fixed hardware/UI **platform** that hosts a swappable DSP **en
 
 - `make -j8` — the granular looper (default; `ENGINE=granular`).
 
-- `make -j8 ENGINE=delay` — a tempo-synced stereo delay (musical divisions, feedback, pitch-shifted taps) with **Clean / Tape / Shimmer** characters (Reel/Slice/Drift switch), **Stereo / DoubleMono / Ping-pong** topologies (route switch), and a feedback tone control on ENV.
+- `make -j8 ENGINE=delay` — a tempo-synced stereo delay (musical divisions, feedback, pitch-shifted taps) with **Clean / Tape / Shimmer** characters (Reel/Slice/Drift switch), **Stereo / DoubleMono / Ping-pong** topologies (route switch), a feedback tone control on ENV, a delay-time **modulation LFO** (MODFREQ/MOD_AMT → chorus/flange/vibrato), and a **Freeze** hold on the Play pad.
 
 - `make -j8 ENGINE=edrums` — a four-drum Euclidean drum machine (two drums per deck, Rev-pad swaps the editable one; synthesized voices, polymeter, live model select).
 
