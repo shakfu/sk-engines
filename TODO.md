@@ -39,7 +39,12 @@ Voicing levers live in the `.dsp` sources (`src/engine/{reverb,tape}/*.dsp`); re
 
 ## P3 - Refactor the delay engine onto the shared primitives (HARDWARE-GATED)
 
-The shared primitives are now in `dsp/` (the `.cpp` tier move is done), so the prerequisite is satisfied. This is the concrete second consumer that justified the tier: the delay reimplemented one-pole smoothing and a fractional delay line, which now live in `dsp/smooth.h` and `dsp/deline.h`. But it **CHANGES the delay's DSP** (its smoothing/interpolation may not be bit-identical to the shared versions), so do it deliberately with a hardware flash test, not a silent swap. Batch with the other hardware-gated items (see top note).
+The shared primitives are now in `dsp/` (the `.cpp` tier move is done), so the prerequisite is satisfied. This is the concrete second consumer that justified the tier: the delay reimplemented one-pole smoothing and a fractional delay line, which now live in `src/dsp/smooth.h` and `src/dsp/deline.h`. The recent "restructured delay engine" commits reorganized the engine internals but deliberately kept both primitives inline (`delay_engine.cpp`: smoothing at `103-107`, linear fractional read at `123-125`; no `dsp/` include). It **CHANGES the delay's DSP** - the shared versions are *not* bit-identical drop-ins, confirmed by inspection:
+
+- **Smoothing divergence.** The inline glide (`s_delay += (target - s_delay) * 0.0015f`, every sample, no dead-zone, never snaps) differs from `OnePoleSmoother` (`smooth.h`), which adds a `.002f` dead-zone short-circuit (`:26`) and a snap-to-target within `.002f` (`:31-34`). The coefficient is matchable (`_kof = 1/(time_s*sr)` -> `time_s ~= 0.0139 s` to equal `0.0015` at 48 kHz) but the dead-zone/snap changes the trajectory. Since the delay smooths the *delay time itself*, that snap is audible as a different pitch-glide on knob moves.
+- **Structural mismatch on the delay line.** `DeLine` (`deline.h`) uses the same `a + (b-a)*frac` interpolation but is a **fixed-size template** (`max_size` is a compile-time `size_t`) with a decrementing write pointer + modulo wrap. The delay engine allocates a **runtime-sized** buffer from the arena (`len`, `max_d`, `kReadHeadroom`, `delay_engine.cpp:64`) with a forward-indexed read pointer. Adopting `DeLine` requires resolving fixed-vs-runtime sizing, not just a numeric swap.
+
+So do it deliberately with a hardware flash test (judge by ear, not by bit-identity - see P3's note), not a silent swap. Batch with the other hardware-gated items (see top note).
 
 ## P4 - Evaluate converting the build to CMake (Make as a thin frontend)
 

@@ -159,10 +159,13 @@ void TapeEngine::set_aux_active(DeckRef::Ref d, bool held) {
 // 0 = Stereo (centre), 1 = DoubleMono (left), 2 = GenerativeStereo (right).
 bool TapeEngine::set_config(ConfigId id, DeckRef::Ref, int value) {
     if (id == ConfigId::Route) {
-        _route = (value == 2) ? Route::GenerativeStereo
-               : (value == 1) ? Route::DoubleMono
-                              : Route::Stereo;
-        if (_route == Route::GenerativeStereo) _roll_random_pans();
+        const Route r = (value == 2) ? Route::GenerativeStereo
+                      : (value == 1) ? Route::DoubleMono
+                                     : Route::Stereo;
+        if (r != _route) {   // only act on an actual route transition - the platform calls this every loop
+            _route = r;
+            if (_route == Route::GenerativeStereo) _roll_random_pans();   // re-rolled on entering the mode, not continuously
+        }
     }
     return false;
 }
