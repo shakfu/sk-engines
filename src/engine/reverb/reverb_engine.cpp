@@ -244,7 +244,7 @@ void ReverbEngine::init(const EngineContext& ctx)
 
 void ReverbEngine::apply_all_knobs(DeckRef::Ref deck)
 {
-    ReverbVoice* rv = _rv[deck][_active[deck]];
+    ReverbVoice* rv = _rv[deck][eff_voice(deck)];
     if (!rv) return;
     for (int k = 0; k < K_Count; k++) rv->set_knob(static_cast<Knob>(k), _v[deck][k]);
 }
@@ -254,14 +254,15 @@ void ReverbEngine::process(const float* const* in, float** out, size_t size)
     if (!out || !out[0] || !out[1]) return;
 
     if (_route == Route::DoubleMono) {
-        // Two independent MONO reverbs: in[d] -> deck d's selected voice -> out[d]. The Faust voices are
-        // stereo, so each is fed mono (input fanned to both channels) with one output kept; the discarded
+        // Two independent MONO reverbs: in[d] -> deck d's PLATE -> out[d]. DoubleMono is plate-only
+        // (eff_voice caps it): the hall/gigaverb are too heavy to run two-up. The Faust plate is stereo,
+        // so each deck is fed mono (input fanned to both channels) with one output kept; the discarded
         // channel lands in a throwaway scratch. compute() is allocation-free -> ISR-safe.
         static constexpr size_t kMaxBlock = 128; // platform block is 96
         float scratch[kMaxBlock];
         const int n = static_cast<int>(size < kMaxBlock ? size : kMaxBlock);
         for (int d = 0; d < DeckRef::Count; d++) {
-            ReverbVoice* rv  = _rv[d][_active[d]];
+            ReverbVoice* rv  = _rv[d][eff_voice(d)];
             const float* din = in ? in[d] : nullptr;
             if (!rv || !din) { std::memset(out[d], 0, size * sizeof(float)); _peak[d] = 0.f; continue; }
             FAUSTFLOAT* ins[2]  = { const_cast<float*>(din), const_cast<float*>(din) };
@@ -293,15 +294,15 @@ void ReverbEngine::process(const float* const* in, float** out, size_t size)
     _peak[0] = _peak[1] = peak;
 }
 
-// Knobs and the mode switch act per deck. In a stereo route only deck A's voice is heard (deck B's
-// strip updates an idle voice); in DoubleMono each deck drives its own side.
+// Knobs act per deck and drive that deck's effective voice (its plate in DoubleMono, its switch-
+// selected voice in a stereo route). In a stereo route only deck A is heard (deck B updates an idle voice).
 void ReverbEngine::set_param(ParamId id, DeckRef::Ref deck, float v)
 {
     v = std::clamp(v, 0.f, 1.f);
     const Knob k = role_for(id);
     if (k == K_Count || deck >= DeckRef::Count) return;
     _v[deck][k] = v;
-    if (ReverbVoice* rv = _rv[deck][_active[deck]]) rv->set_knob(k, v);
+    if (ReverbVoice* rv = _rv[deck][eff_voice(deck)]) rv->set_knob(k, v);
 }
 
 float ReverbEngine::param(ParamId id, DeckRef::Ref deck) const
@@ -312,21 +313,25 @@ float ReverbEngine::param(ParamId id, DeckRef::Ref deck) const
 }
 
 // ConfigId::Route sets the process() topology; ConfigId::Mode (the Reel/Slice/Drift switch) selects the
-// voice per deck. Both decks' switches are tracked even in a stereo route (deck B's just isn't heard
-// until DoubleMono). Route wire values: 0=Stereo, 1=DoubleMono, 2=GenerativeStereo (see core.ui.cpp).
+// voice per deck. _active tracks each deck's switch even in a stereo route, but the route decides the
+// EFFECTIVE voice (eff_voice): DoubleMono forces plate, so the mode switch only takes effect in a stereo
+// route. Route wire values: 0=Stereo, 1=DoubleMono, 2=GenerativeStereo (see core.ui.cpp).
 bool ReverbEngine::set_config(ConfigId id, DeckRef::Ref deck, int value)
 {
     if (id == ConfigId::Route) {
         const Route r = value == 2 ? Route::GenerativeStereo : value == 1 ? Route::DoubleMono : Route::Stereo;
         if (r == _route) return false;
         _route = r;
+        // The effective voice flips (plate <-> switch selection), so re-seed both decks' knobs into it.
+        apply_all_knobs(DeckRef::A);
+        apply_all_knobs(DeckRef::B);
         return true;
     }
     if (id != ConfigId::Mode || deck >= DeckRef::Count) return false;
     const int idx = std::clamp(value, 0, kReverbCount - 1);
     if (idx == _active[deck] || !_rv[deck][idx]) return false;
     _active[deck] = idx;
-    apply_all_knobs(deck); // re-seed this deck's now-active reverb from its cached knob values
+    apply_all_knobs(deck); // re-seed this deck's now-effective voice from its cached knob values
     return true;
 }
 
@@ -344,11 +349,12 @@ void ReverbEngine::render(DisplayModel& m)
     const int route_led = (_route == Route::DoubleMono) ? 0 : (_route == Route::GenerativeStereo) ? 2 : 1;
     *mode_led[route_led] = { 0xffffffu, 0.8f };
 
-    // Per-deck ring level + play colour in each deck's selected-voice colour. In a stereo route both
-    // sides show deck A's (single) voice; in DoubleMono each shows its own.
+    // Per-deck ring level + play colour in the effective-voice colour. DoubleMono runs plate on both
+    // decks (hall/gigaverb are stereo-only), so both pads are blue; a stereo route shows deck A's voice.
     const bool dual = (_route == Route::DoubleMono);
+    const int  vidx = dual ? 0 /*plate*/ : _active[DeckRef::A];
     for (int d = 0; d < DeckRef::Count; d++) {
-        const uint32_t color = kColor[_active[dual ? d : DeckRef::A]];
+        const uint32_t color = kColor[vidx];
         const float level = _peak[d] > 1.f ? 1.f : _peak[d];
         if (level > 1e-4f) {
             m.ring[d].set_hex_color(color);

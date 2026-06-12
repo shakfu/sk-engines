@@ -108,13 +108,13 @@ else
 $(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', 'edrums', 'reso', 'tape', 'reverb', or 'shuttle')
 endif
 
-# Opt-in (make ... METER=1): enable the on-device CPU load meter (app.cpp's CpuLoadMeter). It prints
-# Max/Avg/Min processing load % over the serial log (LOGGER_EXTERNAL) every ~250 ms. INFS_LOG=1 turns
-# the logger from a no-op into the real one (see common.h); the meter print is compiled under METER, so
-# this works at the shipping -O2 without the full DEBUG build. Read it over USB serial.
+# Opt-in (make ... METER=1): enable the on-device CPU load meter (app.cpp's CpuLoadMeter). It writes
+# Max/Avg/Min processing load % to the external USB CDC (LOGGER_EXTERNAL port) every ~250 ms using a
+# direct NON-BLOCKING transmit (drops if the host isn't draining) - so the meter can never hang the main
+# loop the way the daisy Logger does. No INFS_LOG/Logger dependency, so it adds almost no code. Read it
+# over USB serial (keep the port open). Compiled under METER, works at the shipping -O2.
 ifeq ($(METER), 1)
 C_DEFS += -DMETER
-C_DEFS += -DINFS_LOG=1
 endif
 
 USE_FATFS = 1

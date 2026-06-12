@@ -46,9 +46,10 @@ int main() {
     EngineContext ctx = host::make_context(arena, time);
     ReverbEngine e; e.init(ctx);
 
-    // Worst case: hall, fully wet, on both decks.
-    e.set_config(ConfigId::Mode, DeckRef::A, 1); // 1 = hall
-    e.set_config(ConfigId::Mode, DeckRef::B, 1);
+    // Plate, fully wet, both decks. DoubleMono is plate-only (the cap), so this is the dual workhorse;
+    // the heavy hall/gigaverb can only run as the single Stereo voice and are never two-up.
+    e.set_config(ConfigId::Mode, DeckRef::A, 0); // 0 = plate
+    e.set_config(ConfigId::Mode, DeckRef::B, 0);
     for (DeckRef::Ref d : { DeckRef::A, DeckRef::B }) {
         e.set_param(ParamId::Mix,    d, 1.0f);
         e.set_param(ParamId::Speed,  d, 0.7f); // decay
@@ -59,11 +60,11 @@ int main() {
     }
 
     const double period_us = 1e6 * host::kBlock / host::kSampleRate; // 2000 us @ 96 smp / 48 kHz
-    const double us_stereo = time_route(e, 0); // Stereo     -> one stereo hall
-    const double us_dual   = time_route(e, 1); // DoubleMono -> two mono halls
+    const double us_stereo = time_route(e, 0); // Stereo     -> one stereo plate
+    const double us_dual   = time_route(e, 1); // DoubleMono -> two mono plates (the capped dual case)
 
-    std::printf("STEREO     (one stereo hall)   us/block=%.3f  host-load=%.2f%%\n", us_stereo, 100.0 * us_stereo / period_us);
-    std::printf("DOUBLEMONO (two mono halls)    us/block=%.3f  host-load=%.2f%%\n", us_dual,   100.0 * us_dual   / period_us);
+    std::printf("STEREO     (one stereo plate)  us/block=%.3f  host-load=%.2f%%\n", us_stereo, 100.0 * us_stereo / period_us);
+    std::printf("DOUBLEMONO (two mono plates)   us/block=%.3f  host-load=%.2f%%\n", us_dual,   100.0 * us_dual   / period_us);
     std::printf("ratio DOUBLEMONO/STEREO = %.2fx   (block period=%.0f us; host us is NOT a device %%)\n",
                 us_dual / us_stereo, period_us);
     return 0;

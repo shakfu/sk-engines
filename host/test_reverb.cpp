@@ -7,8 +7,9 @@
 //      regression guard for the one silent failure mode of the bind-table design: a role bound to no
 //      Faust zone would no-op a knob with no compile error.
 //   4. The Mode switch selects the live reverb by index and swaps the kernel - plate and hall differ.
-//   5. DoubleMono route: an independent mono reverb per deck - the two decks run different voices on the
-//      same input and differ, and a deck with a silent input stays silent (channel isolation, no crosstalk).
+//   5. DoubleMono is plate-only (the cap): the Mode switch is ignored in DoubleMono (forced to plate, so
+//      two heavy voices can never contend) but honored in a stereo route; and the two mono sides are
+//      channel-isolated (a deck with a silent input stays silent).
 
 #include <cmath>
 #include <cstdint>
@@ -138,33 +139,45 @@ int main() {
         check(sad(plate, hall) > 1.0f, "plate and hall produce different output (Mode switch swaps the kernel)");
     }
 
-    // --- 5. DoubleMono route: an independent mono reverb per deck -------------------------------
+    // --- 5. DoubleMono = plate-only cap; hall/gigaverb are stereo-only --------------------------
     {
-        ReverbEngine e; e.init(ctx);
-        e.set_config(ConfigId::Route, DeckRef::A, 1); // 1 = DoubleMono
-        for (auto d : { DeckRef::A, DeckRef::B }) {
-            e.set_param(ParamId::Mix, d, 1.0f); e.set_param(ParamId::Speed, d, 0.5f); e.set_param(ParamId::Env, d, 0.5f);
-            e.set_param(ParamId::Pos, d, 0.5f); e.set_param(ParamId::Size, d, 0.5f);  e.set_param(ParamId::ModAmp, d, 0.5f);
-        }
         float il[host::kBlock], ir[host::kBlock], ol[host::kBlock], orr[host::kBlock];
         const float* in[2] = { il, ir }; float* o[2] = { ol, orr };
 
-        // 5a. Per-deck VOICE independence: deck A = plate, deck B = hall, SAME input to both -> outputs differ.
-        e.set_config(ConfigId::Mode, DeckRef::A, 0); // plate
-        e.set_config(ConfigId::Mode, DeckRef::B, 1); // hall
-        LCG rng{ 777u }; std::vector<float> a, b;
-        for (int blk = 0; blk < kBurst + kTail; blk++) {
-            for (size_t i = 0; i < host::kBlock; i++) { const float x = (blk < kBurst) ? 0.5f * rng.next() : 0.f; il[i] = x; ir[i] = x; }
-            e.process(in, o, host::kBlock);
-            for (size_t i = 0; i < host::kBlock; i++) { a.push_back(ol[i]); b.push_back(orr[i]); }
-        }
-        std::printf("doublemono: finite=%d  SAD(deckA plate, deckB hall)=%.3f\n", int(all_finite(a) && all_finite(b)), sad(a, b));
-        check(all_finite(a) && all_finite(b), "doublemono output is finite");
-        check(sad(a, b) > 1.0f, "deck A (plate) and deck B (hall) differ -> independent per-deck voices");
+        // Run deck A in DoubleMono with a given mode, return its left-channel response.
+        auto dm_deckA = [&](int modeA) {
+            ReverbEngine e; e.init(ctx);
+            e.set_config(ConfigId::Route, DeckRef::A, 1); // DoubleMono
+            e.set_config(ConfigId::Mode, DeckRef::A, modeA);
+            e.set_param(ParamId::Mix, DeckRef::A, 1.0f); e.set_param(ParamId::Speed, DeckRef::A, 0.5f);
+            e.set_param(ParamId::Env, DeckRef::A, 0.5f);  e.set_param(ParamId::Pos, DeckRef::A, 0.5f);
+            e.set_param(ParamId::Size, DeckRef::A, 0.5f); e.set_param(ParamId::ModAmp, DeckRef::A, 0.5f);
+            LCG rng{ 777u }; std::vector<float> out;
+            for (int blk = 0; blk < kBurst + kTail; blk++) {
+                for (size_t i = 0; i < host::kBlock; i++) { const float x = (blk < kBurst) ? 0.5f * rng.next() : 0.f; il[i] = x; ir[i] = x; }
+                e.process(in, o, host::kBlock);
+                for (size_t i = 0; i < host::kBlock; i++) out.push_back(ol[i]);
+            }
+            return out;
+        };
+        // 5a. The cap: in DoubleMono, selecting Hall does NOT change the output (it's forced to plate).
+        const auto dm_plate = dm_deckA(0); // mode = plate
+        const auto dm_hall  = dm_deckA(1); // mode = hall -> capped to plate in DoubleMono
+        std::printf("cap: finite=%d  SAD(DoubleMono plate, DoubleMono 'hall')=%.3f\n",
+                    int(all_finite(dm_plate) && all_finite(dm_hall)), sad(dm_plate, dm_hall));
+        check(all_finite(dm_plate), "doublemono output is finite");
+        check(sad(dm_plate, dm_hall) == 0.f, "DoubleMono ignores the Mode switch (plate-only cap)");
 
-        // 5b. Deck ISOLATION: feed deck A only (deck B input silent) -> deck B output stays silent (no bleed).
-        e.set_config(ConfigId::Mode, DeckRef::B, 0); // both plate now
-        LCG rng2{ 888u }; a.clear(); b.clear();
+        // 5b. ...but a stereo route DOES honor it (hall != plate), proving the cap is route-specific.
+        const auto s_plate = response(ctx, 0, 1.0f, ParamId::Count, 0.f); // stereo, mode plate
+        const auto s_hall  = response(ctx, 1, 1.0f, ParamId::Count, 0.f); // stereo, mode hall
+        check(sad(s_plate, s_hall) > 1.0f, "stereo route honors the Mode switch (hall != plate)");
+
+        // 5c. Channel isolation in DoubleMono: feed deck A only -> deck B (silent input) stays silent.
+        ReverbEngine e; e.init(ctx);
+        e.set_config(ConfigId::Route, DeckRef::A, 1); // DoubleMono (both plate)
+        for (auto d : { DeckRef::A, DeckRef::B }) { e.set_param(ParamId::Mix, d, 1.0f); e.set_param(ParamId::Speed, d, 0.5f); }
+        LCG rng2{ 888u }; std::vector<float> a, b;
         for (int blk = 0; blk < kBurst + kTail; blk++) {
             for (size_t i = 0; i < host::kBlock; i++) { il[i] = (blk < kBurst) ? 0.5f * rng2.next() : 0.f; ir[i] = 0.f; }
             e.process(in, o, host::kBlock);

@@ -74,7 +74,12 @@ private:
     float        _peak[DeckRef::Count] = { 0.f, 0.f };
     Route        _route = Route::Stereo; // ConfigId::Route; selects the process() topology
 
-    void apply_all_knobs(DeckRef::Ref deck); // push that deck's cached knobs into its active reverb
+    // The voice index actually used for a deck. DoubleMono caps every deck to the PLATE (index 0): the
+    // hall and gigaverb are heavy/SDRAM-bound and two of them at once thrash the cache (measured ~89%
+    // peak), so they are single-voice (stereo route) only. In a stereo route the deck plays its
+    // switch-selected voice (_active). Plate is index 0 by construction (see init()).
+    int  eff_voice(int deck) const { return _route == Route::DoubleMono ? 0 : _active[deck]; }
+    void apply_all_knobs(DeckRef::Ref deck); // push that deck's cached knobs into its effective voice
 };
 
 };

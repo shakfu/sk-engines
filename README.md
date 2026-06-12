@@ -20,7 +20,7 @@ Current engines include:
 
 6. [shuttle](docs/engines/shuttle.md): buffer-based bipolar/reverse varispeed tape (four in-RAM tracks, PITCH as a capstan-speed knob - noon stops, CW forward, CCW reverse)
 
-7. [reverb](docs/engines/reverb.md): route-aware stereo reverb with switchable algorithms (Dattorro plate / Zita-rev1 hall, generated from [Faust](https://faust.grame.fr) sources; optional gen~ gigaverb as a third voice) - the Reel/Slice/Drift switch selects the algorithm, and DoubleMono routing runs an independent mono reverb on each deck
+7. [reverb](docs/engines/reverb.md): route-aware stereo reverb with switchable algorithms (Dattorro plate / Zita-rev1 hall, generated from [Faust](https://faust.grame.fr) sources; optional gen~ gigaverb as a third voice) - the Reel/Slice/Drift switch selects the algorithm, and DoubleMono routing runs an independent mono plate on each deck (the heavier hall/gigaverb stay single-voice in a stereo route, a CPU cap validated on hardware)
 
 8. [gigaverb](docs/engines/gigaverb.md): stereo reverb authored in Max/MSP **gen~** and translated to C++ via [gen-dsp](https://github.com/shakfu/gen-dsp) (Tom Erbe's gigaverb)
 
@@ -81,7 +81,7 @@ The firmware is a fixed hardware/UI **platform** that hosts a swappable DSP **en
 
 - `make -j8 ENGINE=shuttle` — a **buffer-based bipolar/reverse varispeed tape**: four in-RAM mono tracks (two per deck), all playing at once. PITCH is a capstan-speed knob (noon = stop, clockwise = forward to +2x, counter-clockwise = reverse to -2x); the Play pad snaps the focused track to unity. POS/SIZE set a per-track loop window, Alt+PITCH loads a `/tapes/` slot into RAM, the Rev pad swaps a deck's focused track, and the Seq pad re-aligns all four tracks to a common downbeat (declicked). Random-access in-SDRAM buffers (30 s/track) trade unbounded length for trivial reverse/freeze/looping.
 
-- `make -j8 ENGINE=reverb` — a stereo reverb with **two switchable algorithms** (a Dattorro plate and a Zita-rev1 hall, Alt+PITCH selects live), generated from [Faust](https://faust.grame.fr) sources by cyfaust. Regenerate the kernels with `make faust-gen`.
+- `make -j8 ENGINE=reverb` — a **route-aware** stereo reverb with **switchable algorithms** (a Dattorro plate and a Zita-rev1 hall, the **Reel/Slice/Drift switch** selects live; an optional gen~ gigaverb third voice with `REVERB_GIGAVERB=1`), generated from [Faust](https://faust.grame.fr) sources by cyfaust. **DoubleMono** routing runs an independent mono plate per deck; the heavy hall/gigaverb are single-voice (stereo-route only), a cap that keeps two delay-line-heavy voices off the SDRAM bus at once. Regenerate the kernels with `make faust-gen`.
 
 - `make -j8 ENGINE=gigaverb` — a stereo reverb (Tom Erbe's **gigaverb**) authored in Max/MSP **gen~** and translated to C++ by [gen-dsp](https://github.com/shakfu/gen-dsp). The engine directory is generated from a gen~ export with `make gen-engines` (or `scripts/gen_engine.py`); see [`docs/engine-types/gen.md`](docs/engine-types/gen.md).
 

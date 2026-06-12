@@ -15,6 +15,10 @@
 #if defined(SPK_USE_STREAM)
 #include "hw/stream_deck.h"   // SD streaming service (any SPK_USE_STREAM engine: tape, shuttle)
 #endif
+#ifdef METER
+#include "hid/usb.h"   // daisy::UsbHandle - direct non-blocking CDC for the CPU-load meter
+#include <cstdio>      // snprintf
+#endif
 
 #define STORAGE
 
@@ -68,6 +72,9 @@ class AppImpl {
 
     #if DEBUG || defined(METER)
     StopwatchTimer _log_timer; // throttles the serial log (debug info and/or the CPU meter)
+    #endif
+    #ifdef METER
+    daisy::UsbHandle _meter_usb; // non-blocking CDC for the load meter (no Logger -> can't spin/hang)
     #endif
     #if DEBUG
     void logDebugInfo();
@@ -182,6 +189,7 @@ void AppImpl::Init()
 
     #ifdef METER
     Meter::cpu().load.Init(sample_rate, block_size);
+    _meter_usb.Init(daisy::UsbHandle::FS_EXTERNAL); // CDC for the load meter (LOGGER_EXTERNAL port)
     #endif
 }
 
@@ -213,13 +221,16 @@ void AppImpl::Loop()
 
             #ifdef METER
             auto& loadMeter = Meter::cpu().load;
-            const float avgLoad = loadMeter.GetAvgCpuLoad();
-            const float maxLoad = loadMeter.GetMaxCpuLoad();
-            const float minLoad = loadMeter.GetMinCpuLoad();
-            Log::PrintLine("Processing Load %:");
-            Log::PrintLine("Max: " FLT_FMT3, FLT_VAR3(maxLoad * 100.0f));
-            Log::PrintLine("Avg: " FLT_FMT3, FLT_VAR3(avgLoad * 100.0f));
-            Log::PrintLine("Min: " FLT_FMT3, FLT_VAR3(minLoad * 100.0f));
+            const int mx = (int)(loadMeter.GetMaxCpuLoad() * 10000.f + 0.5f); // hundredths of a percent
+            const int av = (int)(loadMeter.GetAvgCpuLoad() * 10000.f + 0.5f);
+            const int mn = (int)(loadMeter.GetMinCpuLoad() * 10000.f + 0.5f);
+            char line[80];
+            const int n = snprintf(line, sizeof(line),
+                                   "load%% max=%d.%02d avg=%d.%02d min=%d.%02d\r\n",
+                                   mx / 100, mx % 100, av / 100, av % 100, mn / 100, mn % 100);
+            // Direct, NON-BLOCKING CDC write: drop the line if the host isn't draining the buffer, so the
+            // meter can never hang the main loop (the daisy Logger spins after its first 2 packets).
+            if (n > 0) _meter_usb.TransmitExternal((uint8_t*)line, (size_t)n);
             #endif
         }
         #endif

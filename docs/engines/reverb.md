@@ -8,7 +8,9 @@ A **route-aware** stereo reverb that ships **two algorithms** - a **Dattorro pla
 
 - Implemented and integrated end to end (engine, build system, two Faust kernels + optional gen~ gigaverb).
 
-- Host-tested: `make -C host test-reverb` (param round-trip, both algorithms ring out, every knob role is bound, the mode switch swaps the kernel, and DoubleMono per-deck independence + channel isolation). Plus `make -C host bench-reverb` for the process() cost.
+- Host-tested: `make -C host test-reverb` (param round-trip, both algorithms ring out, every knob role is bound, the mode switch swaps the kernel, the DoubleMono plate-only cap, and channel isolation). Plus `make -C host bench-reverb` for the process() cost and `make ENGINE=reverb METER=1` for on-device CPU load (non-blocking serial; won't hang).
+
+- CPU measured on hardware (METER build): one hall ~18.6%, DoubleMono two plates ~41%/61% peak; the capped corner (two halls) ~70%/89% can no longer occur. The reverb is SDRAM-latency-bound, so the cap is what keeps the worst block comfortably under the 2 ms deadline.
 
 - Links and fits: `make ENGINE=reverb` -> SRAM_EXEC ~92% of 186 KB, no overflow.
 
@@ -30,9 +32,21 @@ The reverb reads the panel **routing switch** (`ConfigId::Route`) and adapts, li
 
 - **Stereo / GenerativeStereo** -> **one stereo voice** (deck A's selection) reverberates the stereo pair. Deck A's knobs + mode switch drive it; deck B's strip is inert.
 
-- **DoubleMono** -> **an independent mono reverb per deck**: deck A reverberates the left input into the left output, deck B the right - each deck's full knob bank + mode switch drives its own side, both live. The two sides are channel-isolated (a deck with a silent input stays silent - no crosstalk). Each side is mono (the stereo voice is run mono: input fanned to both channels, one output kept), so it trades each reverb's internal stereo width for two independent sends. Costs ~1.7x a single voice on the host (process-only); the real device load comes from the METER build.
+- **DoubleMono** -> **two independent mono PLATES, one per deck**: deck A reverberates the left input into the left output, deck B the right, each driven by its own knob bank. The two sides are channel-isolated (a deck with a silent input stays silent - no crosstalk). Each side is mono (the plate is run mono: input fanned to both channels, one output kept), trading the plate's internal stereo width for two independent sends.
+
+**The cap: DoubleMono is plate-only.** The hall and gigaverb are heavy and SDRAM-bound; *two* of them at once thrash the H7's D-cache (measured ~70% avg / ~89% peak on hardware - too close to the 2 ms deadline). So the heavy voices are **single-voice (stereo route) only** - in DoubleMono the Mode switch is forced to plate (`eff_voice()`), which can never put two heavy voices on the bus at once. The switch selection is remembered, so flipping back to a stereo route restores the chosen hall/gigaverb.
 
 A full set of voices is allocated **per deck** up front, so the route is a runtime branch in `process()` with no reallocation. Per-deck footprint is ~2.1 MB (Faust) or ~6.2 MB with gigaverb - trivial against the 48 MB arena.
+
+### Measured device load (`METER` build, worst block)
+
+| Config | Avg | Peak |
+|---|---|---|
+| 1 voice (Stereo, hall) | ~18.6% | — |
+| DoubleMono, two plates (the cap) | ~40.8% | ~60.8% |
+| ~~DoubleMono, two halls~~ | ~~70.5%~~ | ~~88.9%~~ (prevented by the cap) |
+
+The reverb is **memory-latency-bound** (delay lines in SDRAM), so two heavy voices scale ~3.8x, not 2x - the host benchmark (which can't model SDRAM) under-predicted both the absolute load and the scaling. The cap keeps the worst case at two plates (~61% peak). To lift the cap and allow two heavies later, the levers are: move the plate to internal SRAM (de-contends a plate+heavy pairing), or downsample/shrink the hall (a smaller FDN, not just shorter delays - per-sample cost is set by tap *count*, not buffer size).
 
 ## Control map
 
@@ -48,7 +62,7 @@ The six panel knobs map to reverb-agnostic **roles**; the 0..1 knob is linear-ma
 | MOD_AMT | `ModAmp` | SizeB | tank Diffusion (x2) | tail EQ (Eq1 Level, +/-15 dB) |
 | Reel/Slice/Drift switch | `ConfigId::Mode` | select | **algorithm: plate / hall (/ gigaverb)** | |
 
-**Decay** is on **PITCH** (the biggest knob) since it is the most impactful character control; **Tone** is on POS. Selection moved from the old Alt+PITCH (`CapAux`) gesture to the dedicated **3-position Reel/Slice/Drift switch** - one tactile position per algorithm. The switch is per-deck on the hardware: deck A selects in a stereo route; in DoubleMono each deck selects its own side.
+**Decay** is on **PITCH** (the biggest knob) since it is the most impactful character control; **Tone** is on POS. Selection moved from the old Alt+PITCH (`CapAux`) gesture to the dedicated **3-position Reel/Slice/Drift switch** - one tactile position per algorithm. The switch is per-deck on the hardware, but only takes effect in a stereo route: there deck A's switch selects the voice; in DoubleMono the voice is forced to plate (the cap below), so the switch is inert (selection is remembered for when you return to a stereo route).
 
 `capabilities() = CapOwnDisplay | CapDualDeck`. Output Level is captured and held fixed (plate -6 dB, hall 0 dB); Zita's Eq1 Level is the SizeB knob (tail tone), Eq2 and the EQ frequencies stay default. The mode switch's 0/1/2 position maps straight to the voice index and re-applies the cached knob values to the newly-active kernel, so a switch never strands a knob.
 
@@ -68,10 +82,10 @@ Arena placement-new keeps `SRAM` (data) flat regardless of delay-line size, so *
 |---|---|
 | `passthrough` (platform floor) | ~149 KB (78%) |
 | `reverb` (plate + hall, route-aware) | ~175 KB (92.0%) |
-| `reverb METER=1` | ~176 KB (92.2%) |
+| `reverb METER=1` (adds the USB CDC stack) | ~187 KB (98.2%) |
 | `reverb REVERB_GIGAVERB=1` (3 voices, per-deck gen~) | ~185 KB (97.0%) |
 
-At ~92% a fourth sizable Faust algorithm would need this engine built at `-Os` (as reso is) or one dropped; the gigaverb fold-in already sits near the ceiling.
+At ~92% a fourth sizable Faust algorithm would need this engine built at `-Os` (as reso is) or one dropped; the gigaverb fold-in already sits near the ceiling. The `METER` build adds ~12 KB (the USB CDC stack, not the meter itself), so the **3-voice + METER** build overflows `-O2` by ~6 KB and needs `OPT=-Os` to fit.
 
 ## Files
 
@@ -105,7 +119,7 @@ Follow the generic [add-an-algorithm](../engine-types/faust.md#setup-build-add) 
 
 ## Notes / TODO
 
-- **CPU not yet measured on hardware.** `make ENGINE=reverb METER=1` enables `Meter::cpu` (prints Max/Avg/Min load over serial). The worst case is the DoubleMono route (two voices/block, ~1.7x a single on the host); flash, set DoubleMono with both decks on the hall, and read the serial log for the real %.
+- **CPU measured on hardware** (`make ENGINE=reverb METER=1`, `Meter::cpu` over the external USB CDC, non-blocking): one stereo hall **~18.6%**, DoubleMono two plates **~40.8% avg / ~61% peak**, single ~13-19%. The capped corner (two halls) measured ~70%/89% before the cap and can no longer occur. The reverb is **SDRAM-latency-bound** - cost scales super-linearly with concurrent heavy voices (~3.8x for two halls, from D-cache contention), which the host bench (~1.7x, no SDRAM model) badly under-predicted. To lift the cap later: move the plate's delay lines to internal AXI SRAM (de-contends a plate+heavy pairing - a hall's 937 KB can't fit internally), or shrink the hall's FDN *order* (per-sample cost is tap count, not delay length).
 
 - **Hardware bring-up checks:** the mode-switch position -> voice-index order, and the route -> L/C/R LED order, are mapped to the natural 0/1/2; confirm they match the silkscreen on first flash (each is a one-line reorder if not).
 
