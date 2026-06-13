@@ -34,25 +34,27 @@ Defaults assign a four-piece kit — deck A = **Kick** (slot 0) + **Tom** (slot 
 
 Each drum has one `Voice` (a small abstraction so sample playback could replace it later behind the same `trigger()` / `process()` seam) — four in all. The voice is:
 
-- **Body** — a sine (`dsp/LUTSinOsc`) with a fast (~25 ms) downward **pitch sweep** on trigger (`freq = base_hz · (1 + pitch_env·3)`, `pitch_env` decaying) — the classic drum "thump".
+- **Body** — a sine (`dsp/LUTSinOsc`) with a downward **pitch sweep** on trigger (`freq = base_hz · (1 + pitch_env·sweep)`, `pitch_env` decaying over a **per-model time**), plus an optional **second detuned partial** (a ratio of the body, for snare/tom richness) and a gentle **saturation** (`drive` → soft-clip) for punch and harmonics. The classic drum "thump".
 
-- **Noise** — a cheap inline LCG, for snare/clap/hat character.
+- **Noise** — a cheap inline LCG → a 2-pole filter that **band-passes** the noise (snare/clap/tom) or **high-passes** it (the hat's metallic "tss"); the centre/corner tracks pitch (`base_hz · noise_mult`).
 
-- **Amp envelope** — exponential decay (`amp *= amp_coef` per sample); `trigger()` re-arms it.
+- **Two amp envelopes** — body and noise decay **independently** (exponential, `amp *= amp_coef` / `namp *= namp_coef`), so a voice's snap and its tonal ring can have different lengths (e.g. a snare whose noise rings past a short body). `trigger()` re-arms both.
 
-- **Tone** — a fixed per-deck blend of body vs noise: `out = (body·(1−tone) + noise·tone) · amp`.
+- **Attack click** — an optional brief (~2 ms) bright transient at onset (the kick beater / tom mallet), summed on top.
+
+- **Tone** — the body/noise blend: `out = body·(1−tone) + noise·tone + click`. Each model also carries a per-model `base_scale`, so every drum tunes to its own sensible range under the one shared PITCH knob.
 
 ### Drum models (Alt + PITCH, live)
 
-The voice has **5 models**, selected live by holding **Alt** and turning **PITCH** (no commit step — the change applies on the next hit; release Alt and PITCH is pitch again). Each model sets the voice character (body/noise mix, pitch-sweep amount, decay scaling, noise-band centre); PITCH still drives body frequency + noise colour and SOS the decay *within* the model. Per deck, independently.
+The voice has **5 models**, selected live by holding **Alt** and turning **PITCH** (no commit step — the change applies on the next hit; release Alt and PITCH is pitch again). Each model sets the full voice character — body/noise balance, pitch-sweep amount **and time**, body frequency offset, body **and** noise decay, noise centre/Q and band-vs-high-pass, the second partial, saturation, and attack click. PITCH still drives body frequency + noise colour and SOS the decay *within* the model. Per deck, independently. All of this lives in the single `kModels` table in `edrums_engine.cpp` — the one surface to tune the kit by ear.
 
 | # | Model | Character |
 |---|---|---|
-| 0 | Kick | body, large pitch drop, longer decay |
-| 1 | Snare | body + mid-band noise |
-| 2 | Clap | noisy, multi-burst (3 quick re-triggers), no pitch sweep |
-| 3 | Closed hat | high-band noise, very short |
-| 4 | Tom | pitched body, mild drop |
+| 0 | Kick | deep sine body, long (~55 ms) pitch drop, beater click + drive, longer decay |
+| 1 | Snare | two-partial body + bright band-pass noise that rings past the body |
+| 2 | Clap | noisy, multi-burst (3 quick re-triggers ~11 ms apart), tail rings |
+| 3 | Closed hat | **high-passed** noise (metallic), very short |
+| 4 | Tom | two-partial pitched body, mild drop, mallet click |
 
 Defaults, per drum: deck A = **Kick** (slot 0) + **Tom** (slot 1); deck B = **Snare** (slot 0) + **Hat** (slot 1). Each slot is fully voiced at init (length, pitch, decay, model) but seeded with **zero onsets**, so the kit boots silent and the player builds it up with POS — no drum waits on a knob move to be correctly voiced once raised.
 
@@ -155,7 +157,7 @@ Yes, possible and cheap via `TransportTick.index` (a monotonic 16th counter): a 
 
 - **P1 — control remap + free controls.** DONE: variable-length `CPattern`, SIZE→length, ENV→rotation, MOD_AMT→randomness, MODFREQ→division, polymeter, render over the active length.
 
-- **P2 — voice depth.** DONE: PITCH→noise bandpass; **5 selectable drum models** (kick/snare/clap/hat/ tom) live via Alt+PITCH (`CapAux`/`ParamId::Aux`); the Clap is a **multi-burst** voice (re-arms the amp env 3× ~11 ms apart); a model change briefly shows the **model number** (model+1 white dots) on the ring. Still open: per-voice accent/velocity; per-model voice tuning.
+- **P2 — voice depth.** DONE: PITCH→noise bandpass; **5 selectable drum models** (kick/snare/clap/hat/ tom) live via Alt+PITCH (`CapAux`/`ParamId::Aux`); the Clap is a **multi-burst** voice (re-arms the amp env 3× ~11 ms apart); a model change briefly shows the **model number** (model+1 white dots) on the ring. **Voice rework (synthesis depth):** independent body/noise decays, per-model pitch-envelope time, a high-passed hat (metallic, vs the old narrow band-pass), an optional second detuned body partial (snare/tom), gentle body saturation, an attack click (kick beater / tom mallet), and a per-model `base_scale` so each drum tunes to its own range. The whole kit is voiced from one `kModels` table; host-checked finite/bounded/audible per model + a hat-vs-kick brightness assertion, but the **voicing values are first-principles starting points pending an on-hardware listen** (the table is the tuning surface). Still open: per-voice accent/velocity.
 
 - **P4 — four drums (two per deck).** DONE: each deck holds two drums (slot pair); all four sequence and sound; the **Rev pad** swaps which drum a deck edits/shows; the platform re-seeds the deck's knob pickup on a swap (clean takeover, no jumps); per-`(deck, slot)` colours; the **Rev LED** shows the backgrounded drum. Contract cost: one defaulted `IEngine::take_param_reseed`. Still open: a panel cue that a deck *has* a second drum beyond the Rev-LED colour; possibly Alt+Rev to reach further banks. Tuning: the `kBusTrim` (0.6) and the two hue families are first guesses, to confirm by ear/eye on hardware.
 
@@ -185,8 +187,10 @@ Yes, possible and cheap via `TransportTick.index` (a monotonic 16th counter): a 
 
 - `src/dsp/cpattern.{h,cpp}` — the Euclidean pattern generator (edrums-only).
 
-- `src/dsp/lutsinosc.h` — the sine body.
+- `src/dsp/lutsinosc.h` — the sine body (one per voice, plus a second for the detuned partial).
 
-- `host/test_edrums_slots.cpp` — headless test of the slot model (focus swap, slot independence, the re-seed one-shot, finite four-voice output). Run: `make -C host test-edrums`.
+- `src/dsp/biquad.h` — the noise filter (`BiquadSection`, switched band-pass / high-pass per model).
+
+- `host/test_edrums_slots.cpp` — headless test of the slot model (focus swap, slot independence, the re-seed one-shot, finite four-voice output) plus a per-model voicing group (each model renders finite/bounded/audible; the high-passed hat is far brighter than the kick). Run: `make -C host test-edrums`.
 
 - Build: `engine_select.h` (`SPK_ENGINE_EDRUMS`), `Makefile` (`ENGINE=edrums`, `make engine-edrums`).
