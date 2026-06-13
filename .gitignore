@@ -3,6 +3,7 @@
 .direnv
 **/build
 build-cmake/
+dist/
 *.log
 *.mmon
 .*_cache

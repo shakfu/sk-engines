@@ -119,6 +119,16 @@ endif
 
 USE_FATFS = 1
 
+# Firmware identity baked into every binary (see src/version.h / version.cpp). SPK_VERSION is
+# `git describe` of the source tree: a bare tag like "v1.2.0" on a clean release checkout, or
+# "v1.2.0-5-gabc1234" mid-development; "dev" if git is unavailable. We deliberately omit --dirty
+# so the value only changes per commit (one relink), not on every uncommitted edit. ENGINE is the
+# variant name. Both reach the compiler as string literals; build/.version-stamp (below) forces
+# the two consuming objects to recompile when the value changes, since make can't see -D changes.
+SPK_VERSION ?= $(shell git -C $(CURDIR) describe --tags --always 2>/dev/null || echo dev)
+C_DEFS += -DSPK_VERSION_STR='"$(SPK_VERSION)"'
+C_DEFS += -DSPK_ENGINE_STR='"$(ENGINE)"'
+
 # Project Name
 TARGET = spotykach
 
@@ -145,6 +155,7 @@ C_DEFS += -DINFS_LOG_TARGET=daisy::LOGGER_EXTERNAL
 CPP_SOURCES = \
 	main.cpp \
 	src/app.cpp \
+	src/version.cpp \
 	$(ENGINE_SOURCES) \
 	src/engine/color.cpp \
 	src/engine/led.ring.cpp \
@@ -178,6 +189,15 @@ build/_ext_daisy.o build/genlib_arena.o: build/.engine-stamp
 build/.engine-stamp: FORCE
 	@mkdir -p build
 	@echo '$(ENGINE)' | cmp -s - $@ 2>/dev/null || echo '$(ENGINE)' > $@
+
+# Same trick for the baked-in version string: -DSPK_VERSION_STR is invisible to make's dependency
+# graph, so without this a new commit (new `git describe`) would leave a stale version in the
+# binary. version.o holds the banner literal; app.o logs it at boot - both recompile when the
+# stamp's content changes (i.e. when SPK_VERSION changes), and nothing else does.
+build/version.o build/app.o: build/.version-stamp
+build/.version-stamp: FORCE
+	@mkdir -p build
+	@echo '$(SPK_VERSION)' | cmp -s - $@ 2>/dev/null || echo '$(SPK_VERSION)' > $@
 .PHONY: FORCE
 FORCE:
 
@@ -298,6 +318,28 @@ gen-engines:
 	  $(GEN_PY) scripts/gen_engine.py $$export $$name || exit 1; \
 	done
 	@echo "regenerated gen~ engines"
+
+# Build distributable, version-stamped, checksummed engine binaries into dist/<version>/ for users
+# who want to download-and-flash rather than build (no ARM toolchain / cyfaust+gen-dsp venv needed).
+# scripts/build_release.sh does a clean build of each engine in RELEASE_ENGINES, names the artifacts
+# spotykach-<engine>-<version>.{bin,hex}, and adds SHA256SUMS, the bootloader, and FLASHING.md.
+#   make dist                       # describe-derived version, curated engine set
+#   make dist VERSION=0.3.0         # explicit version (use the bare tag you will create)
+#   make dist RELEASE_ENGINES="reverb delay"   # subset
+RELEASE_ENGINES ?=
+.PHONY: dist
+dist:
+	RELEASE_ENGINES="$(RELEASE_ENGINES)" scripts/build_release.sh $(VERSION)
+
+# Upload an already-built dist/<version>/ as a GitHub release (requires `gh auth login`). Tag the
+# release with the SAME bare version so the in-binary banner matches. Run `make dist VERSION=x` first.
+.PHONY: gh-release
+gh-release:
+	@test -n "$(VERSION)" || { echo "usage: make gh-release VERSION=0.3.0 (after make dist VERSION=0.3.0)"; exit 1; }
+	@test -d dist/$(VERSION) || { echo "dist/$(VERSION) not found - run 'make dist VERSION=$(VERSION)' first"; exit 1; }
+	gh release create $(VERSION) dist/$(VERSION)/* \
+	  --title "spotykach $(VERSION)" \
+	  --notes-file dist/$(VERSION)/FLASHING.md
 
 # Run the Python script test suites (scripts/test_*.py). These cover host-side utilities
 # like convert_tape_audio.py and need neither hardware nor a firmware build. pytest is part

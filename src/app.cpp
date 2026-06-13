@@ -3,6 +3,7 @@
 #include <functional>
 
 #include "common.h"
+#include "version.h"
 #include "settings.h"
 #include "hw/hardware.h"
 #include "hw/buffer.sdram.h"
@@ -169,6 +170,11 @@ void AppImpl::Init()
     #endif
 
     Log::StartLog(false);
+    // Touch the build banner through a volatile so it is retained even in release builds, where the
+    // LOG_TAGGED below compiles to nothing (so `strings firmware.bin` can still report the version).
+    volatile const char* fw_banner = firmware_banner();
+    (void)fw_banner;
+    LOG_TAGGED("boot", "%s", firmware_banner());
 #if DEBUG || defined(METER)
     _log_timer.Init();
 #endif
