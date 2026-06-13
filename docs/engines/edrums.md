@@ -46,7 +46,7 @@ Each drum has one `Voice` (a small abstraction so sample playback could replace 
 
 ### Drum models (Alt + PITCH, live)
 
-The voice has **5 models**, selected live by holding **Alt** and turning **PITCH** (no commit step — the change applies on the next hit; release Alt and PITCH is pitch again). Each model sets the full voice character — body/noise balance, pitch-sweep amount **and time**, body frequency offset, body **and** noise decay, noise centre/Q and band-vs-high-pass, the second partial, saturation, and attack click. PITCH still drives body frequency + noise colour and SOS the decay *within* the model. Per deck, independently. All of this lives in the single `kModels` table in `edrums_engine.cpp` — the one surface to tune the kit by ear.
+The voice has **5 models**, selected live by holding **Alt** and turning **PITCH** (no commit step — the change applies on the next hit; release Alt and PITCH is pitch again). Each model sets the full voice character — body/noise balance, pitch-sweep amount **and time**, body frequency offset, body **and** noise decay, noise centre/Q and band-vs-high-pass, the second partial, saturation, and attack click. PITCH still drives body frequency + noise colour *within* the model, and the grit/flux macros (see [Live sound macros](#live-sound-macros)) offset the model's drive/sweep/brightness/balance/decay. Per deck, independently. The model baselines all live in the single `kModels` table in `edrums_engine.cpp` — the one surface to tune the kit by ear.
 
 | # | Model | Character |
 |---|---|---|
@@ -100,12 +100,31 @@ The platform gives each deck 7 knobs (see [README](README.md#knobs-how-a-physica
 | **SIZE** | `Size` | **pattern length** (2..16 steps) |
 | **ENV** | `Env` | **rotation** (pattern shift) |
 | **PITCH** | `Speed` | drum pitch — sine body (~30..480 Hz) **and** the noise band centre |
-| **SOS** | `Mix` | decay (amp-env time, ~30 ms..1.2 s) |
+| **SOS** | `Mix` | **per-drum gain** (level) |
 | **MOD_AMT** | `ModAmp` | **probability** an onset fires (0..100%, default 100% = full clockwise) |
 | **MODFREQ** | `set_mod_speed` | **clock division** — 1/16, 1/8, 1/4 (per deck) |
 | **Alt + PITCH** | `Aux` | **drum model** select (live; see below) |
+| **grit + SOS** | `GritMix` | **decay** (amp-env time, ~30 ms..1.2 s) |
+| **grit + PITCH** | `GritIntensity` | **drive** (saturation) — see [Live sound macros](#live-sound-macros) |
+| **flux + PITCH** | `FluxIntensity` | **pitch-sweep amount** (±2 oct on the model) |
+| **flux + SOS** | `FluxMix` | **body↔noise balance** |
+| **flux + POS** | `FluxFb` | **noise brightness** (filter cutoff, ±2 oct) |
 
-All seven knobs act on the deck's **focused** drum; the **Rev pad** swaps focus to the other drum (see [Four drums](#four-drums-two-per-deck)). Density is stored as a fraction and re-derived over the active length, so changing SIZE keeps the relative fill. `POS` and `MOD_AMT` are engine-seeded (the platform reads `param(Pos)` / `param(ModAmp)` for their initial values), so init pre-seeds them: density **0** on every drum (the silent boot — POS seeds to minimum, so turning it up adds hits) and probability 100% (so the knob defaults to "every onset fires" with full clockwise = 100%). The display draws the focused drum's pattern over the active length (the length fills the 32-LED ring; onset lit, playhead bright) in that drum's colour, with a play-LED flash on each hit; the Rev LED carries the backgrounded drum's colour. Colours are per `(deck, slot)`: A slot 0 amber / slot 1 magenta, B slot 0 cyan / slot 1 violet.
+The seven plain knobs act on the deck's **focused** drum; the **Rev pad** swaps focus to the other drum (see [Four drums](#four-drums-two-per-deck)). Density is stored as a fraction and re-derived over the active length, so changing SIZE keeps the relative fill. `POS` and `MOD_AMT` are engine-seeded (the platform reads `param(Pos)` / `param(ModAmp)` for their initial values), so init pre-seeds them: density **0** on every drum (the silent boot — POS seeds to minimum, so turning it up adds hits) and probability 100% (so the knob defaults to "every onset fires" with full clockwise = 100%). The display draws the focused drum's pattern over the active length (the length fills the 32-LED ring; onset lit, playhead bright) in that drum's colour, with a play-LED flash on each hit; the Rev LED carries the backgrounded drum's colour. Colours are per `(deck, slot)`: A slot 0 amber / slot 1 magenta, B slot 0 cyan / slot 1 violet.
+
+### Live sound macros
+
+The plain knobs above run the sequencer + pitch/gain; the per-drum **sound shaping** lives on the **grit** and **flux** pad modifiers (hold the pad, turn PITCH/SOS/POS), so the kit is tweakable in performance rather than fixed per model. Each macro is a **bipolar offset on the model's baseline** — at noon the drum is exactly as the model voiced it, so a fresh kit is unchanged until you move a knob — and like every other knob it addresses the **focused** drum (repointing on a Rev swap):
+
+| Gesture | Macro | Range |
+|---|---|---|
+| **grit + SOS** | decay (amp-env time) | ~30 ms .. 1.2 s |
+| **grit + PITCH** | drive (saturation) | clean .. crunch |
+| **flux + PITCH** | pitch-sweep amount | x the model's sweep, ±2 oct |
+| **flux + SOS** | body↔noise balance | ±0.5 around the model |
+| **flux + POS** | noise brightness (filter cutoff) | ±2 oct |
+
+With PITCH (pitch), SOS (gain) and Alt+PITCH (model), that is **eight live axes per drum** — and all four drums voice independently. The macro channels route through the platform's existing grit/flux held-modifier layer (`GritIntensity`/`GritMix`/`FluxIntensity`/`FluxMix`/`FluxFb`), which is pickup-seeded from `param()`, so no platform change was needed. (Decay sits on `grit+SOS` rather than `Alt+SOS` because the `Feedback` channel `Alt+SOS` routes to is not pickup-seeded.) Not yet exposed: an **independent body-vs-noise (snap) decay** — the voice has separate envelopes for it, but it needs a sixth modifier channel (a small platform addition), so the one decay currently scales both.
 
 ### Polymeter
 
@@ -157,7 +176,7 @@ Yes, possible and cheap via `TransportTick.index` (a monotonic 16th counter): a 
 
 - **P1 — control remap + free controls.** DONE: variable-length `CPattern`, SIZE→length, ENV→rotation, MOD_AMT→randomness, MODFREQ→division, polymeter, render over the active length.
 
-- **P2 — voice depth.** DONE: PITCH→noise bandpass; **5 selectable drum models** (kick/snare/clap/hat/ tom) live via Alt+PITCH (`CapAux`/`ParamId::Aux`); the Clap is a **multi-burst** voice (re-arms the amp env 3× ~11 ms apart); a model change briefly shows the **model number** (model+1 white dots) on the ring. **Voice rework (synthesis depth):** independent body/noise decays, per-model pitch-envelope time, a high-passed hat (metallic, vs the old narrow band-pass), an optional second detuned body partial (snare/tom), gentle body saturation, an attack click (kick beater / tom mallet), and a per-model `base_scale` so each drum tunes to its own range. The whole kit is voiced from one `kModels` table; host-checked finite/bounded/audible per model + a hat-vs-kick brightness assertion, but the **voicing values are first-principles starting points pending an on-hardware listen** (the table is the tuning surface). Still open: per-voice accent/velocity.
+- **P2 — voice depth.** DONE: PITCH→noise bandpass; **5 selectable drum models** (kick/snare/clap/hat/ tom) live via Alt+PITCH (`CapAux`/`ParamId::Aux`); the Clap is a **multi-burst** voice (re-arms the amp env 3× ~11 ms apart); a model change briefly shows the **model number** (model+1 white dots) on the ring. **Voice rework (synthesis depth):** independent body/noise decays, per-model pitch-envelope time, a high-passed hat (metallic, vs the old narrow band-pass), an optional second detuned body partial (snare/tom), gentle body saturation, an attack click (kick beater / tom mallet), and a per-model `base_scale` so each drum tunes to its own range. The whole kit is voiced from one `kModels` table; host-checked finite/bounded/audible per model + a hat-vs-kick brightness assertion, but the **voicing values are first-principles starting points pending an on-hardware listen** (the table is the tuning surface). **Live performance controls:** SOS is now per-drum **gain** (decay moved to `grit+SOS`), and the grit/flux modifiers expose four per-drum **timbre macros** (drive, pitch-sweep, brightness, body↔noise) as bipolar offsets on the model baseline — see [Live sound macros](#live-sound-macros). Still open: per-voice accent/velocity; an independent body-vs-noise snap decay (needs a sixth modifier channel); saving tweaked kits as presets (QSPI auto-persist or SD).
 
 - **P4 — four drums (two per deck).** DONE: each deck holds two drums (slot pair); all four sequence and sound; the **Rev pad** swaps which drum a deck edits/shows; the platform re-seeds the deck's knob pickup on a swap (clean takeover, no jumps); per-`(deck, slot)` colours; the **Rev LED** shows the backgrounded drum. Contract cost: one defaulted `IEngine::take_param_reseed`. Still open: a panel cue that a deck *has* a second drum beyond the Rev-LED colour; possibly Alt+Rev to reach further banks. Tuning: the `kBusTrim` (0.6) and the two hue families are first guesses, to confirm by ear/eye on hardware.
 
@@ -171,7 +190,7 @@ Yes, possible and cheap via `TransportTick.index` (a monotonic 16th counter): a 
 
 - Each of the four drums is seeded with its own pitch (and model), but a deck's PITCH knob only edits its **focused** drum; re-pitching the backgrounded drum means swapping focus to it first (its timbre still differs via the selected model — body vs band-passed noise).
 
-- The four voices share one bus with a fixed pre-limiter trim (`kBusTrim`, 0.6) and no per-drum level/accent, so balance between the four drums depends on their decay/model rather than a mix control.
+- The four voices share one bus with a fixed pre-limiter trim (`kBusTrim`, 0.6). Per-drum **level** now exists (SOS = gain), but there is still no per-hit **accent/velocity** (every onset fires at the drum's set gain).
 
 - Clock division is 3 values (1/16, 1/8, 1/4); no triplets yet.
 

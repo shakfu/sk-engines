@@ -75,8 +75,9 @@ int main() {
     check(e.take_param_reseed(DeckRef::A) == true,  "swap raises reseed for A exactly once");
     check(e.take_param_reseed(DeckRef::A) == false, "reseed self-clears after one read");
     check(approx(e.param(ParamId::Aux,   DeckRef::A), 1.00f), "A now addresses slot1 (Tom, Aux 1.0)");
-    check(approx(e.param(ParamId::Speed, DeckRef::A), 0.40f), "A slot1 Speed seeded 0.40");
-    check(approx(e.param(ParamId::Mix,   DeckRef::A), 0.55f), "A slot1 Mix seeded 0.55");
+    check(approx(e.param(ParamId::Speed,   DeckRef::A), 0.40f), "A slot1 Speed seeded 0.40");
+    check(approx(e.param(ParamId::Mix,     DeckRef::A), 0.80f), "A slot1 Mix (gain) seeded 0.80");
+    check(approx(e.param(ParamId::GritMix, DeckRef::A), 0.55f), "A slot1 decay (grit+SOS) seeded 0.55");
 
     // Deck B is untouched by a deck-A swap.
     check(approx(e.param(ParamId::Aux, DeckRef::B), 0.25f), "B unaffected by A swap (still Snare)");
@@ -174,6 +175,46 @@ int main() {
     std::printf("voicing: brightness kick=%.3f snare=%.3f clap=%.3f hat=%.3f tom=%.3f\n",
                 br[0], br[1], br[2], br[3], br[4]);
     check(br[3] > 2.f * br[0], "hat (high-passed noise) is far brighter than the kick (sine body)");
+
+    // --- 8. Live sound macros reach the focused drum: SOS is now per-drum GAIN (was decay), decay
+    // moved to grit+SOS, and the grit/flux timbre macros stay finite/bounded. (Deck A slot 0, POS=1.)
+    {
+        e.set_param(ParamId::Aux, DeckRef::A, 0.f);   // kick, deterministic
+        auto energy = [&](float& pk, bool& fin) {
+            drive(1); pk = 0.f; fin = true; double e_acc = 0.0;
+            for (int b = 0; b < 48; b++) {
+                e.process(in_ptrs, out_ptrs, host::kBlock);
+                for (size_t i = 0; i < host::kBlock; i++) {
+                    const float x = out_l[i];
+                    if (!std::isfinite(x)) fin = false;
+                    pk = std::fmax(pk, std::fabs(x));
+                    e_acc += std::fabs(x);
+                }
+            }
+            return static_cast<float>(e_acc);
+        };
+        float pk; bool fin;
+        // SOS = gain
+        e.set_param(ParamId::Mix, DeckRef::A, 0.f);   const float en_silent = energy(pk, fin);
+        check(pk == 0.f, "SOS (gain) at 0 silences the drum");
+        e.set_param(ParamId::Mix, DeckRef::A, 0.4f);  const float en_soft = energy(pk, fin);
+        e.set_param(ParamId::Mix, DeckRef::A, 1.0f);  const float en_loud = energy(pk, fin);
+        check(en_loud > en_soft && en_soft > en_silent, "SOS sets per-drum gain (louder with more SOS)");
+        // decay relocated to grit+SOS: a longer decay rings out more total energy
+        e.set_param(ParamId::Mix, DeckRef::A, 0.8f);
+        e.set_param(ParamId::GritMix, DeckRef::A, 0.1f); const float en_short = energy(pk, fin);
+        e.set_param(ParamId::GritMix, DeckRef::A, 0.9f); const float en_long = energy(pk, fin);
+        check(en_long > 1.5f * en_short, "decay on grit+SOS lengthens the tail");
+        // timbre macros (drive / pitch-sweep / brightness / body-noise) stay finite + bounded
+        e.set_param(ParamId::GritMix,       DeckRef::A, 0.5f);
+        e.set_param(ParamId::GritIntensity, DeckRef::A, 1.0f);  // drive
+        e.set_param(ParamId::FluxIntensity, DeckRef::A, 1.0f);  // pitch-sweep
+        e.set_param(ParamId::FluxMix,       DeckRef::A, 1.0f);  // body-noise (full noise)
+        e.set_param(ParamId::FluxFb,        DeckRef::A, 0.0f);  // brightness (dark)
+        energy(pk, fin);
+        check(fin, "output finite with all timbre macros pushed");
+        check(pk < 1.2f, "output bounded with all timbre macros pushed");
+    }
 
     if (g_failures == 0) { std::printf("OK: all edrums slot checks passed\n"); return 0; }
     std::printf("FAILED: %d check(s)\n", g_failures);

@@ -69,7 +69,9 @@ void EdrumsEngine::Voice::set_model(int idx)
 
 void EdrumsEngine::Voice::_set_noise_filter()
 {
-    const float c = std::clamp(base_hz * noise_mult, 300.f, sr * 0.45f);
+    // The brightness macro (flux+SOS) shifts the centre/corner +/- 2 octaves around the model default.
+    const float fc = base_hz * noise_mult * std::exp2((bright_macro - 0.5f) * 4.f);
+    const float c  = std::clamp(fc, 300.f, sr * 0.45f);
     const auto type = noise_hp ? infrasonic::BiquadSection::FilterType::HighPass
                                : infrasonic::BiquadSection::FilterType::BandPass;
     noise_filt.SetCoefficients(infrasonic::BiquadSection::CalculateCoefficients(type, sr, c, noise_q));
@@ -101,6 +103,20 @@ void EdrumsEngine::Voice::set_decay(float norm)
     _recompute_decay();
 }
 
+// Live performance macros (grit/flux modifier knobs), each a bipolar offset on the model baseline
+// (0.5 = neutral). drive/sweep/tone are read in process(); brightness recomputes the noise filter.
+void EdrumsEngine::Voice::set_macro(int which, float v)
+{
+    v = std::clamp(v, 0.f, 1.f);
+    switch (which) {
+        case 0: drive_macro  = v; break;            // saturation
+        case 1: sweep_macro  = v; break;            // pitch-drop amount
+        case 2: tone_macro   = v; break;            // body <-> noise balance
+        case 3: bright_macro = v; _set_noise_filter(); break; // noise cutoff
+        default: break;
+    }
+}
+
 void EdrumsEngine::Voice::trigger()
 {
     amp        = 1.f;
@@ -123,14 +139,19 @@ float EdrumsEngine::Voice::process()
 
     if (amp < 1.0e-4f && namp < 1.0e-4f && click_amp < 1.0e-4f) { amp = namp = click_amp = 0.f; return 0.f; }
 
+    // Performance macros offset the model baseline (0.5 = neutral): sweep x +/-2 octaves, drive +/-1,
+    // tone (body<->noise) +/-0.5. Read live here so a knob move reshapes the next sample.
+    const float eff_sweep = sweep * std::exp2((sweep_macro - 0.5f) * 4.f);
+    const float eff_drive = std::clamp(drive + (drive_macro - 0.5f) * 2.f, 0.f, 1.5f);
+
     // Body: pitched sine (+ optional 2nd detuned partial) whose frequency starts (1+sweep)x base and
     // decays to base (the drum "thump"); gently saturated for harmonics/punch; own amp env.
     pitch_env *= pitch_coef;
-    const float f = base_hz * (1.f + pitch_env * sweep);
+    const float f = base_hz * (1.f + pitch_env * eff_sweep);
     osc.set_freq(f);
     float body = osc.process();
     if (partial_mix > 0.f) { osc2.set_freq(f * partial_ratio); body += osc2.process() * partial_mix; }
-    if (drive > 0.f) body = daisysp::SoftLimit(body * (1.f + drive * 4.f));
+    if (eff_drive > 0.f) body = daisysp::SoftLimit(body * (1.f + eff_drive * 4.f));
     body *= amp;
 
     // Noise: cheap LCG -> -1..1, band/high-passed (the filter attenuates, so compensate), own decay.
@@ -145,7 +166,8 @@ float EdrumsEngine::Voice::process()
 
     amp  *= amp_coef;
     namp *= namp_coef;
-    return body * (1.f - tone) + n * tone + clk;
+    const float eff_tone = std::clamp(tone + (tone_macro - 0.5f), 0.f, 1.f); // body <-> noise balance offset
+    return body * (1.f - eff_tone) + n * eff_tone + clk;
 }
 
 // --- EdrumsEngine -------------------------------------------------------------------------------
@@ -192,11 +214,19 @@ void EdrumsEngine::_init_slot(DeckRef::Ref d, int slot, float sr, int model, uin
     _param[P(PI::Size)][d][slot]     = 1.0f;
     _param[P(PI::Env)][d][slot]      = 0.0f;
     _param[P(PI::Speed)][d][slot]    = pitch;
-    _param[P(PI::Mix)][d][slot]      = decay;
+    _param[P(PI::Mix)][d][slot]      = 0.8f;  // SOS -> per-drum gain (was decay)
     _param[P(PI::ModAmp)][d][slot]   = 1.0f;  // 100% of onsets fire
     _param[P(PI::ModSpeed)][d][slot] = 0.0f;  // MODFREQ idx 0 -> 1/16 (div 1)
     _param[P(PI::Aux)][d][slot]      = static_cast<float>(model) / (kModelCount - 1); // inverse of set_param's round
+    // Sound-shaping modifier channels (seed the platform's knob pickup). Decay -> grit+SOS; the four
+    // timbre macros -> grit/flux + PITCH/SOS/POS, all neutral at 0.5 (the model exactly as voiced).
+    _param[P(PI::GritMix)][d][slot]       = decay; // grit+SOS   -> decay
+    _param[P(PI::GritIntensity)][d][slot] = 0.5f;  // grit+PITCH -> drive
+    _param[P(PI::FluxIntensity)][d][slot] = 0.5f;  // flux+PITCH -> pitch-sweep
+    _param[P(PI::FluxMix)][d][slot]       = 0.5f;  // flux+SOS   -> body/noise balance
+    _param[P(PI::FluxFb)][d][slot]        = 0.5f;  // flux+POS   -> brightness
 
+    _gain[d][slot]  = 0.8f;
     _prob[d][slot]  = 1.0f;
     _div[d][slot]   = 1;
     _model[d][slot] = static_cast<uint8_t>(model);
@@ -253,10 +283,10 @@ void EdrumsEngine::process(const float* const* /*in*/, float** out, size_t size)
     // panned. kBusTrim scales before SoftLimit so four simultaneous voices don't sit in constant
     // limiting the way the old two-voice sum avoided.
     for (size_t i = 0; i < size; i++) {
-        const float a0 = _track[DeckRef::A][0].voice.process();
-        const float a1 = _track[DeckRef::A][1].voice.process();
-        const float b0 = _track[DeckRef::B][0].voice.process();
-        const float b1 = _track[DeckRef::B][1].voice.process();
+        const float a0 = _track[DeckRef::A][0].voice.process() * _gain[DeckRef::A][0];
+        const float a1 = _track[DeckRef::A][1].voice.process() * _gain[DeckRef::A][1];
+        const float b0 = _track[DeckRef::B][0].voice.process() * _gain[DeckRef::B][0];
+        const float b1 = _track[DeckRef::B][1].voice.process() * _gain[DeckRef::B][1];
         float l, r;
         switch (_route) {
             case Route::DoubleMono:
@@ -329,7 +359,12 @@ void EdrumsEngine::set_param(ParamId id, DeckRef::Ref deck, float v)
         } break;
         case ParamId::Env:   _track[d][s].pattern.set_shift(v); break;                 // rotation
         case ParamId::Speed: _track[d][s].voice.set_pitch(v);   break;                 // pitch + noise colour
-        case ParamId::Mix:   _track[d][s].voice.set_decay(v);   break;                 // decay
+        case ParamId::Mix:   _gain[d][s] = std::clamp(v, 0.f, 1.f); break;             // SOS -> per-drum gain
+        case ParamId::GritMix:       _track[d][s].voice.set_decay(v);    break;        // grit+SOS   -> decay
+        case ParamId::GritIntensity: _track[d][s].voice.set_macro(0, v); break;        // grit+PITCH -> drive
+        case ParamId::FluxIntensity: _track[d][s].voice.set_macro(1, v); break;        // flux+PITCH -> pitch-sweep
+        case ParamId::FluxMix:       _track[d][s].voice.set_macro(2, v); break;        // flux+SOS   -> body/noise
+        case ParamId::FluxFb:        _track[d][s].voice.set_macro(3, v); break;        // flux+POS   -> brightness
         case ParamId::ModAmp: _prob[d][s] = std::clamp(v, 0.f, 1.f); break;            // probability an onset fires
         case ParamId::Aux: {                                                           // Alt+PITCH -> model
             const int mdl = std::clamp(static_cast<int>(std::lround(v * (kModelCount - 1))), 0, kModelCount - 1);

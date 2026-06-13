@@ -73,7 +73,7 @@ The firmware is a fixed hardware/UI **platform** that hosts a swappable DSP **en
 
 - `make -j8 ENGINE=delay` — a tempo-synced stereo delay (musical divisions, feedback, pitch-shifted taps) with **Clean / Tape / Shimmer** characters (Reel/Slice/Drift switch), **Stereo / DoubleMono / Ping-pong** topologies (route switch), a feedback tone control on ENV, a delay-time **modulation LFO** (MODFREQ/MOD_AMT → chorus/flange/vibrato), and a **Freeze** hold on the Play pad.
 
-- `make -j8 ENGINE=edrums` — a four-drum Euclidean drum machine (two drums per deck, Rev-pad swaps the editable one; synthesized voices, polymeter, live model select).
+- `make -j8 ENGINE=edrums` — a four-drum Euclidean drum machine (two drums per deck, Rev-pad swaps the editable one; polymeter, live model select) with **synthesized voices you shape live**: per-drum gain, decay, and grit/flux macros for drive, pitch-sweep, brightness, and body↔noise balance.
 
 - `make -j8 ENGINE=reso` — a resonator/pluck voice on the Mutable Instruments Rings DSP (modal / sympathetic-string / string / FM / string+reverb models on Alt+PITCH; three excite modes — discrete plucks, live-input resonator, scatter cloud). Vendored Rings/stmlib live under `src/engine/reso/thirdparty/`.
 

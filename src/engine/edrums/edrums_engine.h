@@ -76,6 +76,12 @@ private:
         float partial_mix   = 0.f;     // 2nd partial level
         float drive         = 0.f;     // body saturation amount (0 = clean)
         float click_level   = 0.f;     // attack-click amount (0 = none)
+        // Live performance macros (the grit/flux modifier knobs): bipolar offsets on the model baseline,
+        // 0.5 = neutral (the model exactly as voiced), so a fresh kit sounds unchanged until tweaked.
+        float drive_macro  = 0.5f;     // grit+PITCH: saturation amount
+        float sweep_macro  = 0.5f;     // flux+PITCH: pitch-drop amount (x the model's sweep)
+        float tone_macro   = 0.5f;     // flux+SOS:   body <-> noise balance offset
+        float bright_macro = 0.5f;     // flux+POS:   noise filter cutoff offset (+/- 2 octaves)
         float decay_norm  = 0.5f;      // last SOS value, so set_model can recompute the decay
         // Envelope + render state:
         float amp         = 0.f;       // body amp-env level (0 = idle)
@@ -96,7 +102,8 @@ private:
         void  init(float sample_rate, float default_hz, int default_model, uint32_t seed);
         void  set_model(int idx);      // 0..4: kick / snare / clap / closed-hat / tom
         void  set_pitch(float norm);   // PITCH -> body freq + noise centre
-        void  set_decay(float norm);   // SOS   -> body + noise decay times
+        void  set_decay(float norm);   // grit+SOS -> body + noise decay times
+        void  set_macro(int which, float v); // 0 drive, 1 sweep, 2 tone, 3 brightness (bipolar, 0.5 = neutral)
         void  trigger();               // re-arm amp/noise/pitch/click envelopes
         float process();               // render one sample
         void  _set_noise_filter();     // noise filter coeffs (centre/corner from base_hz, type per model)
@@ -147,6 +154,7 @@ private:
     uint8_t  _flash[DeckRef::Count][kSlots] = { { 0, 0 }, { 0, 0 } };       // per-drum play-LED hit flash
     uint8_t  _model[DeckRef::Count][kSlots]      = { { 0, 4 }, { 1, 3 } };  // A: kick/tom, B: snare/hat
     uint8_t  _model_show[DeckRef::Count][kSlots] = { { 0, 0 }, { 0, 0 } };  // frames left to show the model number
+    float    _gain[DeckRef::Count][kSlots]       = { { 0.8f, 0.8f }, { 0.8f, 0.8f } }; // SOS knob: per-drum level
     float    _param[static_cast<size_t>(ParamId::Count)][DeckRef::Count][kSlots] = {};
 };
 
