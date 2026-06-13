@@ -48,6 +48,7 @@ public:
 
     bool  on_play_pad(DeckRef::Ref deck, bool reverse) override;       // Rev pad swaps the deck's active drum
     bool  take_param_reseed(DeckRef::Ref deck) override;              // platform polls this after a swap
+    void  clear_sequence(DeckRef::Ref deck) override;                 // hold Alt+Seq: reset this deck's drums to defaults
 
     void render(DisplayModel& m) override;
 
@@ -174,6 +175,7 @@ private:
 
     ITransport* _transport = nullptr;          // platform clock (subscribe + tempo), injected at init
     const ITimeSource* _time = nullptr;        // for the auto-save debounce clock
+    float       _sr = 48000.f;                 // sample rate, kept so clear_sequence can re-seed voices
     void*       _qspi = nullptr;               // opaque daisy::QSPIHandle* (target only); null = no persistence
     bool        _dirty = false;                // a kit param changed since the last save
     uint32_t    _dirty_since_ms = 0;           // now_ms() of the most recent change (debounce window start)

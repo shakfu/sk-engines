@@ -109,6 +109,7 @@ The platform gives each deck 7 knobs (see [README](README.md#knobs-how-a-physica
 | **flux + PITCH** | `FluxIntensity` | **pitch-sweep amount** (±2 oct on the model) |
 | **flux + SOS** | `FluxMix` | **body↔noise balance** |
 | **flux + POS** | `FluxFb` | **noise brightness** (filter cutoff, ±2 oct) |
+| **hold Alt + Seq** (~1.5 s) | `clear_sequence` | **reset that deck's two drums to factory defaults** — see [Presets](#presets-qspi-auto-persist) |
 
 The seven plain knobs act on the deck's **focused** drum; the **Rev pad** swaps focus to the other drum (see [Four drums](#four-drums-two-per-deck)). Density is stored as a fraction and re-derived over the active length, so changing SIZE keeps the relative fill. `POS` and `MOD_AMT` are engine-seeded (the platform reads `param(Pos)` / `param(ModAmp)` for their initial values), so init pre-seeds them: density **0** on every drum (the silent boot — POS seeds to minimum, so turning it up adds hits) and probability 100% (so the knob defaults to "every onset fires" with full clockwise = 100%). The display draws the focused drum's pattern over the active length (the length fills the 32-LED ring; onset lit, playhead bright) in that drum's colour, with a play-LED flash on each hit; the Rev LED carries the backgrounded drum's colour. Colours are per `(deck, slot)`: A slot 0 amber / slot 1 magenta, B slot 0 cyan / slot 1 violet.
 
@@ -135,6 +136,8 @@ The whole **kit auto-saves to QSPI flash**, so your tweaks survive a power cycle
 - **Load** happens at `init()`, before the platform seeds the knob pickups, so a recalled kit takes over cleanly (no knob jump); `MValue` pickup then holds each value until you move that pot. The first-ever boot (no saved kit) keeps the built-in defaults.
 
 - **Storage layout.** A dedicated QSPI region (offset `0x10000`, slug `edk`) separate from the calibration `Settings` (offset 0) and the app image (offset `0x40000`). The `PersistentStorage` template version is pinned at **1 permanently** - bumping it would hit libDaisy's `bkpt`-on-version-mismatch; layout changes are instead versioned by `KitData::version`, which `apply()` rejects on mismatch (falling back to defaults). serialize/apply are pure and host-tested (round-trip); the QSPI read/write is target-only (`#ifndef TEST`) and **pending hardware verification**.
+
+- **Reset to defaults.** Holding **Alt + Seq** on a deck for ~1.5 s (the platform's clear-sequence gesture) resets that deck's two drums to the factory kit - model, pitch, decay, the macros (back to neutral), and the pattern (back to silent) - from the same `kBootKit` table `init()` uses, refocuses the deck to slot 0, and marks the kit dirty so the auto-save overwrites the stored preset (the reset persists). It is **per deck** (it maps to the per-deck gesture): hold on deck A to reset kick/tom, on deck B for snare/hat, or both for a full kit reset. A pickup re-seed is requested so the knobs take over the reset values cleanly (the platform's `_reseed_focus` now also re-seeds the grit/flux macro channels, which fixes the same stale-pickup gap on a Rev swap).
 
 Not yet: multiple named presets / banks (would be SD-card files with a save/select gesture); this is a single auto-persisted "current kit".
 
@@ -216,7 +219,7 @@ Yes, possible and cheap via `TransportTick.index` (a monotonic 16th counter): a 
 
 - `src/engine/edrums/edrums_engine.cpp` — voice synthesis, transport sink, param map, render, and the kit serialize/apply + QSPI auto-persist (target-only).
 
-- Platform: `EngineContext::qspi` (`engine/engine_context.h`, set in `app.cpp`) — the opaque QSPI handle the kit preset persists through.
+- Platform: `EngineContext::qspi` (`engine/engine_context.h`, set in `app.cpp`) — the opaque QSPI handle the kit preset persists through; and `CoreUI::_reseed_focus` (`ui/core.ui.cpp`) now re-seeds the grit/flux macro pickups on a focus swap / reset.
 
 - `src/dsp/cpattern.{h,cpp}` — the Euclidean pattern generator (edrums-only).
 

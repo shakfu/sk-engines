@@ -124,7 +124,11 @@ void CoreUI::_init_values()
 void CoreUI::_reseed_focus(const DeckRef::Ref ref)
 {
     for (ParamId id : { ParamId::Pos, ParamId::Size, ParamId::Env, ParamId::Speed,
-                        ParamId::Mix, ParamId::ModAmp, ParamId::ModSpeed, ParamId::Aux, ParamId::AltPos }) {
+                        ParamId::Mix, ParamId::ModAmp, ParamId::ModSpeed, ParamId::Aux, ParamId::AltPos,
+                        // grit/flux modifier channels too, so an engine that maps them per focused
+                        // voice (edrums/shuttle macros) re-picks-up cleanly on a swap or reset.
+                        ParamId::GritIntensity, ParamId::GritMix, ParamId::FluxIntensity,
+                        ParamId::FluxMix, ParamId::FluxFb }) {
         mv(id)[ref].set(_engine.param(id, ref));
     }
 }

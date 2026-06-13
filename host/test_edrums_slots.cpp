@@ -272,6 +272,35 @@ int main() {
               "unknown-version blob is rejected (state unchanged)");
     }
 
+    // --- 10. Reset to defaults (clear_sequence / hold Alt+Seq) restores a deck's factory drums --------
+    {
+        StubTransport tr; EngineContext c = host::make_context(arena, time); c.transport = &tr;
+        EdrumsEngine e; e.init(c);
+        EdrumsEngine::KitData boot; e.serialize(boot);   // capture the factory kit
+
+        // Mangle deck A (both slots) + deck B, then reset only deck A.
+        e.set_param(ParamId::Mix,           DeckRef::A, 0.10f);   // A slot0 gain
+        e.set_param(ParamId::GritIntensity, DeckRef::A, 0.95f);   // A slot0 drive
+        e.set_param(ParamId::Aux,           DeckRef::A, 1.00f);   // A slot0 model -> tom (4)
+        e.set_param(ParamId::Pos,           DeckRef::A, 0.80f);   // A slot0 density
+        e.on_play_pad(DeckRef::A, true);                          // focus A slot1
+        e.set_param(ParamId::FluxFb,        DeckRef::A, 0.05f);   // A slot1 brightness
+        e.on_play_pad(DeckRef::A, true);                          // back to slot0
+        e.set_param(ParamId::Mix,           DeckRef::B, 0.20f);   // B slot0 gain (should survive A reset)
+
+        e.clear_sequence(DeckRef::A);                             // hold Alt+Seq on deck A
+
+        EdrumsEngine::KitData now; e.serialize(now);
+        check(now.drum[0][0].model == boot.drum[0][0].model, "reset restores deck A slot0 model (kick)");
+        check(approx(now.drum[0][0].gain,  boot.drum[0][0].gain),  "reset restores deck A slot0 gain");
+        check(approx(now.drum[0][0].drive, boot.drum[0][0].drive), "reset restores deck A slot0 drive (neutral)");
+        check(approx(now.drum[0][0].pos,   boot.drum[0][0].pos),   "reset restores deck A slot0 density (0)");
+        check(approx(now.drum[0][1].bright,boot.drum[0][1].bright),"reset restores deck A slot1 brightness");
+        check(now.active[0] == 0,                                  "reset refocuses deck A to slot 0");
+        check(approx(now.drum[1][0].gain, 0.20f),                  "reset of deck A leaves deck B untouched");
+        check(e.take_param_reseed(DeckRef::A) == true,             "reset requests a pickup reseed for the deck");
+    }
+
     if (g_failures == 0) { std::printf("OK: all edrums slot checks passed\n"); return 0; }
     std::printf("FAILED: %d check(s)\n", g_failures);
     return 1;

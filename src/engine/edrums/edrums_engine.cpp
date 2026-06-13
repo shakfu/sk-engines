@@ -61,6 +61,15 @@ const ModelSpec kModels[] = {
     { 1.00f, 0.0f,  5.f, 1.00f, 0.22f, 1.0f, 30.f, 0.9f, true,  0.0f, 0.00f, 0.00f, 0.0f, 0,  0.f }, // 3 Hat   - high-passed noise (metallic "tss"), very short
     { 0.18f, 1.8f, 40.f, 0.90f, 1.00f, 0.8f,  6.f, 1.2f, false, 1.5f, 0.35f, 0.15f, 0.2f, 0,  0.f }, // 4 Tom   - 2-partial pitched body, mild drop, mallet click
 };
+
+// The factory kit: per [deck][slot] the boot model + RNG seed + default POS(density)/PITCH/decay. Backs
+// both init() and clear_sequence() (reset-to-defaults), so a reset reproduces the exact shipped kit.
+// Deck A = kick/tom (low spine), deck B = snare/hat (backbeat); pos=0 -> boots silent.
+struct BootDrum { int model; uint32_t seed; float pos, pitch, decay; };
+const BootDrum kBootKit[2][2] = {
+    { { 0 /*kick */, 0x9e3779b9u, 0.f, 0.50f, 0.50f }, { 4 /*tom */, 0x85ebca6bu, 0.f, 0.40f, 0.55f } },
+    { { 1 /*snare*/, 0x6d2b79f5u, 0.f, 0.50f, 0.50f }, { 3 /*hat */, 0xc2b2ae35u, 0.f, 0.82f, 0.30f } },
+};
 }
 
 // --- Voice: one synthesized drum ----------------------------------------------------------------
@@ -206,19 +215,16 @@ void EdrumsEngine::init(const EngineContext& ctx)
     using namespace std::placeholders;
     _transport->set_on_tick(std::bind(&EdrumsEngine::_on_tick, this, _1));
 
-    const float sr = ctx.sample_rate;
-    // Four drums = two decks x two slots. Slot 0 is the boot-active (editable) drum; slot 1 is the
-    // swap-in. Deck A = kick/tom (low spine), deck B = snare/hat (backbeat). Every drum is fully voiced
-    // here (model, pitch, decay, length) but seeded with pos=0 (zero onsets) so the kit boots SILENT:
-    // the player builds it up by raising POS on each drum (and Rev-swapping to reach the slot-1 pair).
-    // Raising POS yields an in-tune, correctly-voiced pattern instantly, since only the onset count was
-    // withheld. Pos is also the value the platform reads back at boot (active slot only) -> knob seeds
-    // to 0, so turning POS up from minimum catches and adds hits.
-    //                d            slot  model         seed         pos    pitch  decay
-    _init_slot(DeckRef::A, 0, sr, 0 /*kick */, 0x9e3779b9u, 0.00f, 0.50f, 0.50f);
-    _init_slot(DeckRef::A, 1, sr, 4 /*tom  */, 0x85ebca6bu, 0.00f, 0.40f, 0.55f);
-    _init_slot(DeckRef::B, 0, sr, 1 /*snare*/, 0x6d2b79f5u, 0.00f, 0.50f, 0.50f);
-    _init_slot(DeckRef::B, 1, sr, 3 /*hat  */, 0xc2b2ae35u, 0.00f, 0.82f, 0.30f);
+    _sr = ctx.sample_rate;
+    // Four drums = two decks x two slots, seeded from kBootKit (the factory kit; see the table near the
+    // top). Every drum is fully voiced (model, pitch, decay, length) but with pos=0 (zero onsets) so the
+    // kit boots SILENT - the player raises POS on each drum (Rev-swapping to reach the slot-1 pair) to
+    // build it up. The same table backs clear_sequence() (hold Alt+Seq) for a reset-to-defaults.
+    for (int di = 0; di < DeckRef::Count; di++)
+        for (int s = 0; s < kSlots; s++) {
+            const auto& b = kBootKit[di][s];
+            _init_slot(static_cast<DeckRef::Ref>(di), s, _sr, b.model, b.seed, b.pos, b.pitch, b.decay);
+        }
 
 #ifndef TEST
     // Restore the player's last-saved kit from QSPI (if any), overwriting the boot defaults above. This
@@ -468,6 +474,22 @@ bool EdrumsEngine::on_play_pad(DeckRef::Ref deck, bool reverse)
         _mark_dirty();   // focus is part of the saved kit
     }
     return false;
+}
+
+// Hold Alt+Seq on a deck (the platform's clear-sequence gesture) -> reset that deck's two drums to the
+// factory kit (model/pitch/decay/macros/pattern), refocus slot 0, and mark dirty so the auto-save
+// overwrites the stored preset. Re-seed the deck's knob pickup so the reset values take over cleanly.
+// Per deck: hold on both decks for a full kit reset.
+void EdrumsEngine::clear_sequence(DeckRef::Ref deck)
+{
+    const auto d = _safe(deck);
+    for (int s = 0; s < kSlots; s++) {
+        const auto& b = kBootKit[d][s];
+        _init_slot(d, s, _sr, b.model, b.seed, b.pos, b.pitch, b.decay);
+    }
+    _active_slot[d]    = 0;
+    _reseed_pending[d] = true;
+    _mark_dirty();
 }
 
 // One-shot: report (and clear) whether the deck's active drum just changed, so the platform re-seeds
