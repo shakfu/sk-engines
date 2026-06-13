@@ -216,6 +216,62 @@ int main() {
         check(pk < 1.2f, "output bounded with all timbre macros pushed");
     }
 
+    // --- 9. Preset persistence: serialize() / apply() round-trip the whole kit ------------------
+    {
+        StubTransport tr2;
+        EngineContext c1 = host::make_context(arena, time); c1.transport = &tr2;
+        EdrumsEngine src; src.init(c1);
+
+        // Mutate a spread of params across the four drums (focused-slot writes; Rev-swap to reach slot 1).
+        src.set_config(ConfigId::Route, DeckRef::A, 1);            // DoubleMono
+        src.set_param(ParamId::Mix,           DeckRef::A, 0.30f);  // A slot0 gain
+        src.set_param(ParamId::GritMix,       DeckRef::A, 0.70f);  // A slot0 decay
+        src.set_param(ParamId::GritIntensity, DeckRef::A, 0.90f);  // A slot0 drive
+        src.set_param(ParamId::FluxMix,       DeckRef::A, 0.20f);  // A slot0 body/noise
+        src.set_param(ParamId::Pos,           DeckRef::A, 0.50f);  // A slot0 density
+        src.set_param(ParamId::Aux,           DeckRef::A, 0.50f);  // A slot0 model -> clap (2)
+        src.set_param(ParamId::Speed,         DeckRef::B, 0.70f);  // B slot0 pitch
+        src.on_play_pad(DeckRef::A, true);                          // focus A slot1
+        src.set_param(ParamId::FluxFb,        DeckRef::A, 0.10f);  // A slot1 brightness
+        src.set_param(ParamId::Mix,           DeckRef::A, 0.60f);  // A slot1 gain
+        src.on_play_pad(DeckRef::A, true);                          // back to slot0
+
+        EdrumsEngine::KitData kd; src.serialize(kd);
+
+        // A fresh engine fed the blob must reproduce the same serialized state.
+        StubTransport tr3;
+        EngineContext c2 = host::make_context(arena, time); c2.transport = &tr3;
+        EdrumsEngine dst; dst.init(c2);
+        dst.apply(kd);
+        EdrumsEngine::KitData kd2; dst.serialize(kd2);
+
+        check(kd2.route == kd.route,                                         "route round-trips");
+        check(kd2.active[0] == kd.active[0] && kd2.active[1] == kd.active[1], "focus round-trips");
+        check(kd2.drum[0][0].model == 2,                                     "A slot0 model (clap) round-trips");
+        check(approx(kd2.drum[0][0].gain,   0.30f),                          "A slot0 gain round-trips");
+        check(approx(kd2.drum[0][0].decay,  0.70f),                          "A slot0 decay round-trips");
+        check(approx(kd2.drum[0][0].drive,  0.90f),                          "A slot0 drive round-trips");
+        check(approx(kd2.drum[0][0].tone,   0.20f),                          "A slot0 body/noise round-trips");
+        check(approx(kd2.drum[0][0].pos,    0.50f),                          "A slot0 density round-trips");
+        check(approx(kd2.drum[0][1].bright, 0.10f),                          "A slot1 brightness round-trips");
+        check(approx(kd2.drum[0][1].gain,   0.60f),                          "A slot1 gain round-trips");
+        check(approx(kd2.drum[1][0].pitch,  0.70f),                          "B slot0 pitch round-trips");
+
+        // apply() also rebuilds live state: param() on the focused drum reads back the applied values.
+        check(approx(dst.param(ParamId::Mix,     DeckRef::A), 0.30f), "applied gain reaches param()");
+        check(approx(dst.param(ParamId::GritMix, DeckRef::A), 0.70f), "applied decay reaches param()");
+
+        // A blob with an unknown version is ignored (state stays at fresh defaults).
+        EdrumsEngine::KitData bad = kd; bad.version = 99;
+        StubTransport tr4; EngineContext c3 = host::make_context(arena, time); c3.transport = &tr4;
+        EdrumsEngine def; def.init(c3);
+        EdrumsEngine::KitData d0; def.serialize(d0);
+        def.apply(bad);
+        EdrumsEngine::KitData d1; def.serialize(d1);
+        check(approx(d1.drum[0][0].gain, d0.drum[0][0].gain) && d1.route == d0.route,
+              "unknown-version blob is rejected (state unchanged)");
+    }
+
     if (g_failures == 0) { std::printf("OK: all edrums slot checks passed\n"); return 0; }
     std::printf("FAILED: %d check(s)\n", g_failures);
     return 1;

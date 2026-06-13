@@ -28,6 +28,10 @@ struct EngineContext {
     const ITimeSource* time;
     ITransport*        transport;
     IStreamDeck*       stream = nullptr;  // SD streaming service (the tape engine uses it; null otherwise)
+    // Opaque handle to the board QSPI flash (`daisy::QSPIHandle*`), for engines that persist a small
+    // settings blob to flash (edrums kit presets). Kept as void* so this platform-agnostic contract
+    // pulls in no HAL type; the engine casts it in target-only (`#ifndef TEST`) code. Null on host.
+    void*              qspi = nullptr;
 };
 
 };

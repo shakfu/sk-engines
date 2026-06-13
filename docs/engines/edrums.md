@@ -126,6 +126,18 @@ The plain knobs above run the sequencer + pitch/gain; the per-drum **sound shapi
 
 With PITCH (pitch), SOS (gain) and Alt+PITCH (model), that is **eight live axes per drum** — and all four drums voice independently. The macro channels route through the platform's existing grit/flux held-modifier layer (`GritIntensity`/`GritMix`/`FluxIntensity`/`FluxMix`/`FluxFb`), which is pickup-seeded from `param()`, so no platform change was needed. (Decay sits on `grit+SOS` rather than `Alt+SOS` because the `Feedback` channel `Alt+SOS` routes to is not pickup-seeded.) Not yet exposed: an **independent body-vs-noise (snap) decay** — the voice has separate envelopes for it, but it needs a sixth modifier channel (a small platform addition), so the one decay currently scales both.
 
+### Presets (QSPI auto-persist)
+
+The whole **kit auto-saves to QSPI flash**, so your tweaks survive a power cycle with no save gesture. The full state of all four drums - model, pitch, gain, decay, the four timbre macros, and the sequencer params (density/length/rotation/probability/division) - plus the route and per-deck focus is captured as a small POD blob (`EdrumsEngine::KitData`) and written via libDaisy `PersistentStorage`.
+
+- **Save** is debounced: any kit change starts a ~1.5 s timer, and the flash erase+write happens once changes settle, from the main loop (never the audio ISR), so a knob sweep coalesces into a single write.
+
+- **Load** happens at `init()`, before the platform seeds the knob pickups, so a recalled kit takes over cleanly (no knob jump); `MValue` pickup then holds each value until you move that pot. The first-ever boot (no saved kit) keeps the built-in defaults.
+
+- **Storage layout.** A dedicated QSPI region (offset `0x10000`, slug `edk`) separate from the calibration `Settings` (offset 0) and the app image (offset `0x40000`). The `PersistentStorage` template version is pinned at **1 permanently** - bumping it would hit libDaisy's `bkpt`-on-version-mismatch; layout changes are instead versioned by `KitData::version`, which `apply()` rejects on mismatch (falling back to defaults). serialize/apply are pure and host-tested (round-trip); the QSPI read/write is target-only (`#ifndef TEST`) and **pending hardware verification**.
+
+Not yet: multiple named presets / banks (would be SD-card files with a save/select gesture); this is a single auto-persisted "current kit".
+
 ### Polymeter
 
 Per-drum length **and** division make all four drums cycle independently (a drum's cycle = `length × division` ticks). On the **external** clock a transport grid reset (`e.reset`) realigns every drum (step phase + pattern position) to the bar; on the **internal** clock there is no reset, so the drums free-run and realign naturally at their least-common-multiple. Tempo/clock-source are the shared transport's (TAP / tap-hold+MODFREQ_A / Alt+TAP — see [README](README.md#clock-control-player-facing)).
@@ -176,7 +188,7 @@ Yes, possible and cheap via `TransportTick.index` (a monotonic 16th counter): a 
 
 - **P1 — control remap + free controls.** DONE: variable-length `CPattern`, SIZE→length, ENV→rotation, MOD_AMT→randomness, MODFREQ→division, polymeter, render over the active length.
 
-- **P2 — voice depth.** DONE: PITCH→noise bandpass; **5 selectable drum models** (kick/snare/clap/hat/ tom) live via Alt+PITCH (`CapAux`/`ParamId::Aux`); the Clap is a **multi-burst** voice (re-arms the amp env 3× ~11 ms apart); a model change briefly shows the **model number** (model+1 white dots) on the ring. **Voice rework (synthesis depth):** independent body/noise decays, per-model pitch-envelope time, a high-passed hat (metallic, vs the old narrow band-pass), an optional second detuned body partial (snare/tom), gentle body saturation, an attack click (kick beater / tom mallet), and a per-model `base_scale` so each drum tunes to its own range. The whole kit is voiced from one `kModels` table; host-checked finite/bounded/audible per model + a hat-vs-kick brightness assertion, but the **voicing values are first-principles starting points pending an on-hardware listen** (the table is the tuning surface). **Live performance controls:** SOS is now per-drum **gain** (decay moved to `grit+SOS`), and the grit/flux modifiers expose four per-drum **timbre macros** (drive, pitch-sweep, brightness, body↔noise) as bipolar offsets on the model baseline — see [Live sound macros](#live-sound-macros). Still open: per-voice accent/velocity; an independent body-vs-noise snap decay (needs a sixth modifier channel); saving tweaked kits as presets (QSPI auto-persist or SD).
+- **P2 — voice depth.** DONE: PITCH→noise bandpass; **5 selectable drum models** (kick/snare/clap/hat/ tom) live via Alt+PITCH (`CapAux`/`ParamId::Aux`); the Clap is a **multi-burst** voice (re-arms the amp env 3× ~11 ms apart); a model change briefly shows the **model number** (model+1 white dots) on the ring. **Voice rework (synthesis depth):** independent body/noise decays, per-model pitch-envelope time, a high-passed hat (metallic, vs the old narrow band-pass), an optional second detuned body partial (snare/tom), gentle body saturation, an attack click (kick beater / tom mallet), and a per-model `base_scale` so each drum tunes to its own range. The whole kit is voiced from one `kModels` table; host-checked finite/bounded/audible per model + a hat-vs-kick brightness assertion, but the **voicing values are first-principles starting points pending an on-hardware listen** (the table is the tuning surface). **Live performance controls:** SOS is now per-drum **gain** (decay moved to `grit+SOS`), and the grit/flux modifiers expose four per-drum **timbre macros** (drive, pitch-sweep, brightness, body↔noise) as bipolar offsets on the model baseline — see [Live sound macros](#live-sound-macros). **Preset persistence:** the whole kit auto-saves to QSPI and reloads at boot - see [Presets](#presets-qspi-auto-persist) (built, pending hardware verification). Still open: per-voice accent/velocity; an independent body-vs-noise snap decay (needs a sixth modifier channel); multiple named presets/banks on SD.
 
 - **P4 — four drums (two per deck).** DONE: each deck holds two drums (slot pair); all four sequence and sound; the **Rev pad** swaps which drum a deck edits/shows; the platform re-seeds the deck's knob pickup on a swap (clean takeover, no jumps); per-`(deck, slot)` colours; the **Rev LED** shows the backgrounded drum. Contract cost: one defaulted `IEngine::take_param_reseed`. Still open: a panel cue that a deck *has* a second drum beyond the Rev-LED colour; possibly Alt+Rev to reach further banks. Tuning: the `kBusTrim` (0.6) and the two hue families are first guesses, to confirm by ear/eye on hardware.
 
@@ -202,7 +214,9 @@ Yes, possible and cheap via `TransportTick.index` (a monotonic 16th counter): a 
 
 - `src/engine/edrums/edrums_engine.h` — `EdrumsEngine` + nested `Voice` / `Track`.
 
-- `src/engine/edrums/edrums_engine.cpp` — voice synthesis, transport sink, param map, render.
+- `src/engine/edrums/edrums_engine.cpp` — voice synthesis, transport sink, param map, render, and the kit serialize/apply + QSPI auto-persist (target-only).
+
+- Platform: `EngineContext::qspi` (`engine/engine_context.h`, set in `app.cpp`) — the opaque QSPI handle the kit preset persists through.
 
 - `src/dsp/cpattern.{h,cpp}` — the Euclidean pattern generator (edrums-only).
 

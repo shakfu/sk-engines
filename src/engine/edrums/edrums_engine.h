@@ -35,7 +35,7 @@ public:
     ~EdrumsEngine() override = default;
 
     void init(const EngineContext& ctx) override;
-    void prepare() override {}
+    void prepare() override;   // main-loop: debounced QSPI auto-save of the kit when dirty
     void process(const float* const* in, float** out, size_t size) override;
 
     Capabilities capabilities() const override { return CapOwnDisplay | CapDualDeck | CapAux; }
@@ -121,12 +121,16 @@ private:
     static DeckRef::Ref _safe(DeckRef::Ref d) { return d < DeckRef::Count ? d : DeckRef::A; }
 
     void  _on_tick(const TransportTick& e);          // transport sink: step patterns, trigger voices
+    void  _mark_dirty();                             // a kit param changed -> schedule a debounced QSPI save
     void  _apply_density(DeckRef::Ref d, int slot);  // re-derive onsets from the stored POS fraction + length
     // Fully seed one drum (voice + pattern + param cache) so it sounds without waiting on the platform.
     // Slot 1 of each deck is never touched by the platform's knob apply (which only writes the active
     // slot), so it must be self-sufficient from init; slot 0 is seeded the same way for symmetry.
     void  _init_slot(DeckRef::Ref d, int slot, float sr, int model, uint32_t seed,
                      float pos, float pitch, float decay);
+    // Re-derive one drum's voice + pattern from its cached `_param` norms (+ _model/_gain/_prob/_div).
+    // Shared by _init_slot and apply(), so a loaded preset reconstructs exactly like a fresh seed.
+    void  _rebuild_slot(DeckRef::Ref d, int slot);
     static float _rand01(uint32_t& rng) { rng = rng * 1664525u + 1013904223u; return static_cast<float>(rng >> 8) * (1.f / 16777216.f); }
 
     // Four drums = two decks x two slots (item: 4-drum edrums). The platform stays 2-deck (DeckRef);
@@ -139,10 +143,41 @@ private:
     static constexpr uint8_t kDivTable[3] = { 1, 2, 4 }; // MODFREQ -> ticks/step: 1/16, 1/8, 1/4
     static constexpr float   kBusTrim = 0.6f;       // pre-limiter trim: 4 voices sum hotter than 2 did
 
+public:
+    // Whole-kit preset: the 4 drums' voice + pattern params plus the route/focus, as a flat POD blob for
+    // QSPI auto-persist. serialize()/apply() are pure (no I/O), so they are host-testable; the QSPI
+    // read/write lives in the platform wiring. Bump kVersion on any layout change (an old blob is then
+    // rejected -> defaults). Fields are the normalized 0..1 knob values (apply() re-derives all state).
+    static constexpr char kKitSlug[4] = "edk";   // QSPI PersistentStorage slug for the edrums kit blob
+    struct KitData {
+        static constexpr uint8_t kVersion = 1;
+        // PersistentStorage's StoreSettingsIfChanged needs operator!=. Always-true = "write whenever
+        // Save() is called"; that is fine here because Save() only runs post-debounce on a real change.
+        bool operator!=(const KitData&) const { return true; }
+        uint8_t version = kVersion;
+        uint8_t route   = 0;                          // Route enum as int (0 Stereo / 1 DoubleMono / 2 Generative)
+        uint8_t active[DeckRef::Count] = { 0, 0 };    // focused slot per deck
+        struct Drum {
+            uint8_t model  = 0;
+            float   pos    = 0.f,  size  = 1.f, env    = 0.f, pitch = 0.5f; // sequencer + pitch
+            float   gain   = 0.8f, prob  = 1.f, div    = 0.f;               // gain, probability, division-norm
+            float   decay  = 0.5f, drive = 0.5f, sweep = 0.5f, tone = 0.5f, bright = 0.5f; // envelope + macros
+        } drum[DeckRef::Count][kSlots];
+    };
+    void serialize(KitData& kd) const;   // current state -> blob
+    void apply(const KitData& kd);       // blob -> current state (rebuilds every drum + route/focus)
+
+private:
+
     // Active drum per deck: _track[deck][_active_slot[deck]] is the one the knobs edit + the ring shows.
     int _slot(DeckRef::Ref d) const { return _active_slot[_safe(d)]; }
 
     ITransport* _transport = nullptr;          // platform clock (subscribe + tempo), injected at init
+    const ITimeSource* _time = nullptr;        // for the auto-save debounce clock
+    void*       _qspi = nullptr;               // opaque daisy::QSPIHandle* (target only); null = no persistence
+    bool        _dirty = false;                // a kit param changed since the last save
+    uint32_t    _dirty_since_ms = 0;           // now_ms() of the most recent change (debounce window start)
+    static constexpr uint32_t kSaveDebounceMs = 1500; // save this long after the last change settles
     Track    _track[DeckRef::Count][kSlots];
     Route    _route = Route::Stereo;            // routing switch: Stereo=mono-sum, DoubleMono=A|B split, Generative=random pan
     uint32_t _step_tick = 0;                    // shared step counter (reset on e.reset); div phase

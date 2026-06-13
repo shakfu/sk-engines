@@ -6,9 +6,35 @@
 #include <algorithm>
 #include <functional>
 
+#ifndef TEST
+#include "daisy_seed.h"   // target only: daisy::QSPIHandle / PersistentStorage for the kit preset
+#endif
+
 using namespace spotykach;
 
 constexpr uint8_t EdrumsEngine::kDivTable[3];
+constexpr char    EdrumsEngine::kKitSlug[4];
+
+#ifndef TEST
+namespace {
+// QSPI kit-preset store. Offset 0x10000 (64 KB) is a clean, separate erase block from the calibration
+// Settings (QSPI offset 0) and sits well below the SRAM-boot app image (QSPI offset 0x40000). The
+// template Version is pinned at 1 FOREVER -- bumping it triggers libDaisy's bkpt-on-version-mismatch;
+// layout changes are versioned by KitData::version instead (apply() rejects a mismatch -> defaults).
+constexpr uint32_t kKitQspiOffset = 0x10000;
+using KitStore = daisy::PersistentStorage<EdrumsEngine::KitData, EdrumsEngine::kKitSlug, 1>;
+KitStore g_kit_store;
+
+void kit_load(void* qspi_ptr, EdrumsEngine& eng) {
+    if (!qspi_ptr) return;
+    EdrumsEngine::KitData defaults;   // FACTORY seed; only applied if a USER save already exists in flash
+    g_kit_store.Init(*static_cast<daisy::QSPIHandle*>(qspi_ptr), defaults, kKitQspiOffset);
+    if (g_kit_store.GetState() == KitStore::State::USER)
+        eng.apply(g_kit_store.GetSettings());
+}
+void kit_save(const EdrumsEngine::KitData& kd) { g_kit_store.Save(kd); }
+} // namespace
+#endif
 
 // The 5 drum models (Alt+PITCH selects). Each sets the voice character; PITCH still drives body freq +
 // noise centre and SOS the decay, within the model. Fields:
@@ -175,6 +201,8 @@ void EdrumsEngine::init(const EngineContext& ctx)
 {
     // Subscribe to the platform clock: the sequencer steps off its ticks (tempo comes from there too).
     _transport = ctx.transport;
+    _time      = ctx.time;
+    _qspi      = ctx.qspi;
     using namespace std::placeholders;
     _transport->set_on_tick(std::bind(&EdrumsEngine::_on_tick, this, _1));
 
@@ -191,6 +219,34 @@ void EdrumsEngine::init(const EngineContext& ctx)
     _init_slot(DeckRef::A, 1, sr, 4 /*tom  */, 0x85ebca6bu, 0.00f, 0.40f, 0.55f);
     _init_slot(DeckRef::B, 0, sr, 1 /*snare*/, 0x6d2b79f5u, 0.00f, 0.50f, 0.50f);
     _init_slot(DeckRef::B, 1, sr, 3 /*hat  */, 0xc2b2ae35u, 0.00f, 0.82f, 0.30f);
+
+#ifndef TEST
+    // Restore the player's last-saved kit from QSPI (if any), overwriting the boot defaults above. This
+    // runs before CoreUI::init() seeds the knob pickups, so the recalled values seed cleanly (no jump).
+    kit_load(_qspi, *this);
+#endif
+}
+
+// Main loop: debounced QSPI auto-save. A flash erase+write blocks ~tens of ms, so it runs here (never
+// the audio ISR) and only once the player has stopped tweaking for kSaveDebounceMs. No-op on host.
+void EdrumsEngine::prepare()
+{
+#ifndef TEST
+    if (_dirty && _time && (_time->now_ms() - _dirty_since_ms) >= kSaveDebounceMs) {
+        _dirty = false;
+        KitData kd;
+        serialize(kd);
+        kit_save(kd);
+    }
+#endif
+}
+
+// A kit parameter changed -> (re)start the auto-save debounce window. The actual save fires later in
+// prepare() once changes settle, so a knob sweep coalesces into a single flash write.
+void EdrumsEngine::_mark_dirty()
+{
+    _dirty = true;
+    if (_time) _dirty_since_ms = _time->now_ms();
 }
 
 // Fully seed one drum so it sounds independently of the platform's knob apply (which only writes the
@@ -201,15 +257,9 @@ void EdrumsEngine::init(const EngineContext& ctx)
 void EdrumsEngine::_init_slot(DeckRef::Ref d, int slot, float sr, int model, uint32_t seed,
                               float pos, float pitch, float decay)
 {
-    auto& t = _track[d][slot];
-    t.voice.init(sr, 60.f, model, seed); // base_hz is set by set_pitch below; 60 is a placeholder
-    t.pattern.set_length(16);            // SIZE=1.0 default (2 + round(1*14))
-    t.pattern.set_shift(0.f);            // ENV=0 default (no rotation)
-    t.voice.set_pitch(pitch);
-    t.voice.set_decay(decay);
-
     using PI = ParamId;
     auto P = [](PI id) { return static_cast<size_t>(id); };
+    _track[d][slot].voice.init(sr, 60.f, model, seed); // construct the oscs/filter; _rebuild_slot voices it
     _param[P(PI::Pos)][d][slot]      = pos;
     _param[P(PI::Size)][d][slot]     = 1.0f;
     _param[P(PI::Env)][d][slot]      = 0.0f;
@@ -225,12 +275,97 @@ void EdrumsEngine::_init_slot(DeckRef::Ref d, int slot, float sr, int model, uin
     _param[P(PI::FluxIntensity)][d][slot] = 0.5f;  // flux+PITCH -> pitch-sweep
     _param[P(PI::FluxMix)][d][slot]       = 0.5f;  // flux+SOS   -> body/noise balance
     _param[P(PI::FluxFb)][d][slot]        = 0.5f;  // flux+POS   -> brightness
-
-    _gain[d][slot]  = 0.8f;
-    _prob[d][slot]  = 1.0f;
-    _div[d][slot]   = 1;
     _model[d][slot] = static_cast<uint8_t>(model);
-    _apply_density(d, slot);
+
+    _rebuild_slot(d, slot);   // derive voice + pattern + gain/prob/div from the caches above
+}
+
+// Re-derive one drum's voice + pattern from its cached `_param` norms (+ `_model`). Shared by
+// _init_slot and apply(), so a loaded preset reconstructs a drum exactly like a fresh seed.
+void EdrumsEngine::_rebuild_slot(DeckRef::Ref d, int slot)
+{
+    using PI = ParamId;
+    auto P  = [](PI id) { return static_cast<size_t>(id); };
+    auto& t = _track[d][slot];
+    auto& v = t.voice;
+    const auto pr = [&](PI id) { return _param[P(id)][d][slot]; };
+
+    v.set_model(_model[d][slot]);
+    v.set_pitch(pr(PI::Speed));
+    v.set_decay(pr(PI::GritMix));          // decay (grit+SOS)
+    v.set_macro(0, pr(PI::GritIntensity)); // drive
+    v.set_macro(1, pr(PI::FluxIntensity)); // pitch-sweep
+    v.set_macro(2, pr(PI::FluxMix));       // body/noise balance
+    v.set_macro(3, pr(PI::FluxFb));        // brightness
+
+    _gain[d][slot] = std::clamp(pr(PI::Mix),    0.f, 1.f);
+    _prob[d][slot] = std::clamp(pr(PI::ModAmp), 0.f, 1.f);
+    const int didx = std::clamp(static_cast<int>(pr(PI::ModSpeed) * 3.f), 0, 2);
+    _div[d][slot]  = kDivTable[didx];
+
+    const uint8_t len = static_cast<uint8_t>(2 + std::lround(pr(PI::Size) * 14.f));
+    t.pattern.set_length(len);
+    t.pattern.set_shift(pr(PI::Env));
+    _apply_density(d, slot);               // onsets from _param[Pos] over the length
+}
+
+// --- Preset persistence (pure; QSPI I/O lives in the platform wiring) --------------------------
+void EdrumsEngine::serialize(KitData& kd) const
+{
+    using PI = ParamId;
+    auto P = [](PI id) { return static_cast<size_t>(id); };
+    kd.version = KitData::kVersion;
+    kd.route   = (_route == Route::GenerativeStereo) ? 2 : (_route == Route::DoubleMono) ? 1 : 0;
+    for (int di = 0; di < DeckRef::Count; di++) {
+        const auto d = static_cast<DeckRef::Ref>(di);
+        kd.active[di] = _active_slot[di];
+        for (int s = 0; s < kSlots; s++) {
+            auto& dr  = kd.drum[di][s];
+            dr.model  = _model[di][s];
+            dr.pos    = _param[P(PI::Pos)][d][s];
+            dr.size   = _param[P(PI::Size)][d][s];
+            dr.env    = _param[P(PI::Env)][d][s];
+            dr.pitch  = _param[P(PI::Speed)][d][s];
+            dr.gain   = _param[P(PI::Mix)][d][s];
+            dr.prob   = _param[P(PI::ModAmp)][d][s];
+            dr.div    = _param[P(PI::ModSpeed)][d][s];
+            dr.decay  = _param[P(PI::GritMix)][d][s];
+            dr.drive  = _param[P(PI::GritIntensity)][d][s];
+            dr.sweep  = _param[P(PI::FluxIntensity)][d][s];
+            dr.tone   = _param[P(PI::FluxMix)][d][s];
+            dr.bright = _param[P(PI::FluxFb)][d][s];
+        }
+    }
+}
+
+void EdrumsEngine::apply(const KitData& kd)
+{
+    if (kd.version != KitData::kVersion) return;   // unknown layout -> keep current state (defaults)
+    using PI = ParamId;
+    auto P = [](PI id) { return static_cast<size_t>(id); };
+    _route = (kd.route == 2) ? Route::GenerativeStereo : (kd.route == 1) ? Route::DoubleMono : Route::Stereo;
+    for (int di = 0; di < DeckRef::Count; di++) {
+        const auto d = static_cast<DeckRef::Ref>(di);
+        _active_slot[di] = static_cast<uint8_t>(kd.active[di] & 1);
+        for (int s = 0; s < kSlots; s++) {
+            const auto& dr = kd.drum[di][s];
+            _model[di][s] = static_cast<uint8_t>(std::clamp<int>(dr.model, 0, kModelCount - 1));
+            _param[P(PI::Pos)][d][s]           = dr.pos;
+            _param[P(PI::Size)][d][s]          = dr.size;
+            _param[P(PI::Env)][d][s]           = dr.env;
+            _param[P(PI::Speed)][d][s]         = dr.pitch;
+            _param[P(PI::Mix)][d][s]           = dr.gain;
+            _param[P(PI::ModAmp)][d][s]        = dr.prob;
+            _param[P(PI::ModSpeed)][d][s]      = dr.div;
+            _param[P(PI::GritMix)][d][s]       = dr.decay;
+            _param[P(PI::GritIntensity)][d][s] = dr.drive;
+            _param[P(PI::FluxIntensity)][d][s] = dr.sweep;
+            _param[P(PI::FluxMix)][d][s]       = dr.tone;
+            _param[P(PI::FluxFb)][d][s]        = dr.bright;
+            _param[P(PI::Aux)][d][s]           = static_cast<float>(_model[di][s]) / (kModelCount - 1);
+            _rebuild_slot(d, s);
+        }
+    }
 }
 
 // Re-derive the onset count from the stored POS fraction over the CURRENT pattern length, so density
@@ -311,9 +446,10 @@ void EdrumsEngine::process(const float* const* /*in*/, float** out, size_t size)
 bool EdrumsEngine::set_config(ConfigId id, DeckRef::Ref /*deck*/, int value)
 {
     if (id == ConfigId::Route) {
-        _route = (value == 2) ? Route::GenerativeStereo
-               : (value == 1) ? Route::DoubleMono
-                              : Route::Stereo;
+        const Route nr = (value == 2) ? Route::GenerativeStereo
+                       : (value == 1) ? Route::DoubleMono
+                                      : Route::Stereo;
+        if (nr != _route) { _route = nr; _mark_dirty(); }
     }
     return false;
 }
@@ -329,6 +465,7 @@ bool EdrumsEngine::on_play_pad(DeckRef::Ref deck, bool reverse)
         const auto d = _safe(deck);
         _active_slot[d] ^= 1;
         _reseed_pending[d] = true;
+        _mark_dirty();   // focus is part of the saved kit
     }
     return false;
 }
@@ -373,6 +510,7 @@ void EdrumsEngine::set_param(ParamId id, DeckRef::Ref deck, float v)
         } break;
         default: break;                                                                // edrums ignores the rest
     }
+    _mark_dirty();   // any knob change is part of the kit -> schedule a save
 }
 
 float EdrumsEngine::param(ParamId id, DeckRef::Ref deck) const
@@ -392,6 +530,7 @@ void EdrumsEngine::set_mod_speed(DeckRef::Ref deck, float value, bool /*sync*/)
     if (idx > 2) idx = 2;
     _div[d][s] = kDivTable[idx];
     _param[static_cast<size_t>(ParamId::ModSpeed)][d][s] = value;
+    _mark_dirty();
 }
 
 void EdrumsEngine::render(DisplayModel& m)

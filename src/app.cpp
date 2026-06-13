@@ -153,6 +153,7 @@ void AppImpl::Init()
     ctx.time = &_time_source;
     ctx.transport = &_transport;
     ctx.arena = SDRAMBuffer::pool().engineArena();
+    ctx.qspi = &_hw.seed.qspi;   // QSPI flash handle for engines that persist a kit preset (edrums)
 #if defined(SPK_USE_STREAM)
     {
         const auto sm = SDRAMBuffer::pool().streamMem();
