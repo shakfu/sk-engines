@@ -343,7 +343,7 @@ gh-release:
 	@test -n "$(VERSION)" || { echo "usage: make gh-release VERSION=0.3.0 (after make dist VERSION=0.3.0)"; exit 1; }
 	@test -d dist/$(VERSION) || { echo "dist/$(VERSION) not found - run 'make dist VERSION=$(VERSION)' first"; exit 1; }
 	gh release create $(VERSION) dist/$(VERSION)/* \
-	  --title "spotykach $(VERSION)" \
+	  --title "sk-engines $(VERSION)" \
 	  --notes-file dist/$(VERSION)/FLASHING.md
 
 # Run the Python script test suites (scripts/test_*.py). These cover host-side utilities
