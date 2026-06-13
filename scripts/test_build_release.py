@@ -61,17 +61,25 @@ def test_write_manifest_contents(tmp_path):
     assert "version:    0.3.0 (dirty tree" in text
     assert "git commit: abc1234" in text
     assert "reverb" in text and "175384" in text
-    assert "spotykach-delay-0.3.0.bin" in text
+    assert "sk-delay-0.3.0.bin" in text
 
 
-def test_write_flashing_has_addresses_and_version(tmp_path):
+def test_write_flashing_has_address_and_version(tmp_path):
     path = tmp_path / "FLASHING.md"
     m.write_flashing(path, "0.3.0")
     text = path.read_text()
-    assert m.BOOTLOADER_ADDRESS in text  # internal-flash bootloader address
     assert m.APP_ADDRESS in text          # QSPI app address
     assert f",0483:{m.DFU_PID}" in text
-    assert "spotykach-<engine>-0.3.0.bin" in text
+    assert "sk-<engine>-0.3.0.bin" in text
+
+
+def test_write_flashing_has_no_bootloader_install_commands(tmp_path):
+    path = tmp_path / "FLASHING.md"
+    m.write_flashing(path, "0.3.0")
+    text = path.read_text()
+    # The bootloader-install procedure was deliberately removed (unverified / bricking-adjacent).
+    assert "0x08000000" not in text
+    assert "bootloader-spotykach-v2.bin" not in text
 
 
 def test_parse_args_defaults():

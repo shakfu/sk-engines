@@ -322,7 +322,7 @@ gen-engines:
 # Build distributable, version-stamped, checksummed engine binaries into dist/<version>/ for users
 # who want to download-and-flash rather than build (no ARM toolchain / cyfaust+gen-dsp venv needed).
 # scripts/build_release.py does a clean build of each engine in RELEASE_ENGINES, names the artifacts
-# spotykach-<engine>-<version>.{bin,hex}, and adds SHA256SUMS, the bootloader, and FLASHING.md. The
+# sk-<engine>-<version>.{bin,hex}, and adds SHA256SUMS, the bootloader, and FLASHING.md. The
 # script is stdlib-only, so plain python3 (no venv) suffices; override with REL_PY if needed.
 #   make dist                       # describe-derived version, curated engine set
 #   make dist VERSION=0.3.0         # explicit version (use the bare tag you will create)

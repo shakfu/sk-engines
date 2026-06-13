@@ -42,14 +42,25 @@ from pathlib import Path
 
 # Curated "mature" engine set: the engines stable enough to publish prebuilt. Others stay
 # buildable but unlisted. Override per-invocation with args or the RELEASE_ENGINES env var.
-DEFAULT_ENGINES = ["reverb", "delay"]
+DEFAULT_ENGINES = [
+    "tape",
+    "shuttle",
+    "reso",
+    "edrums",
+    "reverb",
+    "delay",
+]
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-BOOT_BIN = "bootloader-spotykach-v2.bin"
 
-# DFU flash addresses / PID, mirrored from lib/libDaisy/core/Makefile (BOOT_SRAM app type):
-# the bootloader goes to internal flash, the app to QSPI, both via the df11 DFU PID.
-BOOTLOADER_ADDRESS = "0x08000000"
+# Filename prefix for the distributed artifacts (sk-<engine>-<version>.bin). Note this is the
+# short product abbreviation and is intentionally distinct from the in-binary banner, which uses
+# the full "spotykach" name (see src/version.cpp / banner_bytes).
+ARTIFACT_PREFIX = "sk"
+
+# DFU flash address / PID for the app, mirrored from lib/libDaisy/core/Makefile (BOOT_SRAM app
+# type): the app is written to QSPI via the df11 DFU PID. Installing the bootloader itself is a
+# separate, device-level procedure deliberately not documented here.
 APP_ADDRESS = "0x90040000"
 DFU_PID = "df11"
 
@@ -105,7 +116,7 @@ def build_engine(engine: str, version: str, jobs: int, out_dir: Path) -> int:
     # SPK_VERSION makes the in-binary banner match the artifact name exactly.
     run_make(f"-j{jobs}", f"ENGINE={engine}", f"SPK_VERSION={version}")
 
-    base = f"spotykach-{engine}-{version}"
+    base = f"{ARTIFACT_PREFIX}-{engine}-{version}"
     bin_path = out_dir / f"{base}.bin"
     hex_path = out_dir / f"{base}.hex"
     shutil.copyfile(REPO_ROOT / "build" / "spotykach.bin", bin_path)
@@ -123,12 +134,12 @@ def write_manifest(path: Path, version: str, dirty: str, git_sha: str, sizes: di
         "spotykach firmware release",
         f"version:    {version}{dirty}",
         f"git commit: {git_sha}",
-        f"bootloader: {BOOT_BIN} (must be flashed to internal flash first; see FLASHING.md)",
+        "note:       these apps require the spotykach bootloader already installed (see FLASHING.md)",
         "",
         f"{'engine':<14} {'bytes':>12}  binary",
     ]
     for engine, size in sizes.items():
-        lines.append(f"{engine:<14} {size:>12}  spotykach-{engine}-{version}.bin")
+        lines.append(f"{engine:<14} {size:>12}  {ARTIFACT_PREFIX}-{engine}-{version}.bin")
     path.write_text("\n".join(lines) + "\n")
 
 
@@ -145,28 +156,24 @@ def write_flashing(path: Path, version: str) -> None:
 
 Each `.bin` here is a complete firmware for one engine. Flash exactly one at a time.
 
-## One-time: bootloader
+## Prerequisite
 
-These app binaries run under the spotykach bootloader (`{BOOT_BIN}`). If your device does
-not already have it, flash it to internal flash once:
-
-    dfu-util -a 0 -s {BOOTLOADER_ADDRESS}:leave -D {BOOT_BIN} -d ,0483:{DFU_PID}
+These app binaries are not standalone: they run under the spotykach bootloader, which must
+already be installed on the device. Installing the bootloader is a separate, device-level
+procedure not covered here.
 
 ## Flash an engine
 
 1. Put the device in DFU mode (hold Reset ~3s until the bottom pad LEDs breathe white).
 2. Flash the engine you want (QSPI app address):
 
-       dfu-util -a 0 -s {APP_ADDRESS}:leave -D spotykach-<engine>-{version}.bin -d ,0483:{DFU_PID}
+    dfu-util -a 0 -s {APP_ADDRESS}:leave -D {ARTIFACT_PREFIX}-<engine>-{version}.bin -d ,0483:{DFU_PID}
 
 ## Verify
 
 - Confirm the download is intact:  `shasum -a 256 -c SHA256SUMS`
-- Confirm what a binary is:         `arm-none-eabi-strings <file>.bin | grep '^spotykach '`
+- Confirm what a binary is:        `arm-none-eabi-strings <file>.bin | grep '^spotykach '`
   (prints e.g. `spotykach {version} engine=reverb`)
-
-Settings note: a release may change the persistent-settings layout. If the device behaves oddly
-after an upgrade, reset stored settings.
 """
     )
 
@@ -216,8 +223,6 @@ def main(argv: list[str]) -> int:
 
     sizes = {engine: build_engine(engine, version, args.jobs, out_dir) for engine in engines}
 
-    # Ship the bootloader alongside the apps, then checksum everything together.
-    shutil.copyfile(REPO_ROOT / BOOT_BIN, out_dir / BOOT_BIN)
     write_manifest(out_dir / "MANIFEST.txt", version, dirty, git_sha, sizes)
     write_flashing(out_dir / "FLASHING.md", version)
     write_checksums(out_dir)
