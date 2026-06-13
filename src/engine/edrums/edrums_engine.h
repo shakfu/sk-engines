@@ -46,7 +46,8 @@ public:
     bool  set_config(ConfigId id, DeckRef::Ref deck, int value) override;    // routing switch -> output mode
     Route route() const override { return _route; }                         // mode L/C/R LED
 
-    bool  on_play_pad(DeckRef::Ref deck, bool reverse) override;       // Rev pad swaps the deck's active drum
+    bool  on_play_pad(DeckRef::Ref deck, bool reverse) override;       // Play: stop/start deck; Rev: swap drum
+    void  on_record_pad(DeckRef::Ref deck, bool reverse) override;     // Alt+Play: toggle the deck's mute
     bool  take_param_reseed(DeckRef::Ref deck) override;              // platform polls this after a swap
     void  clear_sequence(DeckRef::Ref deck) override;                 // hold Alt+Seq: reset this deck's drums to defaults
 
@@ -185,6 +186,11 @@ private:
     uint32_t _step_tick = 0;                    // shared step counter (reset on e.reset); div phase
     uint8_t  _active_slot[DeckRef::Count]    = { 0, 0 }; // Rev pad toggles; selects the editable/shown slot
     bool     _reseed_pending[DeckRef::Count] = { false, false }; // set on swap; platform polls to re-seed knobs
+    // Transport/performance state, NOT persisted (like the playback position); all boots running/unmuted.
+    // Two scopes, deliberately different so they are not redundant: plain Play stops/starts the FOCUSED
+    // drum (per slot, stays grid-locked); Alt+Play mutes the whole DECK (both drums, a broad gesture).
+    bool     _running[DeckRef::Count][kSlots] = { { true, true }, { true, true } };
+    bool     _muted[DeckRef::Count]           = { false, false };
     uint8_t  _div[DeckRef::Count][kSlots]   = { { 1, 1 }, { 1, 1 } };       // ticks per step per drum (MODFREQ)
     float    _prob[DeckRef::Count][kSlots]  = { { 1.f, 1.f }, { 1.f, 1.f } }; // probability an onset fires (MOD_AMT)
     float    _pan[DeckRef::Count][kSlots]   = { { 0.5f, 0.5f }, { 0.5f, 0.5f } }; // per-drum pan (Generative mode)

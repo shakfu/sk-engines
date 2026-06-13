@@ -101,11 +101,12 @@ int main() {
     e.on_play_pad(DeckRef::A, true);                         // -> slot0 (restore focus)
     e.take_param_reseed(DeckRef::A);                         // drain the pending flags from these swaps
 
-    // --- 5. Plain Play pad (reverse=false) neither swaps nor requests a reseed -----------------
+    // --- 5. Plain Play pad (reverse=false) = stop/start; it does NOT swap or request a reseed -------
     const float aux_before = e.param(ParamId::Aux, DeckRef::A);
     check(e.on_play_pad(DeckRef::A, /*reverse=*/false) == false, "Play pad returns false");
     check(e.take_param_reseed(DeckRef::A) == false, "Play pad raises no reseed");
     check(approx(e.param(ParamId::Aux, DeckRef::A), aux_before), "Play pad does not change the active slot");
+    e.on_play_pad(DeckRef::A, /*reverse=*/false);   // toggle back so deck A is running again (it just stopped)
 
     // --- 6. The kit boots SILENT (Pos=0 everywhere -> no onsets), and raising POS makes it sound --
     float in_l[host::kBlock] = {0}, in_r[host::kBlock] = {0};
@@ -299,6 +300,53 @@ int main() {
         check(now.active[0] == 0,                                  "reset refocuses deck A to slot 0");
         check(approx(now.drum[1][0].gain, 0.20f),                  "reset of deck A leaves deck B untouched");
         check(e.take_param_reseed(DeckRef::A) == true,             "reset requests a pickup reseed for the deck");
+    }
+
+    // --- 11. Stop/start the sequencer (plain Play) and mute (Alt+Play), per deck --------------------
+    {
+        // Stop/start: a fresh deck stopped before its first onset never triggers (clean silence, no tail).
+        StubTransport trs; EngineContext cs = host::make_context(arena, time); cs.transport = &trs;
+        EdrumsEngine se; se.init(cs);
+        auto ds = [&](uint32_t n) { TransportTick t; t.tick = true; t.tempo = 120.f; for (uint32_t i = 0; i < n; i++) { t.index = i; trs.on_tick(t); } };
+        se.set_param(ParamId::Pos, DeckRef::A, 1.0f);            // deck A: every step an onset (kick)
+
+        se.on_play_pad(DeckRef::A, false);                       // STOP (boots running -> stopped)
+        ds(32); se.process(in_ptrs, out_ptrs, host::kBlock);
+        check(peak() == 0.f, "stopped sequencer never triggers (silent)");
+
+        se.on_play_pad(DeckRef::A, false);                       // START
+        ds(1); se.process(in_ptrs, out_ptrs, host::kBlock);
+        check(peak() > 0.f, "starting the sequencer resumes triggering");
+
+        // Mute: WHOLE-DECK scope - one Alt+Play silences BOTH of the deck's drums while they keep running.
+        StubTransport trm; EngineContext cm = host::make_context(arena, time); cm.transport = &trm;
+        EdrumsEngine me; me.init(cm);
+        auto dm = [&](uint32_t n) { TransportTick t; t.tick = true; t.tempo = 120.f; for (uint32_t i = 0; i < n; i++) { t.index = i; trm.on_tick(t); } };
+        me.set_param(ParamId::Pos, DeckRef::A, 1.0f);            // slot0 onsets
+        me.on_play_pad(DeckRef::A, true); me.set_param(ParamId::Pos, DeckRef::A, 1.0f); me.on_play_pad(DeckRef::A, true); // slot1 onsets too
+
+        me.on_record_pad(DeckRef::A, false);                     // MUTE deck A (Alt+Play) -> both drums
+        bool any = false;
+        for (int b = 0; b < 16; b++) { dm(1); me.process(in_ptrs, out_ptrs, host::kBlock); if (peak() > 0.f) any = true; }
+        check(!any, "muting the deck silences both its drums while the sequencer keeps running");
+
+        me.on_record_pad(DeckRef::A, false);                     // UNMUTE
+        dm(1); me.process(in_ptrs, out_ptrs, host::kBlock);
+        check(peak() > 0.f, "unmute restores audio");
+
+        // Per-drum (not per-deck): stopping the focused drum leaves the deck's OTHER drum playing.
+        StubTransport trp; EngineContext cp = host::make_context(arena, time); cp.transport = &trp;
+        EdrumsEngine pe; pe.init(cp);
+        auto dp = [&](uint32_t n) { TransportTick t; t.tick = true; t.tempo = 120.f; for (uint32_t i = 0; i < n; i++) { t.index = i; trp.on_tick(t); } };
+        pe.set_param(ParamId::Pos, DeckRef::A, 1.0f);            // slot0 onsets (focused)
+        pe.on_play_pad(DeckRef::A, false);                       // STOP slot0 (before any trigger)
+        dp(8); pe.process(in_ptrs, out_ptrs, host::kBlock);
+        check(peak() == 0.f, "focused drum stopped -> silent");
+        pe.on_play_pad(DeckRef::A, true);                        // Rev -> focus slot1 (still running)
+        pe.set_param(ParamId::Pos, DeckRef::A, 1.0f);            // slot1 onsets
+        pe.on_play_pad(DeckRef::A, true);                        // Rev -> back to slot0 (slot0 still stopped)
+        dp(8); pe.process(in_ptrs, out_ptrs, host::kBlock);
+        check(peak() > 0.f, "the deck's other drum keeps playing while one is stopped (per-drum)");
     }
 
     if (g_failures == 0) { std::printf("OK: all edrums slot checks passed\n"); return 0; }

@@ -109,6 +109,9 @@ The platform gives each deck 7 knobs (see [README](README.md#knobs-how-a-physica
 | **flux + PITCH** | `FluxIntensity` | **pitch-sweep amount** (±2 oct on the model) |
 | **flux + SOS** | `FluxMix` | **body↔noise balance** |
 | **flux + POS** | `FluxFb` | **noise brightness** (filter cutoff, ±2 oct) |
+| **Play pad** | `on_play_pad` | **stop / start** the focused drum (stays grid-locked; tails ring out) |
+| **Rev pad** | `on_play_pad` | **swap** the deck's focused drum |
+| **Alt + Play** | `on_record_pad` | **mute** the focused drum (it keeps stepping, audio silenced) |
 | **hold Alt + Seq** (~1.5 s) | `clear_sequence` | **reset that deck's two drums to factory defaults** — see [Presets](#presets-qspi-auto-persist) |
 
 The seven plain knobs act on the deck's **focused** drum; the **Rev pad** swaps focus to the other drum (see [Four drums](#four-drums-two-per-deck)). Density is stored as a fraction and re-derived over the active length, so changing SIZE keeps the relative fill. `POS` and `MOD_AMT` are engine-seeded (the platform reads `param(Pos)` / `param(ModAmp)` for their initial values), so init pre-seeds them: density **0** on every drum (the silent boot — POS seeds to minimum, so turning it up adds hits) and probability 100% (so the knob defaults to "every onset fires" with full clockwise = 100%). The display draws the focused drum's pattern over the active length (the length fills the 32-LED ring; onset lit, playhead bright) in that drum's colour, with a play-LED flash on each hit; the Rev LED carries the backgrounded drum's colour. Colours are per `(deck, slot)`: A slot 0 amber / slot 1 magenta, B slot 0 cyan / slot 1 violet.
@@ -126,6 +129,16 @@ The plain knobs above run the sequencer + pitch/gain; the per-drum **sound shapi
 | **flux + POS** | noise brightness (filter cutoff) | ±2 oct |
 
 With PITCH (pitch), SOS (gain) and Alt+PITCH (model), that is **eight live axes per drum** — and all four drums voice independently. The macro channels route through the platform's existing grit/flux held-modifier layer (`GritIntensity`/`GritMix`/`FluxIntensity`/`FluxMix`/`FluxFb`), which is pickup-seeded from `param()`, so no platform change was needed. (Decay sits on `grit+SOS` rather than `Alt+SOS` because the `Feedback` channel `Alt+SOS` routes to is not pickup-seeded.) Not yet exposed: an **independent body-vs-noise (snap) decay** — the voice has separate envelopes for it, but it needs a sixth modifier channel (a small platform addition), so the one decay currently scales both.
+
+### Transport: stop/start and mute
+
+Two **per-drum** performance controls on the Play pad (they address the focused drum, like the knobs; Rev to reach the deck's other drum), neither persisted (every drum boots running + unmuted):
+
+- **Play pad = stop/start** the focused drum. Stopped, that drum makes no sound (no new triggers; a sounding tail rings out), but its **clock keeps running silently** - the pattern stays phase-locked to the grid and the ring playhead keeps sweeping - so restarting drops it back in **in sync** with the other drums/bar, never drifted. Stop each drum independently for a full halt.
+
+- **Alt + Play = mute** the focused drum. It keeps stepping (stays grid-locked) but its audio is silenced; the deck's other drum is unaffected.
+
+The Play LED tracks the **focused** drum's transport state: **off** when stopped, a **dim** hit-flash when running-but-muted, a **full** hit-flash when running and sounding.
 
 ### Presets (QSPI auto-persist)
 

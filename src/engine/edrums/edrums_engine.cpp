@@ -401,7 +401,11 @@ void EdrumsEngine::_on_tick(const TransportTick& e)
     for (DeckRef::Ref d : { DeckRef::A, DeckRef::B }) {
         for (int s = 0; s < kSlots; s++) {
             if (_div[d][s] == 0 || (_step_tick % _div[d][s]) != 0) continue;
-            if (_track[d][s].pattern.trigger()) {
+            // Always advance the pattern position so a stopped deck stays phase-locked to the grid
+            // (its clock keeps running silently); restarting it drops back in in sync, never drifted.
+            const bool onset = _track[d][s].pattern.trigger();
+            if (!_running[d][s]) continue;   // stopped: position advanced, but fire no voice
+            if (onset) {
                 const bool fire = _prob[d][s] >= 1.f || _rand01(_track[d][s].prob_rng) < _prob[d][s];
                 if (fire) {
                     _pan[d][s] = _rand01(_track[d][s].prob_rng); // random pan for the Generative routing mode
@@ -424,10 +428,13 @@ void EdrumsEngine::process(const float* const* /*in*/, float** out, size_t size)
     // panned. kBusTrim scales before SoftLimit so four simultaneous voices don't sit in constant
     // limiting the way the old two-voice sum avoided.
     for (size_t i = 0; i < size; i++) {
-        const float a0 = _track[DeckRef::A][0].voice.process() * _gain[DeckRef::A][0];
-        const float a1 = _track[DeckRef::A][1].voice.process() * _gain[DeckRef::A][1];
-        const float b0 = _track[DeckRef::B][0].voice.process() * _gain[DeckRef::B][0];
-        const float b1 = _track[DeckRef::B][1].voice.process() * _gain[DeckRef::B][1];
+        // Per-deck mute zeros both of a deck's voices (they still process so envelopes stay coherent).
+        const float gmA = _muted[DeckRef::A] ? 0.f : 1.f;
+        const float gmB = _muted[DeckRef::B] ? 0.f : 1.f;
+        const float a0 = _track[DeckRef::A][0].voice.process() * _gain[DeckRef::A][0] * gmA;
+        const float a1 = _track[DeckRef::A][1].voice.process() * _gain[DeckRef::A][1] * gmA;
+        const float b0 = _track[DeckRef::B][0].voice.process() * _gain[DeckRef::B][0] * gmB;
+        const float b1 = _track[DeckRef::B][1].voice.process() * _gain[DeckRef::B][1] * gmB;
         float l, r;
         switch (_route) {
             case Route::DoubleMono:
@@ -467,13 +474,25 @@ bool EdrumsEngine::set_config(ConfigId id, DeckRef::Ref /*deck*/, int value)
 // flash: a synth drum engine has no buffer to be empty.
 bool EdrumsEngine::on_play_pad(DeckRef::Ref deck, bool reverse)
 {
-    if (reverse) {
-        const auto d = _safe(deck);
+    const auto d = _safe(deck);
+    if (reverse) {                       // Rev pad: swap which of the deck's two drums is focused
         _active_slot[d] ^= 1;
         _reseed_pending[d] = true;
-        _mark_dirty();   // focus is part of the saved kit
+        _mark_dirty();                   // focus is part of the saved kit
+    }
+    else {                               // plain Play pad: stop/start the FOCUSED drum's sequencer
+        const int s = _active_slot[d];
+        _running[d][s] = !_running[d][s]; // not persisted (transport state); tails ring out on stop
     }
     return false;
+}
+
+// Alt+Play: toggle the whole DECK's mute (both drums) - they keep stepping (grid-locked), audio
+// silenced. A broader scope than the per-drum stop, so the two gestures complement rather than overlap.
+// Not persisted. (reverse = Alt+Rev is ignored.)
+void EdrumsEngine::on_record_pad(DeckRef::Ref deck, bool reverse)
+{
+    if (!reverse) { const auto d = _safe(deck); _muted[d] = !_muted[d]; }
 }
 
 // Hold Alt+Seq on a deck (the platform's clear-sequence gesture) -> reset that deck's two drums to the
@@ -486,7 +505,9 @@ void EdrumsEngine::clear_sequence(DeckRef::Ref deck)
     for (int s = 0; s < kSlots; s++) {
         const auto& b = kBootKit[d][s];
         _init_slot(d, s, _sr, b.model, b.seed, b.pos, b.pitch, b.decay);
+        _running[d][s] = true;     // a reset also restores the transport state (running)
     }
+    _muted[d]          = false;    // and unmutes the deck
     _active_slot[d]    = 0;
     _reseed_pending[d] = true;
     _mark_dirty();
@@ -595,7 +616,14 @@ void EdrumsEngine::render(DisplayModel& m)
         // dim steady presence (so you always see the other drum is there and which it is) that brightens
         // on its own hits. Decrement both flashes here - the backgrounded slot's flash is set in
         // _on_tick regardless of focus, so consuming it here keeps it from stalling.
-        m.play[c] = { col,               _flash[c][sl]  > 0 ? 1.f : 0.15f };
+        // Play LED doubles as the transport indicator: OFF when the deck is stopped; otherwise the hit
+        // flash, dimmed when muted (running-but-silent reads differently from running-and-sounding).
+        float play_b = 0.f;
+        if (_running[c][sl]) {                       // focused drum's run state; deck-level mute dims it
+            const float hit = _muted[c] ? 0.4f : 1.f;
+            play_b = _flash[c][sl] > 0 ? hit : 0.15f;
+        }
+        m.play[c] = { col,               play_b };
         m.rev[c]  = { kColor[c][inv],    _flash[c][inv] > 0 ? 1.f : 0.12f };
         if (_flash[c][sl]  > 0) _flash[c][sl]--;
         if (_flash[c][inv] > 0) _flash[c][inv]--;
