@@ -110,6 +110,33 @@ void play_block(ShuttleEngine& e, float* outL) {
     std::memcpy(outL, ol, sizeof(ol));
 }
 
+// --- analysis helpers (tape-FX checks) ---
+float rmsv(const std::vector<float>& v) { double s = 0; for (float x : v) s += double(x) * x; return std::sqrt(s / (v.empty() ? 1 : v.size())); }
+float peakv(const std::vector<float>& v) { float p = 0; for (float x : v) { float a = std::fabs(x); if (a > p) p = a; } return p; }
+float sadv(const std::vector<float>& a, const std::vector<float>& b) { double s = 0; size_t n = a.size() < b.size() ? a.size() : b.size(); for (size_t i = 0; i < n; i++) s += std::fabs(a[i] - b[i]); return float(s); }
+bool finitev(const std::vector<float>& v) { for (float x : v) if (!std::isfinite(x)) return false; return true; }
+std::vector<float> tail(const std::vector<float>& v, size_t from) { return from < v.size() ? std::vector<float>(v.begin() + from, v.end()) : std::vector<float>(); }
+
+// Record `frames` of `sig` into deck A's focused track (0), then Play (snap to unity + roll).
+void arm_play(ShuttleEngine& e, FakeClock& clock, size_t frames) {
+    clock.ms += 500; e.on_record_pad(DeckRef::A, false);
+    feed_record(e, frames);
+    clock.ms += 500; e.on_record_pad(DeckRef::A, false);
+    clock.ms += 500; e.on_play_pad(DeckRef::A, false);
+}
+// Play `frames` of silent-input blocks, collecting deck A's left-channel output.
+std::vector<float> collect(ShuttleEngine& e, size_t frames) {
+    std::vector<float> out; out.reserve(frames + host::kBlock);
+    float il[host::kBlock] = {0}, ir[host::kBlock] = {0}, ol[host::kBlock], orr[host::kBlock];
+    const float* in[2] = { il, ir };
+    float* o[2] = { ol, orr };
+    for (size_t done = 0; done < frames; done += host::kBlock) {
+        e.process(in, o, host::kBlock);
+        for (size_t i = 0; i < host::kBlock; i++) out.push_back(ol[i]);
+    }
+    return out;
+}
+
 } // namespace
 
 int main() {
@@ -377,6 +404,86 @@ int main() {
         check(e.buffer_frames(DeckRef::A, 1) == 300, "preload loads deck A track 1 (slot 1 present, serialized after track 0)");
         check(e.buffer_frames(DeckRef::B, 0) == 200, "preload loads deck B track 0 (slot 0 present)");
         check(e.buffer_frames(DeckRef::B, 1) == 0,   "preload skips deck B track 1 (slot 1 absent)");
+    }
+
+    // ---- 11. Tape FX: wow/flutter + Jiles-Atherton saturation + resonant LP (ported from `tape`) ---
+    // Control map differs from the tape engine (POS/SIZE are the loop window here): GRIT pad modifier =
+    // saturation (grit+PITCH=drive, grit+MIX=character), FLUX pad modifier = filter (flux+PITCH=cutoff,
+    // flux+MIX=resonance), MOD_AMT/MODFREQ = wow/flutter depth/rate. The FX addresses the focused track.
+    {
+        // Boot defaults + param round-trip.
+        {
+            EngineContext ctx = base; ctx.time = &clock;
+            ShuttleEngine f; f.init(ctx);
+            check(approx(f.param(ParamId::FluxIntensity, DeckRef::A), 1.f), "FX cutoff boots OPEN (flux+PITCH = 1.0)");
+            check(approx(f.param(ParamId::FluxMix,       DeckRef::A), 0.f), "FX resonance boots 0 (flux+MIX)");
+            check(approx(f.param(ParamId::GritIntensity, DeckRef::A), 0.f), "FX drive boots 0 (grit+PITCH)");
+            check(approx(f.param(ParamId::GritMix,       DeckRef::A), 0.f), "FX character boots 0 (grit+MIX)");
+            f.set_param(ParamId::GritIntensity, DeckRef::A, 0.6f);
+            f.set_param(ParamId::GritMix,       DeckRef::A, 0.4f);
+            f.set_param(ParamId::ModAmp,        DeckRef::A, 0.7f);
+            f.set_mod_speed(DeckRef::A, 0.3f, false);
+            f.set_param(ParamId::FluxIntensity, DeckRef::A, 0.33f);
+            f.set_param(ParamId::FluxMix,       DeckRef::A, 0.77f);
+            check(approx(f.param(ParamId::GritIntensity, DeckRef::A), 0.6f),  "drive (grit+PITCH) round-trips");
+            check(approx(f.param(ParamId::GritMix,       DeckRef::A), 0.4f),  "character (grit+MIX) round-trips");
+            check(approx(f.param(ParamId::ModAmp,        DeckRef::A), 0.7f),  "wow depth (MOD_AMT) round-trips");
+            check(approx(f.param(ParamId::ModSpeed,      DeckRef::A), 0.3f),  "wow rate (MODFREQ) round-trips");
+            check(approx(f.param(ParamId::FluxIntensity, DeckRef::A), 0.33f), "cutoff (flux+PITCH) round-trips");
+            check(approx(f.param(ParamId::FluxMix,       DeckRef::A), 0.77f), "resonance (flux+MIX) round-trips");
+        }
+
+        const size_t N = 4096;  // > the ~1200-frame wow/flutter base delay, so the FX reaches steady state
+
+        // Clean reference: FX neutral -> bypassed -> faithful playback of the recording.
+        std::vector<float> clean;
+        { EngineContext ctx = base; ctx.time = &clock; ShuttleEngine e; e.init(ctx); arm_play(e, clock, N); clean = collect(e, N); }
+
+        // Saturation (grit): drive high changes the waveform, stays finite + bounded (J-A self-limits, bus soft-limited).
+        {
+            EngineContext ctx = base; ctx.time = &clock; ShuttleEngine e; e.init(ctx); arm_play(e, clock, N);
+            e.set_param(ParamId::GritIntensity, DeckRef::A, 1.f);   // drive
+            e.set_param(ParamId::GritMix,       DeckRef::A, 0.6f);  // character
+            std::vector<float> hot = collect(e, N);
+            const float d = sadv(hot, clean), pk = peakv(hot);
+            std::printf("saturation: SAD(clean,hot)=%.3f hot_peak=%.3f finite=%d\n", d, pk, (int)(finitev(hot) && finitev(clean)));
+            check(finitev(hot), "saturation output is finite");
+            check(d > 1.f,      "drive changes the output (grit saturation is wired)");
+            check(pk < 1.2f,    "saturated + soft-limited bus stays bounded");
+        }
+
+        // Filter (flux): a low cutoff attenuates the ~382 Hz test tone. RMS is delay-invariant for a
+        // steady tone, so this isolates the low-pass from the wow/flutter base delay.
+        {
+            EngineContext ctx = base; ctx.time = &clock; ShuttleEngine e; e.init(ctx); arm_play(e, clock, N);
+            e.set_param(ParamId::FluxIntensity, DeckRef::A, 0.f);   // cutoff -> ~40 Hz
+            std::vector<float> filt = collect(e, N);
+            const float rc = rmsv(tail(clean, 2048)), rf = rmsv(tail(filt, 2048));
+            std::printf("filter: rms_open=%.4f rms_lowcut=%.4f finite=%d\n", rc, rf, (int)finitev(filt));
+            check(finitev(filt),     "filter output is finite");
+            check(rf < 0.5f * rc,    "low cutoff attenuates the tone (flux filter is wired)");
+        }
+
+        // Wow/flutter: depth pitch-modulates the output (differs from the clean replay).
+        {
+            EngineContext ctx = base; ctx.time = &clock; ShuttleEngine e; e.init(ctx); arm_play(e, clock, N);
+            e.set_param(ParamId::ModAmp, DeckRef::A, 0.8f);
+            e.set_mod_speed(DeckRef::A, 0.5f, false);
+            std::vector<float> wow = collect(e, N);
+            const float d = sadv(tail(wow, 2048), tail(clean, 2048));
+            std::printf("wow/flutter: SAD(clean,wow)=%.3f finite=%d\n", d, (int)finitev(wow));
+            check(finitev(wow), "wow/flutter output is finite");
+            check(d > 1.f,      "wow/flutter depth modulates the output (MOD wired)");
+        }
+
+        // Bypass: engaging then neutralising the FX restores bit-faithful playback (the engaged() gate).
+        {
+            EngineContext ctx = base; ctx.time = &clock; ShuttleEngine e; e.init(ctx); arm_play(e, clock, N);
+            e.set_param(ParamId::GritIntensity, DeckRef::A, 0.7f);  // engage...
+            e.set_param(ParamId::GritIntensity, DeckRef::A, 0.f);   // ...then back to neutral (no process between)
+            std::vector<float> back = collect(e, N);
+            check(sadv(back, clean) < 1e-3f, "FX neutralised -> bypass restores bit-faithful playback");
+        }
     }
 
     if (g_failures == 0) std::printf("  OK\n");

@@ -1,8 +1,10 @@
 #include "engine/shuttle/shuttle_engine.h"
 #include "engine/arena.h"
+#include "engine/tape/tapefx.h" // shared TapeFx wrapper around the cyfaust-generated tfx_tapefx::mydsp
 
 #include <cmath>
 #include <cstring>
+#include <new> // placement new
 
 namespace spotykach {
 
@@ -35,6 +37,15 @@ void ShuttleEngine::init(const EngineContext& ctx) {
             _buf[d][s] = ar.alloc<float>(_cap);
             if (!_buf[d][s]) _cap = 0;                // arena exhausted -> no tape (defensive)
         }
+    // One tape-FX kernel per track (4 total) in the SDRAM arena (each ~16 KB of delay-line state).
+    const int sr = static_cast<int>(ctx.sample_rate);
+    for (int d = 0; d < 2; d++)
+        for (int s = 0; s < kTracks; s++)
+            if (void* m = ar.alloc<uint8_t>(sizeof(TapeFx), alignof(TapeFx))) {
+                _fx[d][s] = new (m) TapeFx();
+                _fx[d][s]->init(sr);
+                for (int p = 0; p < 6; p++) _fx[d][s]->set(p, _fx_n[d][s][p]); // seed from cached defaults
+            }
     _recompute_blend();
     _recompute_pan();
 }
@@ -125,15 +136,46 @@ void ShuttleEngine::process(const float* const* in, float** out, size_t size) {
     _render_track(DeckRef::B, 0, in, 1, b0, n);
     _render_track(DeckRef::B, 1, in, 1, b1, n);
 
+    // Per-track tape FX (wow/flutter + Jiles-Atherton saturation + resonant low-pass) on each rolling
+    // track's signal, before the pan/sum. BYPASSED when the track's FX is at neutral settings: the
+    // wow/flutter fdelay imposes a fixed ~25 ms delay (and the filter is not bit-identity even fully
+    // open) regardless of depth, so a neutral kernel is NOT transparent - skipping it keeps faithful
+    // varispeed playback exact when the FX is untouched, and also confines the Jiles-Atherton cost to
+    // tracks both rolling AND actually using the FX. Neutral = drive/char/wow off, cutoff fully open,
+    // reso off (rate is irrelevant at zero wow depth).
+    auto engaged = [](const float* p) {
+        return p[0] > 0.f || p[1] > 0.f || p[2] > 0.f || p[4] < 1.f || p[5] > 0.f;
+    };
+    bool any_fx = false;
+    for (int d = 0; d < 2; d++)
+        for (int t = 0; t < kTracks; t++)
+            if (_fx[d][t] && _rolling[d][t] && engaged(_fx_n[d][t])) {
+                float* buf = (d == 0) ? (t == 0 ? a0 : a1) : (t == 0 ? b0 : b1);
+                _fx[d][t]->process(buf, static_cast<int>(n));
+                any_fx = true;
+            }
+
     // Each track is panned independently into the stereo bus: total gain = MIX volume x A/B blend x
     // its per-track pan (L/R, route-dependent). Coeffs computed once per block, outside the sample loop.
     const float LA0 = _gA * _gain[0][0] * _panL[0][0], RA0 = _gA * _gain[0][0] * _panR[0][0];
     const float LA1 = _gA * _gain[0][1] * _panL[0][1], RA1 = _gA * _gain[0][1] * _panR[0][1];
     const float LB0 = _gB * _gain[1][0] * _panL[1][0], RB0 = _gB * _gain[1][0] * _panR[1][0];
     const float LB1 = _gB * _gain[1][1] * _panL[1][1], RB1 = _gB * _gain[1][1] * _panR[1][1];
-    for (size_t i = 0; i < n; i++) {
-        out[0][i] = a0[i] * LA0 + a1[i] * LA1 + b0[i] * LB0 + b1[i] * LB1;
-        out[1][i] = a0[i] * RA0 + a1[i] * RA1 + b0[i] * RB0 + b1[i] * RB1;
+    // Sum the four panned tracks. SoftLimit the bus ONLY when FX is engaged on some rolling track: up to
+    // four saturated tracks plus the filter's resonant peak (Q ~10) can overshoot 0 dBFS, and there is no
+    // codec headroom past +/-1, so the cubic soft-clip (same one the tape/edrums/granular buses use) tames
+    // those peaks. But SoftLimit is not identity below unity, so with the FX off we keep the plain linear
+    // sum - that preserves shuttle's bit-faithful varispeed playback (and the clean-replay guarantee).
+    if (any_fx) {
+        for (size_t i = 0; i < n; i++) {
+            out[0][i] = daisysp::SoftLimit(a0[i] * LA0 + a1[i] * LA1 + b0[i] * LB0 + b1[i] * LB1);
+            out[1][i] = daisysp::SoftLimit(a0[i] * RA0 + a1[i] * RA1 + b0[i] * RB0 + b1[i] * RB1);
+        }
+    } else {
+        for (size_t i = 0; i < n; i++) {
+            out[0][i] = a0[i] * LA0 + a1[i] * LA1 + b0[i] * LB0 + b1[i] * LB1;
+            out[1][i] = a0[i] * RA0 + a1[i] * RA1 + b0[i] * RB0 + b1[i] * RB1;
+        }
     }
 }
 
@@ -223,6 +265,13 @@ void ShuttleEngine::set_param(ParamId id, DeckRef::Ref d, float v) {
         const int ns = sl < 0 ? 0 : (sl >= kTapeSlots ? kTapeSlots - 1 : sl);
         if (ns != _tape_slot[i][s]) { _tape_slot[i][s] = ns; _request_load(d, s); }   // pick a slot -> load it
     }
+    // Tape FX on the focused track: GRIT pad modifier = saturation (grit+PITCH=drive, grit+MIX=char),
+    // FLUX pad modifier = filter (flux+PITCH=cutoff, flux+MIX=reso). MODFREQ (rate) is in set_mod_speed.
+    else if (id == ParamId::GritIntensity) { _fx_n[i][s][0] = v; if (_fx[i][s]) _fx[i][s]->set(0, v); } // drive
+    else if (id == ParamId::GritMix)       { _fx_n[i][s][1] = v; if (_fx[i][s]) _fx[i][s]->set(1, v); } // character
+    else if (id == ParamId::ModAmp)        { _fx_n[i][s][2] = v; if (_fx[i][s]) _fx[i][s]->set(2, v); } // wow/flutter depth
+    else if (id == ParamId::FluxIntensity) { _fx_n[i][s][4] = v; if (_fx[i][s]) _fx[i][s]->set(4, v); } // filter cutoff
+    else if (id == ParamId::FluxMix)       { _fx_n[i][s][5] = v; if (_fx[i][s]) _fx[i][s]->set(5, v); } // filter resonance
 }
 
 float ShuttleEngine::param(ParamId id, DeckRef::Ref d) const {
@@ -234,7 +283,19 @@ float ShuttleEngine::param(ParamId id, DeckRef::Ref d) const {
     if (id == ParamId::Mix)    return _gain[i][s];
     if (id == ParamId::AltPos) return _pan[i][s];
     if (id == ParamId::Aux)    return (static_cast<float>(_tape_slot[i][s]) + 0.5f) / static_cast<float>(kTapeSlots);
+    if (id == ParamId::GritIntensity) return _fx_n[i][s][0]; // drive
+    if (id == ParamId::GritMix)       return _fx_n[i][s][1]; // character
+    if (id == ParamId::ModAmp)        return _fx_n[i][s][2]; // wow/flutter depth
+    if (id == ParamId::ModSpeed)      return _fx_n[i][s][3]; // wow/flutter rate (MODFREQ)
+    if (id == ParamId::FluxIntensity) return _fx_n[i][s][4]; // filter cutoff (seeds the flux+PITCH pickup open)
+    if (id == ParamId::FluxMix)       return _fx_n[i][s][5]; // filter resonance
     return 0.f;
+}
+
+void ShuttleEngine::set_mod_speed(DeckRef::Ref d, float v, bool /*sync*/) {
+    const int i = idx(d);
+    const int s = _active[i];                                     // FX addresses the FOCUSED track
+    _fx_n[i][s][3] = v; if (_fx[i][s]) _fx[i][s]->set(3, v);       // MODFREQ -> wow/flutter rate
 }
 
 void ShuttleEngine::set_aux_active(DeckRef::Ref d, bool held) {

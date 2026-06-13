@@ -1,6 +1,6 @@
 #include "engine/tape/tape_engine.h"
 #include "engine/arena.h"
-#include "engine/tape/faust_kernel_tapefx.h" // the cyfaust-generated kernel: tfx_tapefx::mydsp
+#include "engine/tape/tapefx.h" // shared TapeFx wrapper around the cyfaust-generated tfx_tapefx::mydsp
 
 #include <algorithm>
 #include <cmath>
@@ -8,34 +8,6 @@
 #include <new> // placement new
 
 namespace spotykach {
-
-// Per-deck tape-FX kernel: wow/flutter (modulated fractional delay) -> Jiles-Atherton hysteresis. The
-// generated kernel is mono (1 in, 1 out); compute() is allocation-free and in-place safe (Faust reads
-// each input sample into a local before writing the output). The ~16 KB delay buffer lives inside the
-// object, so the whole struct is placement-new'd into the SDRAM arena. Knobs are written as normalized
-// 0..1 values straight into the captured zones (the .dsp does the musical scaling).
-struct TapeFx {
-    tfx_tapefx::mydsp dsp;
-    FAUSTFLOAT* z[6] = { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr }; // drive, char, wow, rate, cutoff, reso
-
-    struct Cap : UI {
-        TapeFx* fx;
-        void bind(const char* l, FAUSTFLOAT* zp) {
-            if      (std::strcmp(l, "drive")  == 0) fx->z[0] = zp;
-            else if (std::strcmp(l, "char")   == 0) fx->z[1] = zp;
-            else if (std::strcmp(l, "wow")    == 0) fx->z[2] = zp;
-            else if (std::strcmp(l, "rate")   == 0) fx->z[3] = zp;
-            else if (std::strcmp(l, "cutoff") == 0) fx->z[4] = zp;
-            else if (std::strcmp(l, "reso")   == 0) fx->z[5] = zp;
-        }
-        void addHorizontalSlider(const char* l, FAUSTFLOAT* zp, FAUSTFLOAT, FAUSTFLOAT, FAUSTFLOAT, FAUSTFLOAT) override { bind(l, zp); }
-        void addVerticalSlider  (const char* l, FAUSTFLOAT* zp, FAUSTFLOAT, FAUSTFLOAT, FAUSTFLOAT, FAUSTFLOAT) override { bind(l, zp); }
-    };
-
-    void init(int sr) { dsp.init(sr); Cap ui; ui.fx = this; dsp.buildUserInterface(&ui); }
-    void set(int which, float v) { if (z[which]) *z[which] = v; }       // which: 0..3, v in [0,1]
-    void process(float* buf, int n) { FAUSTFLOAT* io[1] = { buf }; dsp.compute(n, io, io); } // in-place
-};
 
 void TapeEngine::init(const EngineContext& ctx) {
     _stream = ctx.stream;

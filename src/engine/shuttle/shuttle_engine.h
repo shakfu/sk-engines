@@ -11,6 +11,8 @@
 
 namespace spotykach {
 
+struct TapeFx; // shared FX kernel (wow/flutter + Jiles-Atherton + resonant LP), defined in engine/tape/tapefx.h
+
 // ShuttleEngine - a buffer-based "varispeed shuttle" tape, the bipolar/reverse counterpart to the
 // streaming TapeEngine. Two decks (A/B), and like the edrums kit each deck holds TWO tracks (a pair),
 // so there are FOUR independent mono tape buffers in all. The Rev pad swaps which of a deck's two
@@ -69,6 +71,7 @@ public:
     bool  set_config(ConfigId id, DeckRef::Ref, int value) override;  // routing switch -> per-track pan
     Route route() const override { return _route; }                   // mode L/C/R LED
     void  set_aux_active(DeckRef::Ref d, bool held) override;   // Alt held -> show the slot selector
+    void  set_mod_speed(DeckRef::Ref d, float v, bool sync) override; // MODFREQ -> FX wow/flutter rate
     bool  take_param_reseed(DeckRef::Ref d) override;           // Play-snap / Rev-swap soft-takeover
 
     bool  on_play_pad(DeckRef::Ref d, bool reverse) override;   // Play: roll+snap focused; Rev: swap track
@@ -147,6 +150,24 @@ private:
     float    _rnd[2][kTracks]  = { { 0.5f, 0.5f }, { 0.5f, 0.5f } };  // GenerativeStereo random pan positions
     float    _panL[2][kTracks] = { { kCenterGain, kCenterGain }, { kCenterGain, kCenterGain } };  // effective L/R
     float    _panR[2][kTracks] = { { kCenterGain, kCenterGain }, { kCenterGain, kCenterGain } };  // (per route)
+
+    // ---- Per-track tape FX (shared TapeFx kernel: wow/flutter + Jiles-Atherton saturation + post-FX
+    // resonant low-pass), placement-new'd in the SDRAM arena at init(), applied to each track's mono
+    // signal before the pan/sum. Driven from controls that are free on this engine (POS/SIZE are the
+    // loop window here, so unlike the tape engine the FX does NOT use them): the GRIT pad modifier =
+    // saturation (grit+PITCH=drive, grit+MIX=character), the FLUX pad modifier = filter (flux+PITCH=
+    // cutoff, flux+MIX=resonance), MOD_AMT/MODFREQ = wow/flutter depth/rate. Like every other shuttle
+    // knob the FX addresses the FOCUSED track; _fx_n caches the six 0..1 values per track (order:
+    // drive, char, wow, rate, cutoff, reso) for param() readback + the Rev-swap pickup reseed.
+    TapeFx* _fx[2][kTracks] = {};
+    // Boot the colouring FX OFF (drive/char/wow/rate = 0) so it is neutral and every param is freely
+    // reducible (a non-zero default would also soft-takeover-lock a pot sitting below the seed). The
+    // filter is the inverse: cutoff boots OPEN (1.0) so the low-pass is inert until swept down (the
+    // flux+PITCH pickup seeds open -> turn DOWN to engage); reso boots 0.
+    float _fx_n[2][kTracks][6] = {
+        { { 0.f, 0.f, 0.f, 0.f, 1.f, 0.f }, { 0.f, 0.f, 0.f, 0.f, 1.f, 0.f } },
+        { { 0.f, 0.f, 0.f, 0.f, 1.f, 0.f }, { 0.f, 0.f, 0.f, 0.f, 1.f, 0.f } },
+    };
 
     // ---- Per-deck state ----------------------------------------------------------------------
     int  _active[2]    = { 0, 0 };            // focused track per deck (Rev swaps it)
