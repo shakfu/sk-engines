@@ -58,22 +58,36 @@ private:
     // transport tick) just re-arms the envelopes, so it is allocation/lock free.
     struct Voice {
         LUTSinOsc osc;                 // pitched body
-        infrasonic::BPF12 noise_bpf;   // band-pass that colours the noise (PITCH -> centre freq)
+        LUTSinOsc osc2;                // 2nd body partial (snare/tom; silent when partial_mix = 0)
+        infrasonic::BiquadSection noise_filt; // colours the noise: band-pass, or high-pass for the hat
         float sr          = 48000.f;
-        float base_hz     = 60.f;      // PITCH -> body frequency
-        // Set by the drum model (set_model): body/noise mix, pitch-sweep amount, decay multiplier,
-        // and the noise band centre as a multiple of base_hz.
-        float tone        = 0.f;
-        float sweep       = 3.f;
-        float decay_scale = 1.f;
-        float noise_mult  = 8.f;
+        float base_hz     = 60.f;      // PITCH (x base_scale) -> body frequency
+        float pitch_norm  = 0.5f;      // last PITCH value, so set_model can rescale the base
+        // Model character (set by set_model from kModels):
+        float tone        = 0.f;       // body <-> noise balance (0 = body, 1 = noise)
+        float sweep       = 3.f;       // pitch-drop amount (start freq = base*(1+sweep), decays to base)
+        float base_scale  = 1.f;       // per-model frequency offset, so each drum tunes to its own range
+        float decay_scale = 1.f;       // body amp-decay multiplier
+        float noise_decay = 1.f;       // noise decay relative to the body (<1 snappier, >1 longer tail)
+        float noise_mult  = 8.f;       // noise filter centre/corner = base_hz * this
+        float noise_q     = 1.2f;      // noise filter Q
+        bool  noise_hp    = false;     // high-pass the noise (hats) instead of band-pass it
+        float partial_ratio = 0.f;     // 2nd body partial frequency ratio (0 = unused)
+        float partial_mix   = 0.f;     // 2nd partial level
+        float drive         = 0.f;     // body saturation amount (0 = clean)
+        float click_level   = 0.f;     // attack-click amount (0 = none)
         float decay_norm  = 0.5f;      // last SOS value, so set_model can recompute the decay
-        float amp         = 0.f;       // current amp-env level (0 = idle)
-        float amp_coef    = 0.f;       // per-sample amp-env decay multiplier
-        float pitch_env   = 0.f;       // current pitch-sweep level
-        float pitch_coef  = 0.f;       // per-sample pitch-sweep decay multiplier (fixed ~25 ms)
+        // Envelope + render state:
+        float amp         = 0.f;       // body amp-env level (0 = idle)
+        float amp_coef    = 0.f;       // body amp-env per-sample decay
+        float namp        = 0.f;       // noise amp-env level (its own decay - snap vs ring)
+        float namp_coef   = 0.f;       // noise amp-env per-sample decay
+        float pitch_env   = 0.f;       // pitch-sweep level
+        float pitch_coef  = 0.f;       // pitch-sweep per-sample decay (per-model time)
+        float click_amp   = 0.f;       // attack-click env level
+        float click_coef  = 0.f;       // attack-click per-sample decay (~2 ms)
         uint32_t rng      = 0x1234567u;// LCG state for the noise component
-        // Multi-burst (the Clap model re-arms the amp env a few times in quick succession).
+        // Multi-burst (the Clap model re-arms the envelopes a few times in quick succession).
         int   burst_count = 0;         // extra bursts after the first (model)
         float burst_gap   = 0.f;       // samples between bursts (model)
         int   burst_left  = 0;         // bursts still pending this hit
@@ -81,12 +95,13 @@ private:
 
         void  init(float sample_rate, float default_hz, int default_model, uint32_t seed);
         void  set_model(int idx);      // 0..4: kick / snare / clap / closed-hat / tom
-        void  set_pitch(float norm);   // PITCH -> body freq + noise band centre
-        void  set_decay(float norm);   // SOS   -> amp_coef (decay time)
-        void  trigger();               // re-arm amp + pitch envelopes
+        void  set_pitch(float norm);   // PITCH -> body freq + noise centre
+        void  set_decay(float norm);   // SOS   -> body + noise decay times
+        void  trigger();               // re-arm amp/noise/pitch/click envelopes
         float process();               // render one sample
-        void  _noise_center();         // noise band centre = base_hz * noise_mult
-        void  _recompute_decay();      // amp_coef from decay_norm * the model's decay_scale
+        void  _set_noise_filter();     // noise filter coeffs (centre/corner from base_hz, type per model)
+        void  _recompute_pitch();      // base_hz from pitch_norm * base_scale; refresh the noise filter
+        void  _recompute_decay();      // body + noise amp coefs from decay_norm * the model scales
     };
 
     // One drum track = a Euclidean pattern + its voice + a per-track randomness RNG.

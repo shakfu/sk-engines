@@ -11,16 +11,29 @@ using namespace spotykach;
 constexpr uint8_t EdrumsEngine::kDivTable[3];
 
 // The 5 drum models (Alt+PITCH selects). Each sets the voice character; PITCH still drives body freq +
-// noise centre and SOS the decay, within the model. tone = body<->noise, sweep = pitch-drop amount,
-// decay_scale multiplies the SOS decay, noise_mult = noise band centre as a multiple of base_hz.
+// noise centre and SOS the decay, within the model. Fields:
+//   tone        body <-> noise balance (0 body .. 1 noise)
+//   sweep       pitch-drop amount (start freq = base*(1+sweep))      pitch_ms  pitch-envelope time
+//   base_scale  per-model frequency offset on the shared PITCH knob (so each drum tunes to its range)
+//   decay_scale body decay multiplier        noise_decay  noise decay relative to the body (snap vs ring)
+//   noise_mult  noise centre/corner = base x this    noise_q  filter Q    noise_hp  high-pass (hats) vs band-pass
+//   partial_ratio/partial_mix  a 2nd detuned body sine (snare/tom richness; 0 = off)
+//   drive       gentle body saturation (0 = clean)   click  attack-click amount (kick beater / tom mallet)
+//   bursts/burst_ms  the Clap's extra noise bursts
 namespace {
-struct ModelSpec { float tone; float sweep; float decay_scale; float noise_mult; int bursts; float burst_ms; };
+struct ModelSpec {
+    float tone; float sweep; float pitch_ms; float base_scale;
+    float decay_scale; float noise_decay; float noise_mult; float noise_q; bool noise_hp;
+    float partial_ratio; float partial_mix; float drive; float click;
+    int bursts; float burst_ms;
+};
 const ModelSpec kModels[] = {
-    { 0.00f, 3.0f, 1.20f,  8.f, 0,  0.f }, // 0 Kick  - body, big pitch drop
-    { 0.55f, 0.6f, 0.70f, 10.f, 0,  0.f }, // 1 Snare - body + mid noise
-    { 0.90f, 0.0f, 0.40f,  7.f, 3, 11.f }, // 2 Clap  - 3 extra noise bursts ~11 ms apart
-    { 1.00f, 0.0f, 0.25f, 40.f, 0,  0.f }, // 3 Hat   - high noise, very short
-    { 0.20f, 1.8f, 1.00f,  6.f, 0,  0.f }, // 4 Tom   - pitched body, mild drop
+    //  tone  sweep p_ms  base   dscl  ndcy  nmult  nq    hp     prat  pmix  drive click  burst
+    { 0.00f, 3.0f, 55.f, 0.50f, 1.30f, 1.0f,  8.f, 1.2f, false, 0.0f, 0.00f, 0.35f, 0.5f, 0,  0.f }, // 0 Kick  - deep body, long pitch drop, beater click + drive
+    { 0.50f, 0.8f, 18.f, 1.30f, 0.55f, 1.6f, 18.f, 0.8f, false, 1.6f, 0.50f, 0.10f, 0.0f, 0,  0.f }, // 1 Snare - 2-partial body + bright noise that rings past the body
+    { 0.92f, 0.0f, 10.f, 1.00f, 0.40f, 1.5f,  9.f, 1.0f, false, 0.0f, 0.00f, 0.00f, 0.0f, 3, 11.f }, // 2 Clap  - 3 extra noise bursts ~11 ms apart, tail rings
+    { 1.00f, 0.0f,  5.f, 1.00f, 0.22f, 1.0f, 30.f, 0.9f, true,  0.0f, 0.00f, 0.00f, 0.0f, 0,  0.f }, // 3 Hat   - high-passed noise (metallic "tss"), very short
+    { 0.18f, 1.8f, 40.f, 0.90f, 1.00f, 0.8f,  6.f, 1.2f, false, 1.5f, 0.35f, 0.15f, 0.2f, 0,  0.f }, // 4 Tom   - 2-partial pitched body, mild drop, mallet click
 };
 }
 
@@ -29,42 +42,57 @@ void EdrumsEngine::Voice::init(float sample_rate, float default_hz, int default_
 {
     sr = sample_rate;
     osc.init(sr);
-    noise_bpf.Init(sr);
-    noise_bpf.SetQ(1.2f);
-    base_hz    = default_hz;
+    osc2.init(sr);
+    base_hz    = default_hz;     // placeholder; _recompute_pitch (via set_model) sets the real value
+    pitch_norm = 0.5f;
     rng        = seed;
-    pitch_coef = std::exp(-1.f / (0.025f * sr)); // ~25 ms downward pitch sweep
-    decay_norm = 0.5f;                           // sensible default until the SOS knob applies
-    set_model(default_model);                    // sets tone/sweep/decay_scale/noise_mult + decay + centre
-    amp = 0.f; pitch_env = 0.f;
+    decay_norm = 0.5f;           // sensible default until the SOS knob applies
+    set_model(default_model);    // sets the model fields + pitch/click coefs + decay + base + noise filter
+    amp = namp = pitch_env = click_amp = 0.f;
 }
 
 void EdrumsEngine::Voice::set_model(int idx)
 {
     idx = std::clamp(idx, 0, EdrumsEngine::kModelCount - 1);
     const ModelSpec& m = kModels[idx];
-    tone = m.tone; sweep = m.sweep; decay_scale = m.decay_scale; noise_mult = m.noise_mult;
+    tone = m.tone; sweep = m.sweep; base_scale = m.base_scale;
+    decay_scale = m.decay_scale; noise_decay = m.noise_decay; noise_mult = m.noise_mult;
+    noise_q = m.noise_q; noise_hp = m.noise_hp;
+    partial_ratio = m.partial_ratio; partial_mix = m.partial_mix; drive = m.drive; click_level = m.click;
     burst_count = m.bursts;
     burst_gap   = m.burst_ms * 0.001f * sr;
+    pitch_coef  = std::exp(-1.f / (std::max(1.f, m.pitch_ms) * 0.001f * sr)); // per-model pitch sweep time
+    click_coef  = std::exp(-1.f / (0.002f * sr));                            // ~2 ms attack click
     _recompute_decay();
-    _noise_center();
+    _recompute_pitch();   // base_scale may have changed -> rescale base + refresh the noise filter
 }
 
-void EdrumsEngine::Voice::_noise_center()
+void EdrumsEngine::Voice::_set_noise_filter()
 {
-    noise_bpf.SetCutoff(std::clamp(base_hz * noise_mult, 300.f, sr * 0.45f));
+    const float c = std::clamp(base_hz * noise_mult, 300.f, sr * 0.45f);
+    const auto type = noise_hp ? infrasonic::BiquadSection::FilterType::HighPass
+                               : infrasonic::BiquadSection::FilterType::BandPass;
+    noise_filt.SetCoefficients(infrasonic::BiquadSection::CalculateCoefficients(type, sr, c, noise_q));
+}
+
+void EdrumsEngine::Voice::_recompute_pitch()
+{
+    base_hz = 30.f * std::exp2(std::clamp(pitch_norm, 0.f, 1.f) * 4.f) * base_scale; // ~30..480 Hz x model offset
+    _set_noise_filter();                                                             // noise colour tracks pitch
 }
 
 void EdrumsEngine::Voice::_recompute_decay()
 {
-    const float T = (0.03f + decay_norm * decay_norm * 1.2f) * decay_scale; // 30 ms .. ~1.2 s, scaled
-    amp_coef = std::exp(-1.f / (T * sr));
+    const float T = (0.03f + decay_norm * decay_norm * 1.2f) * decay_scale; // body: 30 ms .. ~1.2 s, scaled
+    amp_coef  = std::exp(-1.f / (T * sr));
+    const float Tn = std::max(0.005f, T * noise_decay);                     // noise: its own time (snap vs ring)
+    namp_coef = std::exp(-1.f / (Tn * sr));
 }
 
 void EdrumsEngine::Voice::set_pitch(float norm)
 {
-    base_hz = 30.f * std::exp2(std::clamp(norm, 0.f, 1.f) * 4.f); // ~30..480 Hz body
-    _noise_center();                                             // noise colour tracks pitch
+    pitch_norm = std::clamp(norm, 0.f, 1.f);
+    _recompute_pitch();
 }
 
 void EdrumsEngine::Voice::set_decay(float norm)
@@ -76,34 +104,48 @@ void EdrumsEngine::Voice::set_decay(float norm)
 void EdrumsEngine::Voice::trigger()
 {
     amp        = 1.f;
+    namp       = 1.f;
     pitch_env  = 1.f;
+    click_amp  = click_level;
     osc.reset();
+    osc2.reset();
     burst_left  = burst_count;   // schedule the clap's extra bursts (0 for other models)
     burst_timer = burst_gap;
 }
 
 float EdrumsEngine::Voice::process()
 {
-    // Multi-burst (Clap): re-arm the amp env at each scheduled burst for the characteristic stutter.
+    // Multi-burst (Clap): re-arm body + noise envelopes at each scheduled burst for the stutter.
     if (burst_left > 0) {
         burst_timer -= 1.f;
-        if (burst_timer <= 0.f) { amp = 1.f; burst_left--; burst_timer += burst_gap; }
+        if (burst_timer <= 0.f) { amp = 1.f; namp = 1.f; burst_left--; burst_timer += burst_gap; }
     }
 
-    if (amp < 1.0e-4f) { amp = 0.f; return 0.f; } // idle
+    if (amp < 1.0e-4f && namp < 1.0e-4f && click_amp < 1.0e-4f) { amp = namp = click_amp = 0.f; return 0.f; }
 
-    // Body: sine whose frequency starts (1+kPitchSweep)x base and decays to base (the drum "thump").
+    // Body: pitched sine (+ optional 2nd detuned partial) whose frequency starts (1+sweep)x base and
+    // decays to base (the drum "thump"); gently saturated for harmonics/punch; own amp env.
     pitch_env *= pitch_coef;
-    osc.set_freq(base_hz * (1.f + pitch_env * sweep));
-    const float body = osc.process();
+    const float f = base_hz * (1.f + pitch_env * sweep);
+    osc.set_freq(f);
+    float body = osc.process();
+    if (partial_mix > 0.f) { osc2.set_freq(f * partial_ratio); body += osc2.process() * partial_mix; }
+    if (drive > 0.f) body = daisysp::SoftLimit(body * (1.f + drive * 4.f));
+    body *= amp;
 
-    // Noise: cheap LCG -> -1..1, band-passed (the bandpass attenuates, so compensate a little).
+    // Noise: cheap LCG -> -1..1, band/high-passed (the filter attenuates, so compensate), own decay.
     rng = rng * 1664525u + 1013904223u;
     const float n_raw = static_cast<float>(rng >> 8) * (1.f / 8388608.f) - 1.f;
-    const float n = noise_bpf.Process(n_raw) * 2.f;
+    const float n = noise_filt.Process(n_raw, 0) * 2.f * namp;
 
-    amp *= amp_coef;
-    return (body * (1.f - tone) + n * tone) * amp;
+    // Attack click: a brief bright transient at onset (kick beater / tom mallet).
+    float clk = 0.f;
+    if (click_amp > 1.0e-4f) { clk = n_raw * click_amp; click_amp *= click_coef; }
+    else click_amp = 0.f;
+
+    amp  *= amp_coef;
+    namp *= namp_coef;
+    return body * (1.f - tone) + n * tone + clk;
 }
 
 // --- EdrumsEngine -------------------------------------------------------------------------------

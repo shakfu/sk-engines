@@ -141,6 +141,40 @@ int main() {
     check(finite, "process() output is finite once a drum sounds");
     check(peak() > 0.f, "raising POS makes the focused drum audible");
 
+    // --- 7. Per-model voicing: each of the 5 models triggers a finite, bounded, audible hit, and the
+    // hat's high-passed noise is far brighter than the kick's sine body (proves the model wiring + the
+    // band/high-pass split). Deck A slot 0 is the only onset-active drum (POS=1 above; the rest silent),
+    // so the bus is just this one voice; Aux selects its model, then one tick triggers a single hit.
+    constexpr int kNumModels = 5;       // kick, snare, clap, hat, tom (EdrumsEngine::kModelCount)
+    auto analyze = [&](int model, float& pk, float& bright, bool& fin) {
+        e.set_param(ParamId::Aux, DeckRef::A, static_cast<float>(model) / (kNumModels - 1)); // select model
+        drive(1);                                                                            // one onset -> trigger
+        pk = 0.f; fin = true; double energy = 0.0, diffs = 0.0; float prev = 0.f; bool first = true;
+        for (int b = 0; b < 48; b++) {                          // ~48 blocks of single-hit decay (no more ticks)
+            e.process(in_ptrs, out_ptrs, host::kBlock);
+            for (size_t i = 0; i < host::kBlock; i++) {
+                const float x = out_l[i];
+                if (!std::isfinite(x)) fin = false;
+                pk = std::fmax(pk, std::fabs(x));
+                energy += std::fabs(x);
+                if (!first) diffs += std::fabs(x - prev);       // first-difference = crude HF content
+                prev = x; first = false;
+            }
+        }
+        bright = static_cast<float>(diffs / (energy + 1e-9));   // brightness = HF / total energy
+    };
+    float pk[kNumModels], br[kNumModels];
+    bool  fin[kNumModels];
+    for (int m = 0; m < kNumModels; m++) {
+        analyze(m, pk[m], br[m], fin[m]);
+        check(fin[m],            "model renders finite output");
+        check(pk[m] > 0.f,       "model is audible when triggered");
+        check(pk[m] < 1.2f,      "model output stays bounded (per-voice drive + bus SoftLimit)");
+    }
+    std::printf("voicing: brightness kick=%.3f snare=%.3f clap=%.3f hat=%.3f tom=%.3f\n",
+                br[0], br[1], br[2], br[3], br[4]);
+    check(br[3] > 2.f * br[0], "hat (high-passed noise) is far brighter than the kick (sine body)");
+
     if (g_failures == 0) { std::printf("OK: all edrums slot checks passed\n"); return 0; }
     std::printf("FAILED: %d check(s)\n", g_failures);
     return 1;
