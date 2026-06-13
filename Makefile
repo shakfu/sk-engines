@@ -321,15 +321,17 @@ gen-engines:
 
 # Build distributable, version-stamped, checksummed engine binaries into dist/<version>/ for users
 # who want to download-and-flash rather than build (no ARM toolchain / cyfaust+gen-dsp venv needed).
-# scripts/build_release.sh does a clean build of each engine in RELEASE_ENGINES, names the artifacts
-# spotykach-<engine>-<version>.{bin,hex}, and adds SHA256SUMS, the bootloader, and FLASHING.md.
+# scripts/build_release.py does a clean build of each engine in RELEASE_ENGINES, names the artifacts
+# spotykach-<engine>-<version>.{bin,hex}, and adds SHA256SUMS, the bootloader, and FLASHING.md. The
+# script is stdlib-only, so plain python3 (no venv) suffices; override with REL_PY if needed.
 #   make dist                       # describe-derived version, curated engine set
 #   make dist VERSION=0.3.0         # explicit version (use the bare tag you will create)
 #   make dist RELEASE_ENGINES="reverb delay"   # subset
+REL_PY ?= python3
 RELEASE_ENGINES ?=
 .PHONY: dist
 dist:
-	RELEASE_ENGINES="$(RELEASE_ENGINES)" scripts/build_release.sh $(VERSION)
+	RELEASE_ENGINES="$(RELEASE_ENGINES)" $(REL_PY) scripts/build_release.py $(VERSION)
 
 # Upload an already-built dist/<version>/ as a GitHub release (requires `gh auth login`). Tag the
 # release with the SAME bare version so the in-binary banner matches. Run `make dist VERSION=x` first.
