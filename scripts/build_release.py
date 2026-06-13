@@ -15,7 +15,7 @@ filename before trusting it, and the same banner lets anyone identify a stray bi
 later (`arm-none-eabi-strings file.bin | grep '^spotykach '`).
 
 Usage:
-    python scripts/build_release.py [VERSION] [ENGINE ...]
+    python scripts/build_release.py [VERSION] [ENGINE ...] [--hex]
 
     VERSION   Version baked into every binary and used in artifact names and the output
               directory. Defaults to `git describe --tags --always` of the source tree.
@@ -23,11 +23,14 @@ Usage:
               explicitly to override.
     ENGINE..  Engines to build. Defaults to $RELEASE_ENGINES (space-separated), else the
               curated mature set below.
+    --hex     Also emit .hex artifacts (for ST-Link / STM32CubeProgrammer). Off by default:
+              both documented flash paths (the Daisy Web Programmer and dfu-util) use .bin.
 
 Examples:
     python scripts/build_release.py                # describe-derived version, mature set
     python scripts/build_release.py 0.3.0          # explicit version, mature set
     python scripts/build_release.py 0.3.0 reverb   # explicit version, just one engine
+    python scripts/build_release.py 0.3.0 --hex    # also emit .hex alongside each .bin
 """
 
 from __future__ import annotations
@@ -63,6 +66,10 @@ ARTIFACT_PREFIX = "sk"
 # separate, device-level procedure deliberately not documented here.
 APP_ADDRESS = "0x90040000"
 DFU_PID = "df11"
+
+# Electrosmith's browser-based DFU flasher (WebUSB; Chrome/Edge only). The friendliest path for
+# end users: no toolchain, just pick the .bin and click Flash. It handles the app address itself.
+WEB_PROGRAMMER_URL = "https://flash.daisy.audio/"
 
 
 def git_output(*args: str) -> str:
@@ -109,8 +116,12 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def build_engine(engine: str, version: str, jobs: int, out_dir: Path) -> int:
-    """Clean-build one engine, copy + verify its artifacts into out_dir, return .bin size."""
+def build_engine(engine: str, version: str, jobs: int, out_dir: Path, emit_hex: bool = False) -> int:
+    """Clean-build one engine, copy + verify its artifacts into out_dir, return .bin size.
+
+    The .bin is always produced (both documented flash paths use it); the .hex is copied only
+    when emit_hex is set, for users flashing via ST-Link / STM32CubeProgrammer.
+    """
     print(f"==> building {engine}")
     run_make("clean")
     # SPK_VERSION makes the in-binary banner match the artifact name exactly.
@@ -118,9 +129,9 @@ def build_engine(engine: str, version: str, jobs: int, out_dir: Path) -> int:
 
     base = f"{ARTIFACT_PREFIX}-{engine}-{version}"
     bin_path = out_dir / f"{base}.bin"
-    hex_path = out_dir / f"{base}.hex"
     shutil.copyfile(REPO_ROOT / "build" / "spotykach.bin", bin_path)
-    shutil.copyfile(REPO_ROOT / "build" / "spotykach.hex", hex_path)
+    if emit_hex:
+        shutil.copyfile(REPO_ROOT / "build" / "spotykach.hex", out_dir / f"{base}.hex")
 
     # Sanity-check the baked-in banner before we trust the artifact.
     if banner_bytes(version, engine) not in bin_path.read_bytes():
@@ -152,7 +163,7 @@ def write_checksums(out_dir: Path) -> None:
 
 def write_flashing(path: Path, version: str) -> None:
     path.write_text(
-        f"""# Flashing a spotykach engine ({version})
+        f"""# Flashing an sk-engines firmware ({version})
 
 Each `.bin` here is a complete firmware for one engine. Flash exactly one at a time.
 
@@ -162,10 +173,20 @@ These app binaries are not standalone: they run under the spotykach bootloader, 
 already be installed on the device. Installing the bootloader is a separate, device-level
 procedure not covered here.
 
-## Flash an engine
+## Step 1: enter bootloader mode
 
-1. Put the device in DFU mode (hold Reset ~3s until the bottom pad LEDs breathe white).
-2. Flash the engine you want (QSPI app address):
+Both methods below need the device in its bootloader (DFU) mode first: hold Reset ~3s until
+the bottom pad LEDs breathe white.
+
+## Step 2, option A: Daisy Web Programmer (easiest)
+
+Needs a WebUSB browser - Chrome or Edge (Firefox and Safari will not work).
+
+1. With the device in bootloader mode, open {WEB_PROGRAMMER_URL}
+2. On the "File Upload" tab, choose your engine binary ({ARTIFACT_PREFIX}-<engine>-{version}.bin).
+3. Click FLASH.
+
+## Step 2, option B: dfu-util (command line)
 
     dfu-util -a 0 -s {APP_ADDRESS}:leave -D {ARTIFACT_PREFIX}-<engine>-{version}.bin -d ,0483:{DFU_PID}
 
@@ -195,6 +216,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--jobs", "-j", type=int, default=int(os.environ.get("JOBS", "8")),
         help="parallel make jobs (default: 8 or $JOBS)",
     )
+    parser.add_argument(
+        "--hex", action="store_true",
+        help="also emit .hex artifacts (for ST-Link / STM32CubeProgrammer; the web flasher and "
+             "dfu-util both use .bin, so .hex is omitted by default)",
+    )
     return parser.parse_args(argv)
 
 
@@ -221,7 +247,7 @@ def main(argv: list[str]) -> int:
         shutil.rmtree(out_dir)
     out_dir.mkdir(parents=True)
 
-    sizes = {engine: build_engine(engine, version, args.jobs, out_dir) for engine in engines}
+    sizes = {engine: build_engine(engine, version, args.jobs, out_dir, args.hex) for engine in engines}
 
     write_manifest(out_dir / "MANIFEST.txt", version, dirty, git_sha, sizes)
     write_flashing(out_dir / "FLASHING.md", version)

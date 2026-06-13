@@ -70,6 +70,7 @@ def test_write_flashing_has_address_and_version(tmp_path):
     text = path.read_text()
     assert m.APP_ADDRESS in text          # QSPI app address
     assert f",0483:{m.DFU_PID}" in text
+    assert m.WEB_PROGRAMMER_URL in text   # web flasher is the recommended path
     assert "sk-<engine>-0.3.0.bin" in text
 
 
@@ -87,12 +88,18 @@ def test_parse_args_defaults():
     assert args.version is None
     assert args.engines == []
     assert args.jobs == 8
+    assert args.hex is False  # .hex omitted unless explicitly requested
 
 
 def test_parse_args_positional():
     args = m.parse_args(["0.3.0", "reverb", "delay"])
     assert args.version == "0.3.0"
     assert args.engines == ["reverb", "delay"]
+
+
+def test_parse_args_hex_flag():
+    assert m.parse_args(["0.3.0", "--hex"]).hex is True
+    assert m.parse_args(["0.3.0", "reverb", "--hex"]).engines == ["reverb"]
 
 
 def test_parse_args_jobs_flag():

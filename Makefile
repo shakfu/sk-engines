@@ -322,16 +322,19 @@ gen-engines:
 # Build distributable, version-stamped, checksummed engine binaries into dist/<version>/ for users
 # who want to download-and-flash rather than build (no ARM toolchain / cyfaust+gen-dsp venv needed).
 # scripts/build_release.py does a clean build of each engine in RELEASE_ENGINES, names the artifacts
-# sk-<engine>-<version>.{bin,hex}, and adds SHA256SUMS, the bootloader, and FLASHING.md. The
+# sk-<engine>-<version>.bin (add WITH_HEX=1 for .hex too), and adds SHA256SUMS and FLASHING.md. The
 # script is stdlib-only, so plain python3 (no venv) suffices; override with REL_PY if needed.
 #   make dist                       # describe-derived version, curated engine set
 #   make dist VERSION=0.3.0         # explicit version (use the bare tag you will create)
 #   make dist RELEASE_ENGINES="reverb delay"   # subset
+#   make dist WITH_HEX=1            # also emit .hex (ST-Link / STM32CubeProgrammer users)
+# (the toggle is WITH_HEX, not HEX: the included core Makefile already defines HEX as its
+# objcopy-to-ihex command, so HEX is always non-empty and unusable as a flag here.)
 REL_PY ?= python3
 RELEASE_ENGINES ?=
 .PHONY: dist
 dist:
-	RELEASE_ENGINES="$(RELEASE_ENGINES)" $(REL_PY) scripts/build_release.py $(VERSION)
+	RELEASE_ENGINES="$(RELEASE_ENGINES)" $(REL_PY) scripts/build_release.py $(VERSION) $(if $(WITH_HEX),--hex,)
 
 # Upload an already-built dist/<version>/ as a GitHub release (requires `gh auth login`). Tag the
 # release with the SAME bare version so the in-binary banner matches. Run `make dist VERSION=x` first.
