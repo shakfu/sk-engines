@@ -4,6 +4,7 @@
 #include "memory/spsc_ring.h"
 #include "memory/audio_stream.h"
 #include "memory/wav_stream.h"
+#include "memory/raw_stream.h"
 #include "hw/fat_file.h"
 
 #include <atomic>
@@ -39,6 +40,13 @@ public:
     uint32_t loop_frames(DeckRef::Ref deck) const          override;
     bool exists(const char* path) const                    override;   // main loop (f_stat)
 
+    // Raw 16-bit-mono streaming for the radio engine (main loop). start_play_raw seeks-on-open to the
+    // free-running playhead position; frames_of/scan_bank build the bank index off the audio path.
+    bool start_play_raw(DeckRef::Ref deck, const char* path, uint32_t start_frame, bool loop) override;
+    uint32_t frames_of(const char* path) const override;
+    int  scan_bank(const char* dir, BankEntry* out, int max) const override;
+    int  read_text(const char* path, char* buf, int max) const override;
+
 private:
     enum class Mode : uint8_t { idle, play, record };
 
@@ -51,6 +59,7 @@ private:
         PlayStream      play;
         RecordStream    record;
         WavStreamReader reader;
+        RawStreamReader raw;                 // headerless 16-bit-mono source (radio engine)
         WavStreamWriter writer;
         FatFile         file;                // one file handle per deck (play XOR record)
     };

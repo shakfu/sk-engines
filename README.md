@@ -24,7 +24,9 @@ Current engines include:
 
 8. [gigaverb](docs/engines/gigaverb.md): stereo reverb authored in Max/MSP **gen~** and translated to C++ via [gen-dsp](https://github.com/shakfu/gen-dsp) (Tom Erbe's gigaverb)
 
-9. [passthrough](docs/engines/passthrough.md): minimal stereo passthrough engine demonstrating the platform API
+9. [radio](docs/engines/radio.md): dual virtual [RadioMusic](https://github.com/TomWhitwell/RadioMusic) - two independent virtual radios (one per deck) over a shared SD library of banks, with the signature free-running "virtual playhead" (each station seems to keep broadcasting while you are tuned elsewhere): PITCH = station tuning, POS = start offset, Alt+PITCH = bank, SIZE = varispeed, ENV = inter-station static, Play/gate = re-tune. Streams headerless raw 16-bit-mono `.raw` files (the original RadioMusic format, at 48 kHz)
+
+10. [passthrough](docs/engines/passthrough.md): minimal stereo passthrough engine demonstrating the platform API
 
 Engines can be authored in three ways:
 
@@ -80,6 +82,8 @@ The firmware is a fixed hardware/UI **platform** that hosts a swappable DSP **en
 - `make -j8 ENGINE=tape` — two independent mono **tape decks** (A/B) that play and record arbitrarily long takes to the SD card, removing the in-SDRAM loop-length cap. Per deck: Play pad = play, Alt+Play = record, PITCH = varispeed, Alt+POS = pan, MIX = volume, ENV = loop mode (none / loop / faded / Frippertronics), Alt+PITCH = tape-slot select (8 slots under `/tapes/`); the routing switch and mix fader place/blend the two decks. Streams mono float WAV through lock-free per-deck SDRAM rings drained by a main-loop FatFs pump.
 
 - `make -j8 ENGINE=shuttle` — a **buffer-based bipolar/reverse varispeed tape**: four in-RAM mono tracks (two per deck), all playing at once. PITCH is a capstan-speed knob (noon = stop, clockwise = forward to +2x, counter-clockwise = reverse to -2x); the Play pad snaps the focused track to unity. POS/SIZE set a per-track loop window, Alt+PITCH loads a `/tapes/` slot into RAM, the Rev pad swaps a deck's focused track, and the Seq pad re-aligns all four tracks to a common downbeat (declicked). Random-access in-SDRAM buffers (30 s/track) trade unbounded length for trivial reverse/freeze/looping.
+
+- `make -j8 ENGINE=radio` — a **dual virtual [RadioMusic](https://github.com/TomWhitwell/RadioMusic)**: two independent virtual radios (one per deck) browsing a shared `/radio/<bank>/` SD library, blended by the crossfader and routing switch. Its signature is the **free-running virtual playhead** — every station seems to keep broadcasting while you are tuned elsewhere (a per-deck frame clock seeks each opened station to `(clock + START) mod length`). **PITCH** tunes stations (+ V/oct CV), **POS** sets the start offset (+ CV), **Alt+PITCH** picks the bank, **SIZE** adds 0.5–2x varispeed, **ENV** brings in inter-station static, **Play pad / gate-in** re-tune. Streams the original RadioMusic file family — headerless **raw 16-bit-mono `.raw`** at 48 kHz (convert with [`scripts/convert_radio_audio.py`](scripts/convert_radio_audio.py)).
 
 - `make -j8 ENGINE=reverb` — a **route-aware** stereo reverb with **switchable algorithms** (a Dattorro plate and a Zita-rev1 hall, the **Reel/Slice/Drift switch** selects live; an optional gen~ gigaverb third voice with `REVERB_GIGAVERB=1`), generated from [Faust](https://faust.grame.fr) sources by cyfaust. **DoubleMono** routing runs an independent mono plate per deck; the heavy hall/gigaverb are single-voice (stereo-route only), a cap that keeps two delay-line-heavy voices off the SDRAM bus at once. Regenerate the kernels with `make faust-gen`.
 

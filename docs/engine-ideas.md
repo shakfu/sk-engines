@@ -39,8 +39,13 @@ The bare-metal budget (see [Feasibility](#feasibility-the-shared-constraints)) r
 | 9 | **Euclidean delay** | multi-tap delay whose taps sit on a Euclidean grid | yes (2 lines) | yes (subscribe) | `dsp/cpattern` + delay line | low |
 | 10 | **Spectral freeze** | STFT freeze/blur of the live input, pad = capture | yes (2 freezes) | no | [signalsmith](https://github.com/shakfu/nanodsp/tree/main/thirdparty/signalsmith) STFT | high |
 | 11 | **Grain cloud** | polyphonic grain cloud (per-grain pitch/pan/position), the granular the looper *isn't* | yes (2 clouds) | optional | GrainflowLib | med-high |
+| 12 | **Radio** *(shipped)* | dual virtual RadioMusic: two SD radios, free-running playhead, raw 16-bit stations | yes (2 radios) | no | SD streaming + raw codec | low |
 
 "Cost" is rough per-sample CPU + memory + integration effort, low to high. Tiers below group them.
+
+> **Shipped:** #12 **Radio** is implemented (`ENGINE=radio`) - it reuses the tape engine's `SPK_USE_STREAM`
+> streaming stack and adds a headerless raw-16-bit codec, a directory scan, and the free-running virtual
+> playhead. See [`docs/engines/radio.md`](engines/radio.md).
 
 ---
 

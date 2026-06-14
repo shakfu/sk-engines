@@ -91,6 +91,14 @@ elseif(ENGINE STREQUAL tape)
     # sets it for tape too; this define was the parity gap that left the CMake tape build unlinkable).
     set(ENGINE_DEFINES SPK_USE_STREAM)
     set(ENGINE_SOURCES src/engine/tape/tape_engine.cpp)
+elseif(ENGINE STREQUAL radio)
+    set(ENGINE_DEFINE SPK_ENGINE_RADIO)
+    # Dual virtual RadioMusic. Streams raw 16-bit-mono ".raw" stations from SD via the shared streaming
+    # service in src/hw/ (stream_deck.cpp, fat_file.cpp, buffer.sdram.cpp -- HW_SOURCES glob), bodies
+    # guarded by SPK_USE_STREAM (same gate as tape/shuttle); without it the link fails on undefined
+    # StreamDeck/FatFile symbols.
+    set(ENGINE_DEFINES SPK_USE_STREAM)
+    set(ENGINE_SOURCES src/engine/radio/radio_engine.cpp)
 elseif(ENGINE STREQUAL reverb)
     set(ENGINE_DEFINE SPK_ENGINE_REVERB)
     # Stereo reverb (Dattorro plate / Zita hall). Its DSP is the cyfaust-generated kernels
@@ -124,7 +132,7 @@ elseif(ENGINE STREQUAL gigaverb)
     set(ENGINE_INCLUDES ${GEN_DIR} ${GEN_DIR}/gen ${GEN_DIR}/gen/gen_dsp)
     set(ENGINE_SOURCES ${GEN_DIR}/_ext_daisy.cpp src/engine/gen/genlib_arena.cpp)
 else()
-    message(FATAL_ERROR "Unknown ENGINE '${ENGINE}' - use granular, passthrough, delay, edrums, reso, tape, reverb, shuttle, or gigaverb")
+    message(FATAL_ERROR "Unknown ENGINE '${ENGINE}' - use granular, passthrough, delay, edrums, reso, tape, reverb, shuttle, radio, or gigaverb")
 endif()
 
 # Source list = the Makefile's CPP_SOURCES, with the wildcard dirs expanded the same way.

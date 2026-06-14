@@ -36,6 +36,13 @@ C_DEFS += -DSPK_ENGINE_TAPE
 # byte-identical. SPK_USE_STREAM is the feature flag any engine needing SD streaming opts into.
 C_DEFS += -DSPK_USE_STREAM
 ENGINE_SOURCES = src/engine/tape/tape_engine.cpp
+else ifeq ($(ENGINE), radio)
+C_DEFS += -DSPK_ENGINE_RADIO
+# Dual virtual RadioMusic. Streams headerless raw 16-bit-mono ".raw" stations from SD via the shared
+# streaming service (stream_deck.cpp + fat_file.cpp, guarded by SPK_USE_STREAM like tape/shuttle), so
+# every non-streaming engine stays byte-identical.
+C_DEFS += -DSPK_USE_STREAM
+ENGINE_SOURCES = src/engine/radio/radio_engine.cpp
 else ifeq ($(ENGINE), reverb)
 C_DEFS += -DSPK_ENGINE_REVERB
 # Stereo reverb (Dattorro plate / Zita hall) whose DSP is Faust-generated. The cyfaust-generated kernels
@@ -105,7 +112,7 @@ GEN_INC = -I$(GEN_DIR) -I$(GEN_DIR)/gen -I$(GEN_DIR)/gen/gen_dsp
 ENGINE_SOURCES = $(GEN_DIR)/_ext_daisy.cpp src/engine/gen/genlib_arena.cpp
 # <<< gen:gigaverb <<<
 else
-$(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', 'edrums', 'reso', 'tape', 'reverb', or 'shuttle')
+$(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', 'edrums', 'reso', 'tape', 'reverb', 'shuttle', or 'radio')
 endif
 
 # Opt-in (make ... METER=1): enable the on-device CPU load meter (app.cpp's CpuLoadMeter). It writes
@@ -220,7 +227,7 @@ all: check-boundary
 
 # One-shot variant flash: clean -> build -> flash over DFU. Put the device in DFU mode first
 # (hold Reset ~3s until the bottom pad LEDs breathe white), then `make granular` / `make passthrough`.
-.PHONY: engine-granular engine-passthrough engine-delay engine-edrums engine-reso engine-tape engine-shuttle engine-reverb
+.PHONY: engine-granular engine-passthrough engine-delay engine-edrums engine-reso engine-tape engine-shuttle engine-reverb engine-radio
 engine-granular:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=granular
@@ -255,6 +262,11 @@ engine-shuttle:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=shuttle
 	$(MAKE) ENGINE=shuttle program-dfu
+
+engine-radio:
+	$(MAKE) clean
+	$(MAKE) -j8 ENGINE=radio
+	$(MAKE) ENGINE=radio program-dfu
 
 # Flash the Faust-generated reverb engine (Dattorro plate / Zita hall).
 engine-reverb:

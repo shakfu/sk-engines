@@ -31,6 +31,9 @@
 #elif defined(SPK_ENGINE_SHUTTLE)
   #include "engine/shuttle/shuttle_engine.h"
   namespace spotykach { using ActiveEngine = ShuttleEngine; }
+#elif defined(SPK_ENGINE_RADIO)
+  #include "engine/radio/radio_engine.h"
+  namespace spotykach { using ActiveEngine = RadioEngine; }
 // gen~ engines (SPK_ENGINE_GEN_*) are appended below by scripts/gen_engine.py.
 // >>> gen:gigaverb >>>
 #elif defined(SPK_ENGINE_GIGAVERB)
@@ -38,5 +41,5 @@
   namespace spotykach { using ActiveEngine = GigaverbEngine; }
 // <<< gen:gigaverb <<<
 #else
-  #error "No engine selected: build with ENGINE=granular (default), passthrough, delay, edrums, reso, tape, reverb, or shuttle"
+  #error "No engine selected: build with ENGINE=granular (default), passthrough, delay, edrums, reso, tape, reverb, shuttle, or radio"
 #endif

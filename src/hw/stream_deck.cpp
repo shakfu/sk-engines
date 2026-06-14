@@ -66,6 +66,71 @@ bool StreamDeck::exists(const char* path) const {
     return f_stat(path, &fno) == FR_OK;   // f_stat uses no FIL handle - safe alongside an open deck file
 }
 
+// Open a headerless raw 16-bit-mono station and stream forward from `start_frame` (the free-running
+// playhead jump). Looping rewinds at EOF so a tuned-in station repeats. f_stat gives the length with no
+// header to parse; seek-on-open is a single f_lseek before the first pump.
+bool StreamDeck::start_play_raw(DeckRef::Ref deck, const char* path, uint32_t start_frame, bool loop) {
+    Deck& d = _d[deck];
+    if (d.mode.load(std::memory_order_acquire) != Mode::idle || d.finalizing) return false;
+    FILINFO fno;
+    if (f_stat(path, &fno) != FR_OK) return false;                  // missing station
+    if (!d.file.open_read(path)) return false;
+    if (!d.raw.begin(&d.file, static_cast<uint32_t>(fno.fsize))) { d.file.close(); return false; }  // empty
+    d.raw.seek_to_frame(start_frame);                               // jump to the virtual position
+    d.play.set_loop(loop);
+    d.play.start(&d.raw);
+    d.mode.store(Mode::play, std::memory_order_release);            // ISR may now consume
+    return true;
+}
+
+uint32_t StreamDeck::frames_of(const char* path) const {
+    FILINFO fno;
+    if (f_stat(path, &fno) != FR_OK) return 0;
+    return static_cast<uint32_t>(fno.fsize) / RawStreamReader::kBytesPerFrame;
+}
+
+// Enumerate the `.raw` files in `dir` (f_opendir/f_readdir), filling up to `max` BankEntry slots with
+// each station's short name + frame length. 8.3 names only (longer names are skipped) so the stored
+// name is a re-openable FatFs short name and the index stays bounded. Main-loop only.
+int StreamDeck::scan_bank(const char* dir, BankEntry* out, int max) const {
+    DIR dp;
+    if (f_opendir(&dp, dir) != FR_OK) return 0;
+    FILINFO fno;
+    int count = 0;
+    while (count < max && f_readdir(&dp, &fno) == FR_OK && fno.fname[0] != 0) {
+        if (fno.fattrib & AM_DIR) continue;                         // skip subdirectories
+        const char* name = fno.fname;
+        // measure name length and locate the last '.'; require a short (<=12 char) name ending in .raw
+        int len = 0; const char* dot = nullptr;
+        for (const char* p = name; *p; ++p) { if (*p == '.') dot = p; ++len; }
+        if (len == 0 || len > 12 || !dot) continue;
+        const char* e = dot + 1;
+        const bool is_raw = (e[0] == 'r' || e[0] == 'R') && (e[1] == 'a' || e[1] == 'A') &&
+                            (e[2] == 'w' || e[2] == 'W') && e[3] == '\0';
+        if (!is_raw) continue;
+        if (fno.fsize < RawStreamReader::kBytesPerFrame) continue;  // empty/too-short file
+        int j = 0;
+        for (; name[j] && j < 12; ++j) out[count].name[j] = name[j];
+        out[count].name[j] = '\0';
+        out[count].frames = static_cast<uint32_t>(fno.fsize) / RawStreamReader::kBytesPerFrame;
+        ++count;
+    }
+    f_closedir(&dp);
+    return count;
+}
+
+// Read a small text file (the radio's on-card rate.txt) into `buf`, NUL-terminated. A local FatFile,
+// opened/closed here - read at boot before any deck streams, so it never races a deck file. Main-loop only.
+int StreamDeck::read_text(const char* path, char* buf, int max) const {
+    if (max <= 0) return 0;
+    FatFile f;
+    if (!f.open_read(path)) { buf[0] = '\0'; return 0; }   // missing -> empty
+    const uint32_t got = f.read(buf, static_cast<uint32_t>(max - 1));
+    f.close();
+    buf[got] = '\0';
+    return static_cast<int>(got);
+}
+
 void StreamDeck::process() {
     for (auto& d : _d) _pump(d);   // service each deck's slow SD I/O sequentially (shared scratch)
 }

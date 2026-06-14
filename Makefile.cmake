@@ -33,7 +33,7 @@ endif
 
 .PHONY: all build configure clean check-boundary program-dfu program-boot \
         engine-granular engine-passthrough engine-delay engine-edrums engine-reso engine-tape \
-        engine-reverb engine-shuttle engine-gigaverb \
+        engine-reverb engine-shuttle engine-radio engine-gigaverb \
         faust-gen gen-engines test-scripts test-scripts-deps
 
 all: build
@@ -86,6 +86,8 @@ engine-reverb:
 	$(MAKE) -f $(THIS) ENGINE=reverb build program-dfu
 engine-shuttle:
 	$(MAKE) -f $(THIS) ENGINE=shuttle build program-dfu
+engine-radio:
+	$(MAKE) -f $(THIS) ENGINE=radio build program-dfu
 engine-gigaverb:
 	$(MAKE) -f $(THIS) ENGINE=gigaverb build program-dfu
 

@@ -20,6 +20,14 @@ namespace spotykach {
 //  - start_play / start_record / stop are control ops called from the MAIN LOOP only (e.g. the engine's
 //    on_play_pad/on_record_pad handlers, which the UI invokes outside the audio ISR). They touch FatFs.
 //  - is_playing / is_recording are cheap state reads, safe from either side.
+// One enumerated station in a radio bank (scan_bank below): its 8.3-safe filename (so the path stays
+// small/bounded) and its length in frames (filesize / 2, signed-16 mono). Files with longer names are
+// skipped by the scanner, so `name` is always a re-openable FatFs short name.
+struct BankEntry {
+    char     name[13];   // up to 12 chars + NUL (8.3)
+    uint32_t frames;     // length in source frames (filesize / 2)
+};
+
 struct IStreamDeck {
     virtual ~IStreamDeck() = default;
 
@@ -47,6 +55,25 @@ struct IStreamDeck {
     // Main-loop file probe (f_stat): does `path` exist on the card? Used to show recorded-vs-empty
     // slots. Not for the audio path.
     virtual bool     exists(const char* path) const = 0;
+
+    // --- Raw playback (RadioMusic radio engine) --------------------------------------------------
+    // Default no-op bodies (Strategy A): only the real StreamDeck overrides them; tape and host stubs
+    // need nothing. All main-loop only (they touch FatFs), like start_play.
+    //
+    // Open a HEADERLESS raw 16-bit-mono file and begin streaming forward from frame `start_frame`
+    // (seek-on-open - the free-running-playhead jump). `loop` rewinds at EOF instead of finishing.
+    // False if the deck is busy or the file is missing.
+    virtual bool     start_play_raw(DeckRef::Ref, const char* /*path*/, uint32_t /*start_frame*/,
+                                    bool /*loop*/) { return false; }
+    // Length of a raw file in frames (f_stat filesize / 2; 0 if missing). No file open - used to index a
+    // bank's station lengths for the modulo math. Main-loop only.
+    virtual uint32_t frames_of(const char* /*path*/) const { return 0; }
+    // Enumerate the `.raw` stations in directory `dir` (f_opendir/f_readdir), filling up to `max`
+    // BankEntry slots (8.3 name + frame length); returns the count found. Main-loop only.
+    virtual int      scan_bank(const char* /*dir*/, BankEntry* /*out*/, int /*max*/) const { return 0; }
+    // Read up to max-1 bytes of a small text file into `buf` and NUL-terminate; returns bytes read (0 if
+    // missing/empty). Used to read the radio's on-card rate.txt. Main-loop only; not for audio data.
+    virtual int      read_text(const char* /*path*/, char* /*buf*/, int /*max*/) const { return 0; }
 };
 
 } // namespace spotykach

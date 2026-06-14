@@ -45,6 +45,7 @@ REVERB_SRC  = $(ROOT)/src/engine/reverb/reverb_engine.cpp
 TAPE_SRC    = $(ROOT)/src/engine/tape/tape_engine.cpp
 # The buffer-based shuttle engine (4 in-RAM tape tracks; bipolar/reverse varispeed). Self-contained.
 SHUTTLE_SRC = $(ROOT)/src/engine/shuttle/shuttle_engine.cpp
+RADIO_SRC   = $(ROOT)/src/engine/radio/radio_engine.cpp
 # The SPK_REVERB_GIGAVERB build folds the gen~ "gigaverb" export into ReverbEngine as a third voice.
 # It needs the gen~ glue (the export wrapper + the arena-bound genlib runtime), its include dirs, and
 # the same defines the firmware build sets. Mirrors the ENGINE=reverb REVERB_GIGAVERB=1 Makefile branch.
@@ -72,11 +73,12 @@ TEST_REVERB  = $(BUILD)/test_reverb
 TEST_TAPE    = $(BUILD)/test_tape
 TEST_STREAM  = $(BUILD)/test_stream
 TEST_SHUTTLE = $(BUILD)/test_shuttle
+TEST_RADIO   = $(BUILD)/test_radio
 TEST_REVERB_GIGA = $(BUILD)/test_reverb_giga
 TEST_DELAY   = $(BUILD)/test_delay
 BENCH_REVERB     = $(BUILD)/bench_reverb
 
-.PHONY: all clean run test test-granular test-edrums test-reso test-reverb test-reverb-giga test-delay test-tape test-stream test-shuttle bench-reverb
+.PHONY: all clean run test test-granular test-edrums test-reso test-reverb test-reverb-giga test-delay test-tape test-stream test-shuttle test-radio bench-reverb
 all: $(TARGET)
 
 $(TARGET): $(SRC) | $(BUILD)
@@ -104,6 +106,11 @@ $(TEST_DELAY): test_delay.cpp $(LIB_SRC) $(DELAY_SRC) $(ROOT)/src/engine/delay/d
 
 $(TEST_SHUTTLE): test_shuttle.cpp $(LIB_SRC) $(SHUTTLE_SRC) $(ROOT)/src/engine/shuttle/shuttle_engine.h | $(BUILD)
 	$(CXX) $(CXXFLAGS) test_shuttle.cpp $(LIB_SRC) $(SHUTTLE_SRC) -o $@
+
+# Radio engine + the headerless raw-stream codec (raw_stream.h, header pulled by the test).
+$(TEST_RADIO): test_radio.cpp $(LIB_SRC) $(RADIO_SRC) $(ROOT)/src/engine/radio/radio_engine.h \
+               $(ROOT)/src/memory/raw_stream.h | $(BUILD)
+	$(CXX) $(CXXFLAGS) test_radio.cpp $(LIB_SRC) $(RADIO_SRC) -o $@
 
 # Verifies the gigaverb-as-third-voice integration (SPK_REVERB_GIGAVERB). Not in the default `test`
 # aggregate: it compiles the gen~ runtime, which the lean reverb build deliberately excludes.
@@ -134,7 +141,7 @@ run: $(TARGET)
 
 # `test` runs both engine harnesses. Both inject the transport via EngineContext (granular drives the
 # real platform Transport; edrums uses a small stub ITransport) - the post-transport-decoupling way.
-test: test-granular test-edrums test-reso test-reverb test-reverb-giga test-delay test-tape test-stream test-shuttle
+test: test-granular test-edrums test-reso test-reverb test-reverb-giga test-delay test-tape test-stream test-shuttle test-radio
 
 test-granular: $(TEST)
 	./$(TEST)
@@ -162,6 +169,9 @@ test-stream: $(TEST_STREAM)
 
 test-shuttle: $(TEST_SHUTTLE)
 	./$(TEST_SHUTTLE)
+
+test-radio: $(TEST_RADIO)
+	./$(TEST_RADIO)
 
 clean:
 	rm -rf $(BUILD)

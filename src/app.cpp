@@ -14,7 +14,7 @@
 #include "memory/storage.h"
 #include "expose.h"
 #if defined(SPK_USE_STREAM)
-#include "hw/stream_deck.h"   // SD streaming service (any SPK_USE_STREAM engine: tape, shuttle)
+#include "hw/stream_deck.h"   // SD streaming service (any SPK_USE_STREAM engine: tape, shuttle, radio)
 #endif
 #ifdef METER
 #include "hid/usb.h"   // daisy::UsbHandle - direct non-blocking CDC for the CPU-load meter
