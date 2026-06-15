@@ -2,6 +2,7 @@
 // SPOTYKACH ///////////////////////////////////////////////
 #include "engine/reverb/reverb_engine.h"
 #include "engine/arena.h"
+#include "engine/faust/faust_capture.h"  // shared faustgen::CaptureUI / Bind / Role
 
 // The generated kernels. Each declares `class mydsp` inside namespace spotykach::rv_<name>; the
 // faust_arch.h base types (dsp/UI/Meta, pulled in by these headers) live in the global namespace.
@@ -26,54 +27,13 @@ namespace {
 // platform's physical knobs map onto them (see ReverbEngine::set_param). Order matches ReverbEngine::_v[].
 enum Knob { K_Mix = 0, K_Decay, K_Damp, K_Tone, K_SizeA, K_SizeB, K_Count };
 
-// A knob role bound to up to two Faust control zones (Dattorro drives its two diffusion sliders from
-// one knob). The 0..1 knob is linear-mapped into the slider's native [lo,hi] captured at bind time,
-// so each reverb's ranges (Dattorro 0..1, Zita's RT60 seconds, damping Hz, ...) just work.
-struct Role {
-    FAUSTFLOAT* z[2] = { nullptr, nullptr };
-    float lo = 0.f, hi = 1.f;
-    bool  inv = false; // map v=1 -> lo instead of hi (for sliders whose high end is the "off" end)
-    void set(float v) const {
-        const float x = inv ? hi - v * (hi - lo) : lo + v * (hi - lo);
-        if (z[0]) *z[0] = x;
-        if (z[1]) *z[1] = x;
-    }
-};
-
-// One (box,label) -> (role,slot) mapping. `section` null = match the label in any box; non-null =
-// only inside that box (Dattorro reuses "Diffusion 1/2" in both its Input and Feedback boxes). `invert`
-// flips the knob->slider direction: Zita's "Wet/Dry Mix" runs +1=dry..-1=wet, opposite Dattorro's
-// "Dry/Wet Mix", so the wet knob must invert to keep "knob up = more wet" across algorithms.
-struct Bind { const char* section; const char* label; Knob role; int slot; bool invert; };
-
-// Generic zone-capture UI: walks the kernel's buildUserInterface, fills the Role table from a per-
-// reverb Bind list (matching by label, and box where required), and captures "Level" separately so
-// the engine can hold output gain fixed.
-struct CaptureUI : public UI {
-    Role*        roles;
-    const Bind*  binds;
-    int          nbinds;
-    FAUSTFLOAT** level_out; // optional; nullptr if the reverb has no "Level"
-    const char*  section = "";
-
-    void openTabBox       (const char* l) override { section = l; }
-    void openHorizontalBox(const char* l) override { section = l; }
-    void openVerticalBox  (const char* l) override { section = l; }
-
-    void add(const char* label, FAUSTFLOAT* z, float lo, float hi) {
-        if (level_out && std::strcmp(label, "Level") == 0) { *level_out = z; return; }
-        for (int i = 0; i < nbinds; i++) {
-            const Bind& b = binds[i];
-            if (std::strcmp(b.label, label) != 0) continue;
-            if (b.section && std::strcmp(b.section, section) != 0) continue;
-            Role& r = roles[b.role];
-            r.z[b.slot] = z; r.lo = lo; r.hi = hi; r.inv = b.invert;
-        }
-    }
-    void addVerticalSlider  (const char* l, FAUSTFLOAT* z, FAUSTFLOAT, FAUSTFLOAT mn, FAUSTFLOAT mx, FAUSTFLOAT) override { add(l, z, mn, mx); }
-    void addHorizontalSlider(const char* l, FAUSTFLOAT* z, FAUSTFLOAT, FAUSTFLOAT mn, FAUSTFLOAT mx, FAUSTFLOAT) override { add(l, z, mn, mx); }
-    void addNumEntry        (const char* l, FAUSTFLOAT* z, FAUSTFLOAT, FAUSTFLOAT mn, FAUSTFLOAT mx, FAUSTFLOAT) override { add(l, z, mn, mx); }
-};
+// The zone-capture machinery (Role / Bind / CaptureUI) is shared by every Faust-backed engine and lives
+// in engine/faust/faust_capture.h (faustgen::). Bind.role is a generic int index into the Role table;
+// reverb's unscoped Knob enum converts to it directly. The shared CaptureUI keeps the optional "Level"
+// pin reverb relies on (level_out), so this engine's behaviour is unchanged.
+using faustgen::Role;
+using faustgen::Bind;
+using CaptureUI = faustgen::CaptureUI<false>; // reverb doesn't read slider defaults; skip that capture
 
 } // namespace
 

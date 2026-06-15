@@ -1,0 +1,46 @@
+{
+  "engine": "chorus",
+  "title": "Chorus - stereo chorus",
+  "subtitle": "Faust demo engine (.dsp + manifest, no hand-written C++)",
+  "knobs": {
+    "Pitch": "-",
+    "Position": "-",
+    "Size": "delay",
+    "Envelope": "-",
+    "Mix (SOS)": "mix",
+    "Cycle": "rate",
+    "Glow": "depth"
+  },
+  "pads": {
+    "Play": "-",
+    "Reverse": "-",
+    "Grit": "-",
+    "Flux": "-",
+    "Seq": "-"
+  },
+  "ring": "output level meter",
+  "crossfade": "-",
+  "switches": {
+    "Mode (L/C/R)": "-",
+    "Routing (L/C/R)": "-",
+    "CV target (U/C/D)": "-",
+    "Out trims A/B": "output trims"
+  },
+  "transport": {
+    "Tap": "-",
+    "Spot": "-"
+  },
+  "cv": {
+    "Size/Pos A/B": "-",
+    "Mix A/B": "-",
+    "V/Oct A/B": "-",
+    "Crossfade CV": "-"
+  },
+  "gates": {
+    "Gate in A/B": "-",
+    "Gate out A/B": "-"
+  },
+  "mod_midi": {
+    "Mod CV out A/B": "-"
+  }
+}

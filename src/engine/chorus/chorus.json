@@ -1,0 +1,16 @@
+{
+  "engine": "chorus",
+  "backend": "faust",
+  "title": "Chorus - stereo chorus",
+  "subtitle": "Faust demo engine (.dsp + manifest, no hand-written C++)",
+
+  "knobs": {
+    "Cycle":     "rate",
+    "Glow":      "depth",
+    "Size":      "delay",
+    "Mix (SOS)": "mix"
+  },
+
+  "capabilities": [],
+  "features": { "meter": true, "color": "0x33ccff" }
+}

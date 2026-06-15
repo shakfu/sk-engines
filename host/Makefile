@@ -74,11 +74,12 @@ TEST_TAPE    = $(BUILD)/test_tape
 TEST_STREAM  = $(BUILD)/test_stream
 TEST_SHUTTLE = $(BUILD)/test_shuttle
 TEST_RADIO   = $(BUILD)/test_radio
+TEST_CHORUS  = $(BUILD)/test_chorus
 TEST_REVERB_GIGA = $(BUILD)/test_reverb_giga
 TEST_DELAY   = $(BUILD)/test_delay
 BENCH_REVERB     = $(BUILD)/bench_reverb
 
-.PHONY: all clean run test test-granular test-edrums test-reso test-reverb test-reverb-giga test-delay test-tape test-stream test-shuttle test-radio bench-reverb
+.PHONY: all clean run test test-granular test-edrums test-reso test-reverb test-reverb-giga test-delay test-tape test-stream test-shuttle test-radio test-chorus bench-reverb
 all: $(TARGET)
 
 $(TARGET): $(SRC) | $(BUILD)
@@ -112,6 +113,12 @@ $(TEST_RADIO): test_radio.cpp $(LIB_SRC) $(RADIO_SRC) $(ROOT)/src/engine/radio/r
                $(ROOT)/src/memory/raw_stream.h | $(BUILD)
 	$(CXX) $(CXXFLAGS) test_radio.cpp $(LIB_SRC) $(RADIO_SRC) -o $@
 
+# Generated Faust `chorus` engine - header-only (the cyfaust kernel + the shared FaustEngine wrapper),
+# so it links against LIB_SRC with no extra engine .cpp.
+$(TEST_CHORUS): test_chorus.cpp $(LIB_SRC) $(ROOT)/src/engine/chorus/chorus_engine.h \
+                $(ROOT)/src/engine/chorus/faust_kernel_chorus.h | $(BUILD)
+	$(CXX) $(CXXFLAGS) test_chorus.cpp $(LIB_SRC) -o $@
+
 # Verifies the gigaverb-as-third-voice integration (SPK_REVERB_GIGAVERB). Not in the default `test`
 # aggregate: it compiles the gen~ runtime, which the lean reverb build deliberately excludes.
 $(TEST_REVERB_GIGA): test_reverb_giga.cpp $(LIB_SRC) $(REVERB_SRC) $(GIGA_SRC) \
@@ -141,7 +148,7 @@ run: $(TARGET)
 
 # `test` runs both engine harnesses. Both inject the transport via EngineContext (granular drives the
 # real platform Transport; edrums uses a small stub ITransport) - the post-transport-decoupling way.
-test: test-granular test-edrums test-reso test-reverb test-reverb-giga test-delay test-tape test-stream test-shuttle test-radio
+test: test-granular test-edrums test-reso test-reverb test-reverb-giga test-delay test-tape test-stream test-shuttle test-radio test-chorus
 
 test-granular: $(TEST)
 	./$(TEST)
@@ -172,6 +179,9 @@ test-shuttle: $(TEST_SHUTTLE)
 
 test-radio: $(TEST_RADIO)
 	./$(TEST_RADIO)
+
+test-chorus: $(TEST_CHORUS)
+	./$(TEST_CHORUS)
 
 clean:
 	rm -rf $(BUILD)

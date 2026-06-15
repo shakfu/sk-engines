@@ -131,6 +131,11 @@ elseif(ENGINE STREQUAL gigaverb)
     set(ENGINE_OPTIONS -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter)
     set(ENGINE_INCLUDES ${GEN_DIR} ${GEN_DIR}/gen ${GEN_DIR}/gen/gen_dsp)
     set(ENGINE_SOURCES ${GEN_DIR}/_ext_daisy.cpp src/engine/gen/genlib_arena.cpp)
+# >>> faust:chorus >>>
+elseif(ENGINE STREQUAL chorus)
+    set(ENGINE_DEFINE SPK_ENGINE_CHORUS)
+    set(ENGINE_SOURCES)
+# <<< faust:chorus <<<
 else()
     message(FATAL_ERROR "Unknown ENGINE '${ENGINE}' - use granular, passthrough, delay, edrums, reso, tape, reverb, shuttle, radio, or gigaverb")
 endif()

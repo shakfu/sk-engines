@@ -111,8 +111,15 @@ GEN_DIR = src/engine/gigaverb
 GEN_INC = -I$(GEN_DIR) -I$(GEN_DIR)/gen -I$(GEN_DIR)/gen/gen_dsp
 ENGINE_SOURCES = $(GEN_DIR)/_ext_daisy.cpp src/engine/gen/genlib_arena.cpp
 # <<< gen:gigaverb <<<
+# >>> faust:chorus >>> (managed by scripts/gen_faust_engine.py)
+else ifeq ($(ENGINE), chorus)
+C_DEFS += -DSPK_ENGINE_CHORUS
+# Faust engine generated from chorus.dsp + chorus.json - header-only (the cyfaust kernel + the
+# shared FaustEngine<Traits> wrapper), so there is no engine .cpp.
+ENGINE_SOURCES =
+# <<< faust:chorus <<<
 else
-$(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', 'edrums', 'reso', 'tape', 'reverb', 'shuttle', or 'radio')
+$(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', 'edrums', 'reso', 'tape', 'reverb', 'shuttle', 'radio', or 'chorus')
 endif
 
 # Opt-in (make ... METER=1): enable the on-device CPU load meter (app.cpp's CpuLoadMeter). It writes
@@ -227,7 +234,7 @@ all: check-boundary
 
 # One-shot variant flash: clean -> build -> flash over DFU. Put the device in DFU mode first
 # (hold Reset ~3s until the bottom pad LEDs breathe white), then `make granular` / `make passthrough`.
-.PHONY: engine-granular engine-passthrough engine-delay engine-edrums engine-reso engine-tape engine-shuttle engine-reverb engine-radio
+.PHONY: engine-granular engine-passthrough engine-delay engine-edrums engine-reso engine-tape engine-shuttle engine-reverb engine-radio engine-chorus
 engine-granular:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=granular
@@ -268,6 +275,19 @@ engine-radio:
 	$(MAKE) -j8 ENGINE=radio
 	$(MAKE) ENGINE=radio program-dfu
 
+engine-chorus:
+	$(MAKE) clean
+	$(MAKE) -j8 ENGINE=chorus
+	$(MAKE) ENGINE=chorus program-dfu
+
+# Generate a Faust engine from a .dsp + JSON manifest (scripts/gen_faust_engine.py): builds the cyfaust
+# kernel, emits the FaustEngine<Traits> wrapper, and wires the build + control diagram. See
+# docs/dev/engine-gen.md.   usage:  make engine-gen MANIFEST=src/engine/<name>/<name>.json
+.PHONY: engine-gen
+engine-gen:
+	@test -n "$(MANIFEST)" || { echo "usage: make engine-gen MANIFEST=src/engine/<name>/<name>.json"; exit 1; }
+	$(GEN_PY) scripts/gen_faust_engine.py $(MANIFEST)
+
 # Flash the Faust-generated reverb engine (Dattorro plate / Zita hall).
 engine-reverb:
 	$(MAKE) clean
@@ -285,7 +305,7 @@ engine-reverb:
 # && .venv/bin/pip install cyfaust`. Override the interpreter with `CYFAUST_PY=/path/to/python` to pin a
 # different libfaust version. Add a kernel: drop <name>.dsp in its engine dir, add a spec here, and bind it.
 CYFAUST_PY ?= .venv/bin/python
-FAUST_KERNELS ?= src/engine/reverb:rv_:dattorro src/engine/reverb:rv_:zita src/engine/tape:tfx_:tapefx
+FAUST_KERNELS ?= src/engine/reverb:rv_:dattorro src/engine/reverb:rv_:zita src/engine/tape:tfx_:tapefx src/engine/chorus:fx_:chorus
 .PHONY: faust-gen
 faust-gen:
 	@for spec in $(FAUST_KERNELS); do \

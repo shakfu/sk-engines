@@ -40,6 +40,11 @@
   #include "engine/gigaverb/gigaverb_engine.h"
   namespace spotykach { using ActiveEngine = GigaverbEngine; }
 // <<< gen:gigaverb <<<
+// >>> faust:chorus >>>
+#elif defined(SPK_ENGINE_CHORUS)
+  #include "engine/chorus/chorus_engine.h"
+  namespace spotykach { using ActiveEngine = ChorusEngine; }
+// <<< faust:chorus <<<
 #else
-  #error "No engine selected: build with ENGINE=granular (default), passthrough, delay, edrums, reso, tape, reverb, shuttle, or radio"
+  #error "No engine selected: build with ENGINE=granular (default), passthrough, delay, edrums, reso, tape, reverb, shuttle, radio, or chorus"
 #endif
