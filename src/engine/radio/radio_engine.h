@@ -70,6 +70,9 @@ private:
     static constexpr uint32_t kErrColor    = 0xff6000;  // amber: a station failed to open / empty bank
     static constexpr uint32_t kErrFlashMs  = 1200;
     static constexpr uint32_t kDebounceMs  = 250;       // ignore a same-deck RESET retrigger within this
+    static constexpr float    kStationHyst = 0.25f;     // station-select deadband (fraction of a station
+                                                        // width) so CV/pot noise can't chatter the target
+                                                        // (oscillation needs > 2*this to flip back)
     static constexpr uint32_t kSettleMs    = 180;       // clean-switch settle when static is low
     static constexpr float    kStaticThresh = 0.15f;    // ENV >= this -> switch immediately (dial tuning)
     static constexpr float    kStaticDec   = 0.0002f;   // per-sample static-burst decay (~100 ms)
@@ -84,7 +87,7 @@ private:
     float _static_sample(int i);            // one filtered-noise sample for deck i
     int   _quant_station(int i) const;      // knob+CV -> station index (-1 if the bank is empty)
     void  _do_open(DeckRef::Ref d, int station, uint32_t now);  // (re)open a station at its live offset
-    bool  _settle_ready(int i, int desired, uint32_t now);      // low-static switch settle timer
+    void  _arm_reset(DeckRef::Ref d);       // debounced RESET request (Play pad / gate) -> _retune
     void  _roll_random_pans();              // GenerativeStereo per-deck random pans
     const char* _bank_dir(int i);           // "radio/<bank>" for scan_bank
     const char* _path(int i, int station);  // "radio/<bank>/<name>" for start_play_raw
@@ -139,7 +142,7 @@ private:
 
     bool     _aux_held[2]  = { false, false };
     uint32_t _err_until[2] = { 0, 0 };
-    uint32_t _last_reset_ms[2] = { 0, 0 };
+    uint32_t _last_reset_ms[2] = { 0, 0 };   // RESET (Play pad / gate) debounce, per deck
 
     char _dbuf[24];   // scratch: "radio/<bank>"
     char _pbuf[40];   // scratch: "radio/<bank>/<name>"

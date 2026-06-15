@@ -9,6 +9,10 @@
 
 using namespace spotykach;
 
+// Minimum size for a real radio station: drops macOS AppleDouble metadata stubs (`._*.raw`, ~4 KB) and
+// any empty/truncated file. No real station is a fraction of a second; 32 KB ~= 0.34 s of mono int16 @48k.
+static constexpr uint32_t kMinStationBytes = 32u * 1024u;
+
 void StreamDeck::init(const Mem& m) {
     _d[0].ring.init(m.ring_a, m.ring_a_bytes);
     _d[1].ring.init(m.ring_b, m.ring_b_bytes);
@@ -92,14 +96,23 @@ uint32_t StreamDeck::frames_of(const char* path) const {
 // Enumerate the `.raw` files in `dir` (f_opendir/f_readdir), filling up to `max` BankEntry slots with
 // each station's short name + frame length. 8.3 names only (longer names are skipped) so the stored
 // name is a re-openable FatFs short name and the index stays bounded. Main-loop only.
+//
+// macOS filter: copying files to a FAT card in Finder writes, next to every `NAME.raw`, a hidden
+// AppleDouble companion `._NAME.raw` (~4 KB of metadata, NOT audio) plus `.DS_Store`. The companion ends
+// in `.raw`, so without filtering it would be indexed as a bogus tiny "station" that loops a sliver of
+// garbage (a fast stutter, pitched by the resampler) - and since there is one per real file, sweeping
+// the tuning knob alternates real/garbage. We drop them three ways: the FAT hidden/system attribute
+// (macOS sets AM_HID on dot-prefixed files), a leading-dot name, and a minimum size (no real station is
+// a fraction of a second; an AppleDouble stub is well under that).
 int StreamDeck::scan_bank(const char* dir, BankEntry* out, int max) const {
     DIR dp;
     if (f_opendir(&dp, dir) != FR_OK) return 0;
     FILINFO fno;
     int count = 0;
     while (count < max && f_readdir(&dp, &fno) == FR_OK && fno.fname[0] != 0) {
-        if (fno.fattrib & AM_DIR) continue;                         // skip subdirectories
+        if (fno.fattrib & (AM_DIR | AM_HID | AM_SYS)) continue;      // skip dirs + macOS hidden dotfiles
         const char* name = fno.fname;
+        if (name[0] == '.') continue;                               // skip .DS_Store / ._* (when visible)
         // measure name length and locate the last '.'; require a short (<=12 char) name ending in .raw
         int len = 0; const char* dot = nullptr;
         for (const char* p = name; *p; ++p) { if (*p == '.') dot = p; ++len; }
@@ -108,7 +121,7 @@ int StreamDeck::scan_bank(const char* dir, BankEntry* out, int max) const {
         const bool is_raw = (e[0] == 'r' || e[0] == 'R') && (e[1] == 'a' || e[1] == 'A') &&
                             (e[2] == 'w' || e[2] == 'W') && e[3] == '\0';
         if (!is_raw) continue;
-        if (fno.fsize < RawStreamReader::kBytesPerFrame) continue;  // empty/too-short file
+        if (fno.fsize < kMinStationBytes) continue;                 // AppleDouble stub / too-short file
         int j = 0;
         for (; name[j] && j < 12; ++j) out[count].name[j] = name[j];
         out[count].name[j] = '\0';

@@ -89,6 +89,10 @@ def list_audio(directory, recursive=False):
     walker = os.walk(directory) if recursive else [(directory, [], sorted(os.listdir(directory)))]
     for root, _dirs, files in walker:
         for f in sorted(files):
+            # Skip macOS metadata: .DS_Store and the AppleDouble companions ._NAME.raw (which would
+            # otherwise match the .raw extension and convert to a tiny garbage "station").
+            if f.startswith("."):
+                continue
             if f.lower().endswith(AUDIO_EXTS):
                 srcs.append(os.path.join(root, f))
     return srcs

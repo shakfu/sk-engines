@@ -281,30 +281,55 @@ int main() {
         check(sad(clean, noisy) > 0.5f, "static: a switch with ENV>0 audibly differs from the clean signal");
     }
 
-    // B7. RESET (Play pad / gate) re-tunes the current station to the live clock position.
+    // B7. Anti-stutter: hammering RESET (gate/pad) on a LIVE deck must NOT re-open it (re-opening flushes
+    // the ring, and a spurious/floating gate firing every loop was the constant-stutter bug). RESET only
+    // (re)starts a SILENT deck.
     {
         RadioEngine e; make(e);
-        e.set_param(ParamId::Env, DeckRef::A, 0.5f);
-        e.set_param(ParamId::Speed, DeckRef::A, 0.0f);    // station 0, L=10000
+        e.set_param(ParamId::Env, DeckRef::A, 0.5f);      // immediate-switch path -> opens on one prepare
+        e.set_param(ParamId::Speed, DeckRef::A, 0.0f);
+        e.prepare();                                      // opens station 0, now playing
+        const int n0 = stream.open_calls[0];
+        bool fin = true;
+        for (int k = 0; k < 50; k++) {                    // simulate a floating gate chattering every loop
+            e.on_gate_trigger(DeckRef::A);
+            e.prepare();
+            run(e, 1, fin);
+        }
+        check(stream.open_calls[0] == n0, "reset spam on a live deck causes no re-opens (anti-stutter)");
+        check(fin, "reset-spam output stays finite");
+    }
+
+    // B7b. Boundary chatter: a target that oscillates between two stations (pot/CV noise at a boundary)
+    // must NOT re-open repeatedly - the engine holds the last station until the target settles.
+    {
+        RadioEngine e; make(e);
+        e.set_param(ParamId::Env, DeckRef::A, 0.5f);      // open immediately...
+        e.set_param(ParamId::Speed, DeckRef::A, 0.5f);    // ...on a station (station 2)
         e.prepare();
-        const int before = stream.open_calls[0];
-        bool fin = true; run(e, 50, fin);                 // clock -> 4800
-        e.on_gate_trigger(DeckRef::A);                    // RESET
-        e.prepare();
-        check(stream.open_calls[0] == before + 1, "reset: gate re-opens the current station");
-        check(stream.last_frame[0] == (50u * (uint32_t)host::kBlock) % 10000u, "reset: re-seek to the live position");
+        e.set_param(ParamId::Env, DeckRef::A, 0.0f);      // ...then low static, so the settle timer governs
+        const int n0 = stream.open_calls[0];
+        bool fin = true;
+        for (int k = 0; k < 60; k++) {                    // jitter the V/oct CV across a station boundary
+            e.cv_voct(DeckRef::A, (k & 1) ? 0.18f : -0.18f);
+            e.prepare();
+            run(e, 1, fin);
+        }
+        check(stream.open_calls[0] == n0, "boundary chatter does not re-open the station (no stutter)");
+        check(fin, "boundary-chatter output stays finite");
     }
 
     // B8. On-card rate.txt rebases the resampler: a 44.1k card plays differently from the 48k default.
     {
-        // 44.1k mode (rate.txt present)
+        // 44.1k mode (rate.txt present). The rate ratio is applied in _render_deck whenever the deck is
+        // playing, so we force the fake deck to play (independent of the open/settle path) and compare.
         std::strcpy(stream.rate_txt, "44100");
         RadioEngine e; make(e);
         e.set_param(ParamId::Env, DeckRef::A, 0.0f);
         e.set_param(ParamId::Size, DeckRef::A, 0.5f);    // unity varispeed
         e.set_param(ParamId::Speed, DeckRef::A, 0.0f);
         e.prepare();                                     // loads "44100" immediately (file present)
-        bool f1 = true; stream.phase[0] = 0.0;
+        bool f1 = true; stream.phase[0] = 0.0; stream.playing[0] = true;
         const auto at441 = run(e, 40, f1);
 
         // 48k default (no rate.txt)
@@ -314,7 +339,7 @@ int main() {
         e2.set_param(ParamId::Size, DeckRef::A, 0.5f);
         e2.set_param(ParamId::Speed, DeckRef::A, 0.0f);
         e2.prepare();
-        bool f2 = true; stream.phase[0] = 0.0;
+        bool f2 = true; stream.phase[0] = 0.0; stream.playing[0] = true;
         const auto at48 = run(e2, 40, f2);
 
         check(f1 && f2, "rate: output finite in both 44.1k and 48k modes");

@@ -39,13 +39,25 @@ void RadioEngine::prepare() {
         }
 
         const int desired = _quant_station(i);
+        // Settle tracker, updated EVERY prepare: reset the timer whenever the target moves at all -
+        // including back to the open station. So a target that oscillates at a station boundary (pot/CV
+        // noise flipping it between two stations) NEVER settles, and the engine just holds the last clean
+        // station instead of re-opening ~5x/s at the boundary (the boundary-stutter bug). A target only
+        // counts as settled once it has been stable for kSettleMs.
+        if (desired != _pending[i]) { _pending[i] = desired; _pending_ms[i] = now; }
+        const bool settled = !_time || (now - _pending_ms[i]) >= kSettleMs;
+
         if (desired != _open_station[i]) {
-            // High static = live dial tuning (switch on every crossed station); low static settles so a
-            // clean sweep only opens the station you land on (no zipper of half-second file opens).
-            if (_env_n[i] >= kStaticThresh || _settle_ready(i, desired, now)) _do_open(d, desired, now);
+            // High static = live dial tuning (switch as soon as the target is reached); low static waits
+            // for the target to settle, so a clean sweep only opens the station you land on - and a target
+            // jittering on a boundary never settles, so it never re-opens there.
+            if (_env_n[i] >= kStaticThresh || settled) _do_open(d, desired, now);
         } else if (_retune[i]) {
             _retune[i] = false;
-            _do_open(d, desired, now);       // RESET / gate: re-seek the current station to live position
+            // RESET (Play pad / gate) (re)starts a SILENT deck at the live position. No-op on a deck that
+            // is already streaming: re-seeking the station you are already tuned to is redundant for a
+            // free-running radio, and honoring a repeated/floating-gate trigger would flush the ring.
+            if (!_stream->is_playing(d)) _do_open(d, desired, now);
         }
     }
 }
@@ -127,19 +139,24 @@ bool RadioEngine::set_config(ConfigId id, DeckRef::Ref, int value) {
     return false;
 }
 
-// RESET: re-tune the current station to its live position. Play pad is debounced (capacitive glitch
-// guard); the gate input is already debounced by the platform. Only the Play pad acts (Rev pad inert).
+// RESET: re-tune the current station to its live position. Both sources (Play pad, gate input) are
+// debounced here: a capacitive pad can glitch a press, and an unpatched/floating gate jack can chatter a
+// stream of spurious edges - without this debounce that fired a re-open every loop, flushing the ring
+// continuously (the "constant stutter" bug). Only the Play pad / gate act (Rev pad inert).
 bool RadioEngine::on_play_pad(DeckRef::Ref d, bool reverse) {
-    if (reverse) return false;
-    const int i = (d == DeckRef::A) ? 0 : 1;
-    const uint32_t now = _time ? _time->now_ms() : 0;
-    if (_time && now - _last_reset_ms[i] < kDebounceMs) return false;
-    _last_reset_ms[i] = now;
-    _retune[i] = true;
+    if (!reverse) _arm_reset(d);
     return false;
 }
 
-void RadioEngine::on_gate_trigger(DeckRef::Ref d) { _retune[(d == DeckRef::A) ? 0 : 1] = true; }
+void RadioEngine::on_gate_trigger(DeckRef::Ref d) { _arm_reset(d); }
+
+void RadioEngine::_arm_reset(DeckRef::Ref d) {
+    const int i = (d == DeckRef::A) ? 0 : 1;
+    const uint32_t now = _time ? _time->now_ms() : 0;
+    if (_time && now - _last_reset_ms[i] < kDebounceMs) return;   // drop a retrigger within the debounce
+    _last_reset_ms[i] = now;
+    _retune[i] = true;
+}
 
 void RadioEngine::render(DisplayModel& m) {
     m.clear();
@@ -233,8 +250,15 @@ int RadioEngine::_quant_station(int i) const {
     if (n <= 0) return -1;
     float x = _station_n[i] + _station_cv[i];
     x = x < 0.f ? 0.f : (x > 1.f ? 1.f : x);
-    int s = static_cast<int>(std::lround(x * static_cast<float>(n - 1)));
-    return s < 0 ? 0 : (s >= n ? n - 1 : s);
+    const float pos = x * static_cast<float>(n - 1);        // continuous station position
+    const int   cur = _open_station[i];
+    auto nearest = [&](float p) { int s = static_cast<int>(std::lround(p)); return s < 0 ? 0 : (s >= n ? n - 1 : s); };
+    if (cur < 0 || cur >= n) return nearest(pos);           // nothing committed yet -> nearest station
+    // Hysteresis: hold the committed station until `pos` crosses its boundary by kStationHyst, so CV/pot
+    // noise sitting near a station edge can't chatter the target (and trigger repeated re-opens).
+    if (pos > static_cast<float>(cur) + 0.5f + kStationHyst) return nearest(pos);
+    if (pos < static_cast<float>(cur) - 0.5f - kStationHyst) return nearest(pos);
+    return cur;
 }
 
 void RadioEngine::_do_open(DeckRef::Ref d, int station, uint32_t now) {
@@ -254,11 +278,6 @@ void RadioEngine::_do_open(DeckRef::Ref d, int station, uint32_t now) {
         _open_station[i] = -1;
         _err_until[i]    = now + kErrFlashMs;
     }
-}
-
-bool RadioEngine::_settle_ready(int i, int desired, uint32_t now) {
-    if (desired != _pending[i]) { _pending[i] = desired; _pending_ms[i] = now; return false; }
-    return !_time || (now - _pending_ms[i]) >= kSettleMs;
 }
 
 void RadioEngine::_roll_random_pans() {

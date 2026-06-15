@@ -42,7 +42,7 @@ parse) and a seek is `f_lseek(frame * 2)`. The file open + seek happens off the 
 | **Alt+PITCH** (`Aux`) | | **BANK** select (held selector, ring dots) - "hold RESET for bank" on the original. |
 | **Mix fader** (`Crossfade`) | | A/B blend of the two radios. |
 | **Routing switch** (`Route`) | | stereo topology (below). |
-| **Play pad** / **gate-in** | `on_play_pad` / `on_gate_trigger` | **RESET** - re-tune the current station to its live position. The Rev pad is inert. |
+| **Play pad** / **gate-in** | `on_play_pad` / `on_gate_trigger` | **RESET** - (re)start a stopped deck at the live position. Debounced, and a **no-op while the deck is already streaming** (re-seeking a live free-running station is redundant, and honoring a repeated/floating-gate trigger would flush the ring continuously - the constant-stutter bug). The Rev pad is inert. |
 
 `capabilities() = CapOwnDisplay | CapDualDeck | CapAux`. `CapAux` claims Alt+PITCH for the BANK selector
 (the same held-selector mechanism tape uses for slots and edrums for model select). It does **not**
@@ -85,6 +85,13 @@ A shared library both decks browse independently:
 - **Stations** = `.raw` files in a bank, enumerated by directory scan (`f_opendir`/`f_readdir`). Use
   short **8.3 names** (e.g. `01.raw`) - longer names are skipped so the index stays bounded and the file
   stays re-openable.
+- **macOS metadata is filtered.** Copying files to a FAT card in Finder writes a hidden AppleDouble
+  companion `._NAME.raw` (~4 KB of metadata, not audio) next to every `NAME.raw`, plus `.DS_Store`. The
+  companion ends in `.raw`, so `scan_bank` explicitly drops it (FAT hidden/system attribute + leading-dot
+  name + a 32 KB minimum size); otherwise each would index as a bogus tiny "station" that loops a sliver
+  of garbage - a fast stutter, alternating with the real stations as you tune. The converter's
+  `from-dir`/`mirror` skip dotfiles on the source side too. To clean an existing card: `dot_clean
+  /Volumes/CARD` then delete any remaining `._*` / `.DS_Store`.
 
 ### Audio format
 
@@ -174,5 +181,51 @@ make -C host test            # host suites incl. test-radio (all green)
   (5 s) so stations appear once mounted rather than showing dead air.
 - **First-cut constants** (`kSettleMs`, `kStaticDec`, `kNoiseLevel`, `kStaticThresh`) are tunable by ear
   on hardware, like the tape engine's loop constants.
-- **START is applied on switch/RESET**, not continuously, to keep SD I/O bounded (turning POS then
-  pressing Play/gate re-tunes to the new offset). Continuous scrub would need a lighter in-file seek.
+- **START is applied on switch**, not continuously, to keep SD I/O bounded. Continuous scrub would need
+  a lighter in-file seek.
+- **Re-open = ring flush.** A (re)open flushes and re-seeds the per-deck ring, so anything that triggers
+  re-opens at audio rate produces a stutter (the same short grain replayed). Three guards prevent that:
+  - **Station-select hysteresis** (`kStationHyst`) - a deadband so small CV/pot noise near a station
+    boundary doesn't flip the target (oscillation needs to swing > 2x the margin).
+  - **Settle-every-prepare** - the settle timer (`kSettleMs`) is reset whenever the target moves *at all*,
+    so a target that oscillates between two stations (parking PITCH on a boundary) **never settles** and
+    the engine just holds the last clean station instead of re-opening ~5x/s there. (With static turned
+    *up*, switching is immediate by design - "dial tuning" - and boundary stability then rests on the
+    hysteresis alone.)
+  - **RESET** (Play pad + gate) is **debounced** (`kDebounceMs`) and a **no-op on a live deck**, so a
+    repeated/floating-gate trigger can't flush a live stream.
+
+---
+
+## What's left
+
+### `.wav` station support (16-bit mono PCM)
+
+Accept **16-bit mono PCM `.wav`** stations alongside `.raw` (the format RadioMusic's 2017 firmware
+added). Additive and not difficult - a WAV body *is* int16 PCM, byte-identical to a `.raw` once the
+header is skipped, so the int16 `_pull` + resampler are unchanged, and the `StreamDeck` `Deck` already
+holds both a `WavStreamReader` and the `RawStreamReader`. Steps:
+
+1. `WavStreamReader::seek_to_frame(frame)` - the same one-liner as `RawStreamReader`, seeking to
+   `_data_start + frame*2` (it already computes `_data_start`/`_data_size` from the chunk walk).
+2. Relax its format gate to accept **16-bit mono PCM** (`fmt == 1`, `bits == 16`) regardless of the
+   build's float/int default - e.g. a `begin(f, expect_bits, expect_fmt)` parameter. *This is the only
+   part needing real thought; everything else is mechanical.*
+3. `StreamDeck::start_play_wav(deck, path, start_frame, loop)` - mirrors `start_play_raw` but binds the
+   WAV reader and seeks past the header.
+4. `scan_bank` also enumerates `.wav`, with a per-`BankEntry` flag (raw vs wav).
+5. `RadioEngine::_do_open` dispatches to the raw or wav entry by that flag.
+
+Two subtleties, both minor:
+
+- **Indexing cost.** A `.raw` length is a pure `f_stat` (filesize/2, no file open); a WAV's length is the
+  *data-chunk* size, so indexing a bank of WAVs means an `f_open` + header parse per station (like tape's
+  slot probe). Fine for <=48 files at boot, just not as cheap as raw.
+- The format gate (step 2) is the only code wired to the build's float/int default; the rest is
+  extension-dispatch bookkeeping.
+
+**Bonus:** a WAV header carries its own sample rate, so WAV stations could auto-rebase *per file* (a
+44.1k WAV would just play correctly), making `rate.txt` unnecessary for them - at the cost of a per-station
+rate ratio instead of the global one. That is the natural place to take it.
+
+Estimate: ~half a day incl. host tests, no architectural change. Mixed raw + wav banks supported.
