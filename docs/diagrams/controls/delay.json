@@ -1,0 +1,38 @@
+{
+  "engine": "delay",
+  "title": "Delay - tempo-synced stereo delay",
+  "subtitle": "characters, topologies, modulation, freeze",
+
+  "knobs": {
+    "Pitch": "transpose wet +/-1 oct",
+    "Position": "feedback",
+    "Size": "musical division (stepped)",
+    "Envelope": "feedback tone (low-pass)",
+    "Mix (SOS)": "wet/dry mix",
+    "Cycle": "mod-LFO rate",
+    "Glow": "mod-LFO depth (delay time)"
+  },
+
+  "pads": {
+    "Play": "Freeze (loop at unity fb)",
+    "Reverse": "-",
+    "Grit": "-",
+    "Flux": "-",
+    "Seq": "-"
+  },
+
+  "ring": "division arc, character-tinted",
+  "crossfade": "A/B blend",
+
+  "switches": {
+    "Mode (L/C/R)": "character: Clean / Tape / Shimmer",
+    "Routing (L/C/R)": "topology: Stereo / DblMono / Ping-pong",
+    "CV target (U/C/D)": "-",
+    "Out trims A/B": "output trims"
+  },
+
+  "transport": { "Tap": "tap tempo", "Spot": "-" },
+  "cv":   { "Size/Pos A/B": "-", "Mix A/B": "-", "V/Oct A/B": "-", "Crossfade CV": "A/B blend" },
+  "gates": { "Gate in A/B": "-", "Gate out A/B": "-" },
+  "mod_midi": { "Mod CV out A/B": "-" }
+}

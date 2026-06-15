@@ -331,18 +331,30 @@ gen-engines:
 	done
 	@echo "regenerated gen~ engines"
 
-# Render the d2 diagram sources (docs/diagrams/*.d2) to SVG under docs/media/. Needs the `d2` CLI
-# (https://d2lang.com; `brew install d2`). Incremental - each SVG re-renders only when its .d2 source
-# changes. Override the renderer or output format with `make diagrams D2=/path/to/d2` / a different rule.
+# Docs diagrams. Per-engine control-surface diagrams are GENERATED from a small JSON spec
+# (docs/diagrams/controls/<engine>.json) through the shared d2 template by
+# scripts/gen_controls_diagram.py; then every docs/diagrams/*.d2 is rendered to SVG in docs/media/ by
+# the `d2` CLI (https://d2lang.com; `brew install d2`). `make diagrams` runs the whole chain
+# (spec -> .d2 -> .svg) incrementally; `make controls-diagrams` regenerates just the .d2 from specs.
 D2 ?= d2
-DIAGRAM_SRC := $(wildcard docs/diagrams/*.d2)
-DIAGRAM_SVG := $(patsubst docs/diagrams/%.d2,docs/media/%.svg,$(DIAGRAM_SRC))
+DIAGRAM_PY ?= python3
+CONTROL_SPECS := $(wildcard docs/diagrams/controls/*.json)
+CONTROL_D2    := $(patsubst docs/diagrams/controls/%.json,docs/diagrams/%-controls.d2,$(CONTROL_SPECS))
+# hand-written d2 sources, excluding the generated *-controls.d2 so each SVG is listed once
+STATIC_D2     := $(filter-out docs/diagrams/%-controls.d2,$(wildcard docs/diagrams/*.d2))
+DIAGRAM_SVG   := $(sort $(patsubst docs/diagrams/%.d2,docs/media/%.svg,$(STATIC_D2) $(CONTROL_D2)))
 
-.PHONY: diagrams
+.PHONY: diagrams controls-diagrams
 diagrams: $(DIAGRAM_SVG)
-	@test -n "$(DIAGRAM_SRC)" && echo "diagrams up to date in docs/media/ ($(words $(DIAGRAM_SRC)) source(s))" \
-	  || echo "no diagrams in docs/diagrams/"
+	@echo "diagrams up to date in docs/media/"
 
+controls-diagrams: $(CONTROL_D2)
+
+# JSON control-spec + template -> generated <engine>-controls.d2
+docs/diagrams/%-controls.d2: docs/diagrams/controls/%.json docs/diagrams/controls-template.d2 scripts/gen_controls_diagram.py
+	$(DIAGRAM_PY) scripts/gen_controls_diagram.py $< -o $@
+
+# any d2 source -> SVG
 docs/media/%.svg: docs/diagrams/%.d2
 	@command -v $(D2) >/dev/null 2>&1 || { echo "d2 not found - install from https://d2lang.com (brew install d2)"; exit 1; }
 	@mkdir -p $(@D)

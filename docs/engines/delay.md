@@ -26,6 +26,10 @@ The division table (`kDivBeats`, ascending so SIZE up = longer): `1/16T, 1/16, 1
 
 ## Control map
 
+![Delay control surface](../media/delay-controls.svg)
+
+_Generated from [`docs/diagrams/controls/delay.json`](../diagrams/controls/delay.json) via `make diagrams`._
+
 | Control | `ParamId` / config | Function |
 |---|---|---|
 | **SIZE** | `Size` | musical division (stepped; the ring shows the selected division) |

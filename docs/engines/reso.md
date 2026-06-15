@@ -20,6 +20,10 @@ Slice and Drift use Rings' internal exciter only - they feed **silence** into th
 
 ### Control map (per deck)
 
+![Reso control surface](../media/reso-controls.svg)
+
+_Generated from [`docs/diagrams/controls/reso.json`](../diagrams/controls/reso.json) via `make diagrams`._
+
 | Knob | `ParamId` | Rings target |
 |---|---|---|
 | PITCH | `Speed` | note (pitch) -> `performance_state.note` |

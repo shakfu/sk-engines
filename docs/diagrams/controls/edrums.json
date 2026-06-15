@@ -1,0 +1,38 @@
+{
+  "engine": "edrums",
+  "title": "Edrums - four-drum Euclidean machine",
+  "subtitle": "two drums/deck (A: kick/tom, B: snare/hat); Rev focuses one",
+
+  "knobs": {
+    "Pitch": "drum pitch (body + noise); Alt = model",
+    "Position": "density (Euclidean onsets)",
+    "Size": "pattern length (2-16)",
+    "Envelope": "rotation (pattern shift)",
+    "Mix (SOS)": "per-drum gain; grit+ = decay",
+    "Cycle": "clock division (1/16, 1/8, 1/4)",
+    "Glow": "onset probability (0-100%)"
+  },
+
+  "pads": {
+    "Play": "stop/start focused drum; Alt+Play = mute",
+    "Reverse": "swap focused drum",
+    "Grit": "macros: +PITCH drive, +SOS decay",
+    "Flux": "macros: +PITCH sweep, +SOS body/noise, +POS tone",
+    "Seq": "hold Alt+Seq = reset deck to factory"
+  },
+
+  "ring": "focused drum's pattern (onsets + playhead)",
+  "crossfade": "A/B blend",
+
+  "switches": {
+    "Mode (L/C/R)": "-",
+    "Routing (L/C/R)": "output: mono bus / A|B split / random pan",
+    "CV target (U/C/D)": "-",
+    "Out trims A/B": "output trims"
+  },
+
+  "transport": { "Tap": "tap tempo (sequencer clock)", "Spot": "-" },
+  "cv":   { "Size/Pos A/B": "-", "Mix A/B": "-", "V/Oct A/B": "-", "Crossfade CV": "A/B blend" },
+  "gates": { "Gate in A/B": "-", "Gate out A/B": "-" },
+  "mod_midi": { "Mod CV out A/B": "-" }
+}

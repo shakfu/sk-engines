@@ -8,6 +8,10 @@ The stock Max/MSP `gen~` reverb example (Tom Erbe's gigaverb), exported to C++ a
 
 ## Control map
 
+![gigaverb control surface](../media/gigaverb-controls.svg)
+
+_Generated from [`docs/diagrams/controls/gigaverb.json`](../diagrams/controls/gigaverb.json) via `make diagrams`._
+
 `set_param` arrives normalized 0..1 and is linear-mapped into each gen~ param's declared `[min,max]` (from `manifest.json`). The map uses only `ParamId`s the platform delivers to a single-deck engine via `set_param()` - the six plain panel knobs, plus two modifier layers for the two extra params:
 
 | Knob | `ParamId` | gen~ param | range |

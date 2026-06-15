@@ -30,6 +30,10 @@ A full set of voices is allocated **per deck** up front, so the route is a runti
 
 ## Control map
 
+![Reverb control surface](../media/reverb-controls.svg)
+
+_Generated from [`docs/diagrams/controls/reverb.json`](../diagrams/controls/reverb.json) via `make diagrams`._
+
 The six panel knobs map to reverb-agnostic **roles**; the 0..1 knob is linear-mapped into each Faust slider's native range, captured at bind time - so each reverb's units (plate 0..1, hall RT60 seconds / damping Hz / pre-delay ms) just work without per-reverb scaling code.
 
 | Knob | `ParamId` | role | Dattorro (plate) | Zita (hall) |

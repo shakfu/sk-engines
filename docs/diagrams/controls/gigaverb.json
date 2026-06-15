@@ -1,0 +1,38 @@
+{
+  "engine": "gigaverb",
+  "title": "gigaverb - gen~ stereo reverb",
+  "subtitle": "single stereo voice (deck A controls; deck B inert)",
+
+  "knobs": {
+    "Pitch": "bandwidth",
+    "Position": "reverb time",
+    "Size": "room size",
+    "Envelope": "damping; chord+ = early refl",
+    "Mix (SOS)": "dry level; Alt = spread",
+    "Cycle": "-",
+    "Glow": "tail"
+  },
+
+  "pads": { "Play": "-", "Reverse": "-", "Grit": "-", "Flux": "-", "Seq": "-" },
+
+  "ring": "-",
+  "crossfade": "-",
+
+  "switches": {
+    "Mode (L/C/R)": "-",
+    "Routing (L/C/R)": "-",
+    "CV target (U/C/D)": "-",
+    "Out trims A/B": "output trims"
+  },
+
+  "transport": { "Tap": "-", "Spot": "-" },
+  "cv":   { "Size/Pos A/B": "-", "Mix A/B": "-", "V/Oct A/B": "-", "Crossfade CV": "-" },
+  "gates": { "Gate in A/B": "-", "Gate out A/B": "-" },
+  "mod_midi": { "Mod CV out A/B": "-" },
+
+  "deckB": {
+    "knobs": { "Pitch": "(inert)", "Position": "(inert)", "Size": "(inert)", "Envelope": "(inert)", "Mix (SOS)": "(inert)", "Cycle": "-", "Glow": "(inert)" },
+    "pads": { "Play": "-", "Reverse": "-", "Grit": "-", "Flux": "-", "Seq": "-" },
+    "ring": "(inert)"
+  }
+}

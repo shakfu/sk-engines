@@ -1,0 +1,38 @@
+{
+  "engine": "shuttle",
+  "title": "Shuttle - bipolar varispeed tape (4 tracks)",
+  "subtitle": "two in-RAM tracks per deck; Rev focuses one",
+
+  "knobs": {
+    "Pitch": "capstan speed +/-2x (noon=stop); Alt = slot",
+    "Position": "loop start; Alt = pan",
+    "Size": "loop length",
+    "Envelope": "-",
+    "Mix (SOS)": "track volume",
+    "Cycle": "wow/flutter rate",
+    "Glow": "wow/flutter depth"
+  },
+
+  "pads": {
+    "Play": "roll / unity snap; Alt+Play = record",
+    "Reverse": "swap focused track",
+    "Grit": "saturation: +PITCH drive, +MIX char",
+    "Flux": "filter: +PITCH cutoff, +MIX reso",
+    "Seq": "re-align all 4 tracks"
+  },
+
+  "ring": "track state; focused-track hue",
+  "crossfade": "deck A/B blend",
+
+  "switches": {
+    "Mode (L/C/R)": "-",
+    "Routing (L/C/R)": "pan: manual / spread / random",
+    "CV target (U/C/D)": "-",
+    "Out trims A/B": "output trims"
+  },
+
+  "transport": { "Tap": "-", "Spot": "-" },
+  "cv":   { "Size/Pos A/B": "-", "Mix A/B": "-", "V/Oct A/B": "-", "Crossfade CV": "deck A/B blend" },
+  "gates": { "Gate in A/B": "-", "Gate out A/B": "-" },
+  "mod_midi": { "Mod CV out A/B": "-" }
+}

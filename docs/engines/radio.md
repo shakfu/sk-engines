@@ -18,6 +18,10 @@ radio.
 
 ## Controls (per deck)
 
+![Radio control surface](../media/radio-controls.svg)
+
+_Generated from [`docs/diagrams/controls/radio.json`](../diagrams/controls/radio.json) via `make diagrams`._
+
 | Control | `ParamId` / config | Effect |
 |---|---|---|
 | **PITCH** (`Speed`) | + V/oct CV jack | **STATION** select - the tuning dial. Knob + CV summed, quantized to the nearest station in the bank. |

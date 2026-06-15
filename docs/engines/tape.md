@@ -42,6 +42,10 @@ Total per-deck gain into the bus = **MIX volume x mix-fader blend x pan(L/R)**.
 
 ## Controls
 
+![Tape control surface](../media/tape-controls.svg)
+
+_Generated from [`docs/diagrams/controls/tape.json`](../diagrams/controls/tape.json) via `make diagrams`._
+
 | Control | Action |
 |---|---|
 | **Play pad** (per deck) | play toggle |

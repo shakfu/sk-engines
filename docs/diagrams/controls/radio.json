@@ -1,0 +1,55 @@
+{
+  "engine": "radio",
+  "title": "Radio - dual virtual RadioMusic",
+  "subtitle": "two independent SD radios with a free-running playhead",
+
+  "knobs": {
+    "Pitch": "STATION tune (+V/Oct CV); Alt = BANK",
+    "Position": "START offset (+CV)",
+    "Size": "varispeed 0.5-2x",
+    "Envelope": "inter-station static",
+    "Mix (SOS)": "deck volume",
+    "Cycle": "-",
+    "Glow": "-"
+  },
+
+  "pads": {
+    "Play": "RESET (re-tune)",
+    "Reverse": "-",
+    "Grit": "-",
+    "Flux": "-",
+    "Seq": "-"
+  },
+
+  "ring": "station position; bank dots (Alt)",
+
+  "crossfade": "A/B blend of the two radios",
+
+  "switches": {
+    "Mode (L/C/R)": "-",
+    "Routing (L/C/R)": "stereo image: A|B / mono / random",
+    "CV target (U/C/D)": "-",
+    "Out trims A/B": "output trims"
+  },
+
+  "transport": {
+    "Tap": "-",
+    "Spot": "-"
+  },
+
+  "cv": {
+    "Size/Pos A/B": "START CV",
+    "Mix A/B": "-",
+    "V/Oct A/B": "STATION CV",
+    "Crossfade CV": "A/B blend"
+  },
+
+  "gates": {
+    "Gate in A/B": "RESET trigger",
+    "Gate out A/B": "-"
+  },
+
+  "mod_midi": {
+    "Mod CV out A/B": "-"
+  }
+}

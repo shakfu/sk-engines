@@ -1,0 +1,38 @@
+{
+  "engine": "tape",
+  "title": "Tape - dual streaming tape decks",
+  "subtitle": "two SD record/playback decks, no length cap",
+
+  "knobs": {
+    "Pitch": "varispeed 0.5-2x; Alt = tape slot",
+    "Position": "FX drive; Alt = pan",
+    "Size": "FX character",
+    "Envelope": "loop mode: none/loop/fade/fripp",
+    "Mix (SOS)": "playback volume",
+    "Cycle": "wow/flutter rate",
+    "Glow": "wow/flutter depth"
+  },
+
+  "pads": {
+    "Play": "play; Alt+Play = record",
+    "Reverse": "-",
+    "Grit": "FX filter: +PITCH cutoff, +MIX reso",
+    "Flux": "-",
+    "Seq": "-"
+  },
+
+  "ring": "play green / record red; slot dots (Alt)",
+  "crossfade": "A/B blend",
+
+  "switches": {
+    "Mode (L/C/R)": "-",
+    "Routing (L/C/R)": "pan topology",
+    "CV target (U/C/D)": "-",
+    "Out trims A/B": "output trims"
+  },
+
+  "transport": { "Tap": "-", "Spot": "-" },
+  "cv":   { "Size/Pos A/B": "-", "Mix A/B": "-", "V/Oct A/B": "-", "Crossfade CV": "A/B blend" },
+  "gates": { "Gate in A/B": "-", "Gate out A/B": "-" },
+  "mod_midi": { "Mod CV out A/B": "-" }
+}

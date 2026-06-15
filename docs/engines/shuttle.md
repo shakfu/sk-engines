@@ -14,6 +14,10 @@ The headline control is **PITCH as a bipolar capstan-speed knob**: noon stops th
 
 ## Controls
 
+![Shuttle control surface](../media/shuttle-controls.svg)
+
+_Generated from [`docs/diagrams/controls/shuttle.json`](../diagrams/controls/shuttle.json) via `make diagrams`._
+
 | Control | `ParamId` / pad | Scope | Effect |
 |---|---|---|---|
 | **PITCH** | `Speed` | per-track | bipolar capstan speed: noon = stop (silence), CW = forward to +2x, CCW = reverse to -2x |

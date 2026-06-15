@@ -1,0 +1,38 @@
+{
+  "engine": "reso",
+  "title": "Reso - resonator / pluck voice (Rings)",
+  "subtitle": "pitched physical-model voice per deck",
+
+  "knobs": {
+    "Pitch": "note pitch (+V/Oct, MIDI); Alt = model",
+    "Position": "excitation position",
+    "Size": "damping (decay)",
+    "Envelope": "brightness",
+    "Mix (SOS)": "dry/wet",
+    "Cycle": "Drift density / arp rate",
+    "Glow": "structure"
+  },
+
+  "pads": {
+    "Play": "trigger (pluck / excite)",
+    "Reverse": "-",
+    "Grit": "-",
+    "Flux": "-",
+    "Seq": "trigger"
+  },
+
+  "ring": "energy meter + pitch dot; model dots (Alt)",
+  "crossfade": "A/B blend",
+
+  "switches": {
+    "Mode (L/C/R)": "excite: pluck / live-resonate / scatter",
+    "Routing (L/C/R)": "-",
+    "CV target (U/C/D)": "-",
+    "Out trims A/B": "output trims"
+  },
+
+  "transport": { "Tap": "tap tempo (arp / scatter)", "Spot": "-" },
+  "cv":   { "Size/Pos A/B": "-", "Mix A/B": "-", "V/Oct A/B": "pitch (1V/oct)", "Crossfade CV": "A/B blend" },
+  "gates": { "Gate in A/B": "trigger", "Gate out A/B": "-" },
+  "mod_midi": { "Mod CV out A/B": "-" }
+}

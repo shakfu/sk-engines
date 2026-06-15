@@ -1,0 +1,38 @@
+{
+  "engine": "reverb",
+  "title": "Reverb - route-aware stereo reverb",
+  "subtitle": "Dattorro plate / Zita hall (/ gen~ gigaverb)",
+
+  "knobs": {
+    "Pitch": "Decay",
+    "Position": "Tone",
+    "Size": "Size A (diffusion / pre-delay)",
+    "Envelope": "Damp",
+    "Mix (SOS)": "dry/wet mix",
+    "Cycle": "-",
+    "Glow": "Size B (tank diff / tail EQ)"
+  },
+
+  "pads": {
+    "Play": "-",
+    "Reverse": "-",
+    "Grit": "-",
+    "Flux": "-",
+    "Seq": "-"
+  },
+
+  "ring": "output meter (plate blue / hall violet / giga mint)",
+  "crossfade": "A/B blend",
+
+  "switches": {
+    "Mode (L/C/R)": "algorithm: plate / hall / gigaverb",
+    "Routing (L/C/R)": "topology: stereo / DblMono / generative",
+    "CV target (U/C/D)": "-",
+    "Out trims A/B": "output trims"
+  },
+
+  "transport": { "Tap": "-", "Spot": "-" },
+  "cv":   { "Size/Pos A/B": "-", "Mix A/B": "-", "V/Oct A/B": "-", "Crossfade CV": "A/B blend" },
+  "gates": { "Gate in A/B": "-", "Gate out A/B": "-" },
+  "mod_midi": { "Mod CV out A/B": "-" }
+}
