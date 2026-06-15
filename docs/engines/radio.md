@@ -48,6 +48,8 @@ Per deck the ring shows the **station position** (a bright marker at `station/N`
 
 ## SD-card layout
 
+You can download the original 8GB audio from the original radio music module from [here](https://github.com/TomWhitwell/RadioMusic/wiki/Audio-for-the-SD-Card). Place the files in the spotykach sd card as follows:
+
 A shared library both decks browse independently:
 
 ```text
