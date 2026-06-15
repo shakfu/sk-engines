@@ -13,7 +13,7 @@ if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
     include(${CMAKE_CURRENT_LIST_DIR}/lib/libDaisy/cmake/toolchains/autodetect.cmake)
 endif()
 
-project(spotykach VERSION 1.0.0 LANGUAGES C CXX ASM)
+project(SK_ENGINES VERSION 0.3.2 LANGUAGES C CXX ASM)
 
 # PARITY (opt levels): the Make build is deliberately split -- libDaisy and DaisySP compile at -O3,
 # the app at -O2 -- and uses no LTO. DaisyProject forces -O3+LTO on Release and -Og on Debug; neither

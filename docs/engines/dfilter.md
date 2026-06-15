@@ -16,9 +16,9 @@ Each deck (A and B) carries the same four controls, addressing **its own channel
 
 | Control | `ParamId` | Faust slider | Effect |
 |---|---|---|---|
-| **SIZE**    | `Size`  | `cutoff` | low-pass cutoff (~40 Hz – 20 kHz) |
-| **MOD_AMT** | `ModAmp` | `reso`  | resonance / Q |
-| **PITCH**   | `Speed` | `drive` | pre-filter saturation |
+| **PITCH**   | `Speed` | `cutoff` | low-pass cutoff (~40 Hz – 20 kHz) |
+| **POS**     | `Pos`   | `reso`  | resonance / Q |
+| **SIZE**    | `Size`  | `drive` | pre-filter saturation |
 | **SOS**     | `Mix`   | `mix`   | dry/wet |
 
 Deck A's knobs filter the left channel; deck B's filter the right. The crossfader is unused (the two decks are independent channels, not an A/B blend). The LED rings show a **per-deck** output-level meter.
@@ -35,7 +35,7 @@ The whole engine is two files in `src/engine/dfilter/`:
 
 ```json
 { "engine": "dfilter", "backend": "faust", "deck_mode": "parallel",
-  "knobs": { "Size": "cutoff", "Glow": "reso", "Pitch": "drive", "Mix (SOS)": "mix" },
+  "knobs": { "Pitch": "cutoff", "Position": "reso", "Size": "drive", "Mix (SOS)": "mix" },
   "features": { "meter": true, "color": "0xff8833" } }
 ```
 

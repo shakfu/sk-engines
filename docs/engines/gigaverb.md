@@ -30,11 +30,8 @@ This table lives in `src/engine/gigaverb/gigaverb_engine.h` (the `index_of()` sw
 ## Build / flash / regenerate
 
 ```text
-make clean && make -j8 ENGINE=gigaverb     # build; the link prints SRAM_EXEC usage
-make ENGINE=gigaverb program-dfu           # flash (device in DFU mode first)
-make gen-engines                               # regenerate from the vendored export (keeps the knob map)
+make -j8 ENGINE=gigaverb           # build; the link prints SRAM_EXEC usage
+make ENGINE=gigaverb program-dfu   # flash (device in DFU mode first)
+make engine-gigaverb               # one-shot: clean + build + flash
+make gen-engine GEN_EXPORT=src/engine/gigaverb/gen:gigaverb   # regenerate from the vendored export (keeps the knob map)
 ```
-
-## Also available inside the `reverb` engine
-
-Beyond the standalone `ENGINE=gigaverb` build, this export can be folded into the [`reverb` engine](reverb.md) as a **third selectable voice** alongside the Faust plate and hall: `make ENGINE=reverb REVERB_GIGAVERB=1`. There it is wrapped as a `GigaverbVoice` (driving the same gen~ export by parameter index), gets its own per-deck gen~ arena slice, and - unlike this standalone build - synthesizes a true wet/dry crossfade in software (pins `dry` to 0 and blends against the input) so its Mix knob matches the Faust voices. See [reverb.md](reverb.md#optional-third-voice-gen-gigaverb).

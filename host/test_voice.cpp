@@ -46,10 +46,11 @@ int main() {
 
     VoiceEngine e; e.init(ctx);
     // Sensible drone: deck A osc audible (Pitch=freq, Mix=level), deck B filter open + full wet.
-    e.set_param(ParamId::Speed, DeckRef::A, 0.35f);  // osc freq
-    e.set_param(ParamId::Mix,   DeckRef::A, 0.8f);   // osc level
-    e.set_param(ParamId::Mix,   DeckRef::B, 1.0f);   // filter full wet
-    e.set_param(ParamId::Size,  DeckRef::B, 0.9f);   // filter cutoff open
+    // Deck B map: Pitch=cutoff, Position=reso, Size=drive, Mix=mix.
+    e.set_param(ParamId::Speed, DeckRef::A, 0.35f);  // osc freq (deck A Pitch)
+    e.set_param(ParamId::Mix,   DeckRef::A, 0.8f);   // osc level (deck A Mix)
+    e.set_param(ParamId::Mix,   DeckRef::B, 1.0f);   // filter full wet (deck B Mix)
+    e.set_param(ParamId::Speed, DeckRef::B, 0.9f);   // filter cutoff open (deck B Pitch -> cutoff)
 
     // 1. the instrument generates with no input.
     bool finite = true;
@@ -58,31 +59,32 @@ int main() {
     check(rms_loud > 0.02f, "instrument stage generates sound with no audio input (0-in chain path)");
     check(rms_loud < 2.0f, "output is bounded");
 
-    // 2. per-deck params are independent though both use ParamId::Size (deck A=shape, deck B=cutoff).
+    // 2. per-deck params are independent though both use ParamId::Size (deck A=shape, deck B=drive).
     e.set_param(ParamId::Size, DeckRef::A, 0.2f);
     e.set_param(ParamId::Size, DeckRef::B, 0.7f);
     check(std::fabs(e.param(ParamId::Size, DeckRef::A) - 0.2f) < 1e-4f, "deck A Size round-trips");
     check(std::fabs(e.param(ParamId::Size, DeckRef::B) - 0.7f) < 1e-4f,
           "deck B Size independent of deck A (separate stage state)");
 
-    // 3. fresh engine: each stage's own slider defaults (osc shape=0.0 on A; filter cutoff=0.55 on B).
+    // 3. fresh engine: each stage's own slider defaults (osc shape=0.0 on deck A Size; filter cutoff=0.55
+    //    on deck B Pitch).
     VoiceEngine fresh; fresh.init(ctx);
-    check(std::fabs(fresh.param(ParamId::Size, DeckRef::A) - 0.0f)  < 0.02f, "deck A boot = osc default");
-    check(std::fabs(fresh.param(ParamId::Size, DeckRef::B) - 0.55f) < 0.02f, "deck B boot = filter default");
+    check(std::fabs(fresh.param(ParamId::Size,  DeckRef::A) - 0.0f)  < 0.02f, "deck A boot = osc shape default");
+    check(std::fabs(fresh.param(ParamId::Speed, DeckRef::B) - 0.55f) < 0.02f, "deck B boot = filter cutoff default");
 
     // 4a. deck A level (stage A) drives amplitude: level 0 -> near silence.
     VoiceEngine eq; eq.init(ctx);
     eq.set_param(ParamId::Speed, DeckRef::A, 0.35f);
     eq.set_param(ParamId::Mix,   DeckRef::B, 1.0f);
-    eq.set_param(ParamId::Size,  DeckRef::B, 0.9f);
+    eq.set_param(ParamId::Speed, DeckRef::B, 0.9f);   // cutoff open (deck B Pitch)
     eq.set_param(ParamId::Mix,   DeckRef::A, 0.0f);   // level 0
     bool f2 = true; float rms_silent = run(eq, 60, f2);
     check(rms_silent < 0.2f * rms_loud, "deck A level=0 silences the chain (stage A feeds stage B)");
 
-    // 4b. deck B cutoff (stage B) shapes the tone: a low cutoff passes less of the bright osc than a high one.
+    // 4b. deck B cutoff (deck B Pitch) shapes the tone: a low cutoff passes less of the bright osc than open.
     VoiceEngine lo; lo.init(ctx);
     lo.set_param(ParamId::Speed, DeckRef::A, 0.35f); lo.set_param(ParamId::Mix, DeckRef::A, 0.8f);
-    lo.set_param(ParamId::Mix,   DeckRef::B, 1.0f);  lo.set_param(ParamId::Size, DeckRef::B, 0.1f); // cutoff low
+    lo.set_param(ParamId::Mix,   DeckRef::B, 1.0f);  lo.set_param(ParamId::Speed, DeckRef::B, 0.1f); // cutoff low
     bool f3 = true; float rms_lo = run(lo, 60, f3);
     check(rms_lo < rms_loud, "deck B low cutoff attenuates vs open cutoff - the filter stage acts on the osc");
 

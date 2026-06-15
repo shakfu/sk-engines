@@ -4,7 +4,7 @@ Implementation/bring-up notes for `ENGINE=reverb`. The user-facing reference (th
 
 ## Status at a glance
 
-- Implemented and integrated end to end (engine, build system, three Faust kernels: plate/hall/freeverb).
+- Implemented and integrated end to end (engine, build system, three Faust kernels: plate/hall/greyhole).
 
 - Host-tested: `make -C host test-reverb` (param round-trip, both algorithms ring out, every knob role is bound, the mode switch swaps the kernel, the DoubleMono plate-only cap, and channel isolation). Plus `make -C host bench-reverb` for the process() cost and `make ENGINE=reverb METER=1` for on-device CPU load (non-blocking serial; won't hang).
 
@@ -24,27 +24,27 @@ Implementation/bring-up notes for `ENGINE=reverb`. The user-facing reference (th
 
 The reverb is **memory-latency-bound** (delay lines in SDRAM), so two heavy voices scale ~3.8x, not 2x - the host benchmark (which can't model SDRAM) under-predicted both the absolute load and the scaling. The cap keeps the worst case at two plates (~61% peak). To lift the cap and allow two heavies later, the levers are: move the plate to internal SRAM (de-contends a plate+heavy pairing), or downsample/shrink the hall (a smaller FDN, not just shorter delays - per-sample cost is set by tap *count*, not buffer size).
 
-## Footprint (Faust 2.85.5, -O2)
+## Footprint (Faust 2.85.5)
 
 Arena placement-new keeps `SRAM` (data) flat regardless of delay-line size, so **`SRAM_EXEC` (code) is the binding constraint** - not SDRAM (the per-deck voices live inside the static 48 MB arena, whose region usage is unchanged). From `-Wl,--print-memory-usage` (`SRAM_EXEC` is 186 KB):
 
 | Build | SRAM_EXEC |
 |---|---|
 | `passthrough` (platform floor) | ~149 KB (78%) |
-| `reverb` (plate + hall + freeverb, all Faust, route-aware) | ~184.6 KB (96.9%) |
-| `reverb METER=1` (adds the USB CDC stack; needs `OPT=-Os`) | overflows `-O2`; ~fits at `-Os` |
+| `reverb` (plate + hall + greyhole, all Faust, **`-Os`**) | ~185.5 KB (97.4%) |
+| `reverb` at `-O2` (counter-example) | ~201 KB -> overflows by ~11 KB |
 
-At ~97% the three-voice build is near the `-O2` ceiling, so a fourth sizable Faust algorithm would need `OPT=-Os` (as reso is) or one dropped. The `METER` build adds ~12 KB (the USB CDC stack, not the meter itself), which overflows `-O2` on top of the three voices - build it `OPT=-Os` to fit.
+Greyhole (modulated diffusion + a feedback pitch-shifter) is the heaviest voice; with it the three-voice build overflows `SRAM_EXEC` at `-O2` by ~11 KB, so the reverb branch of the `Makefile` sets **`OPT = -Os`** (as reso does), fitting at ~97.4% with ~5 KB headroom. The `METER` build adds ~12 KB (the USB CDC stack) on top - already over even at `-Os`, so the on-device CPU meter needs a voice dropped to measure. **Greyhole's per-block device CPU is unmeasured** (the host `bench_reverb` only times the plate); verify on hardware.
 
 ## Files
 
-- `src/engine/reverb/dattorro.dsp`, `zita.dsp`, `freeverb.dsp` - the three active reverb sources. `voice.dsp` - the retained spike voice (not built).
+- `src/engine/reverb/dattorro.dsp`, `zita.dsp`, `greyhole.dsp` - the three active reverb sources. `freeverb.dsp` - a kept alternative third voice (Freeverb; not built unless wired back in). `voice.dsp` - the retained spike voice (not built).
 
 - `src/engine/reverb/faust_kernel_<name>.h` - **generated** (do not hand-edit), one `class mydsp` per namespace `rv_<name>`. Regenerate with `make faust-kernels`.
 
-- `src/engine/reverb/reverb_engine.{h,cpp}` - the `IEngine` wrapper (per-deck arena construction, `CaptureUI` + per-reverb bind tables, role mapping, mode-switch + route handling, render). `DattorroVoice`/`ZitaVoice`/`FreeverbVoice` are three peer Faust kernels; no gen~.
+- `src/engine/reverb/reverb_engine.{h,cpp}` - the `IEngine` wrapper (per-deck arena construction, `CaptureUI` + per-reverb bind tables, role mapping, mode-switch + route handling, render). `DattorroVoice`/`ZitaVoice`/`GreyholeVoice` are three peer Faust kernels; no gen~.
 
-- `host/test_reverb.cpp`, `host/bench_reverb.cpp` - the host test (plate/hall/freeverb) and the process() cost benchmark.
+- `host/test_reverb.cpp`, `host/bench_reverb.cpp` - the host test (plate/hall/greyhole) and the process() cost benchmark.
 
 - Registered in `src/engine/engine_select.h` and the root `Makefile` (`ENGINE=reverb`, `engine-reverb` flash target, `faust-kernels` codegen target).
 

@@ -15,9 +15,9 @@ struct DfilterEngineTraits {
     // kernel and linear-maps the 0..1 knob into it).
     static const faustgen::Bind* binds() {
         static const faustgen::Bind b[] = {
-            { nullptr, "cutoff", static_cast<int>(ParamId::Size), 0, false },  // -> Size
-            { nullptr, "reso", static_cast<int>(ParamId::ModAmp), 0, false },  // -> ModAmp
-            { nullptr, "drive", static_cast<int>(ParamId::Speed), 0, false },  // -> Speed
+            { nullptr, "cutoff", static_cast<int>(ParamId::Speed), 0, false },  // -> Speed
+            { nullptr, "reso", static_cast<int>(ParamId::Pos), 0, false },  // -> Pos
+            { nullptr, "drive", static_cast<int>(ParamId::Size), 0, false },  // -> Size
             { nullptr, "mix", static_cast<int>(ParamId::Mix), 0, false },  // -> Mix
         };
         return b;

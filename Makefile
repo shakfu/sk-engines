@@ -51,8 +51,11 @@ C_DEFS += -DSPK_ENGINE_REVERB
 # arena, so SRAM stays flat; the link's -Wl,--print-memory-usage shows SRAM_EXEC (the binding region).
 ENGINE_SOURCES = src/engine/reverb/reverb_engine.cpp
 # Three all-Faust voices selected by the Reel/Slice/Drift mode switch: Dattorro plate (blue), Zita hall
-# (violet), and Freeverb (amber). No gen~ runtime - every voice is a cyfaust kernel registered in
+# (violet), and Greyhole (teal). No gen~ runtime - every voice is a cyfaust kernel registered in
 # FAUST_KERNELS below.
+# Greyhole's modulated diffusion network + pitch-shifter overflow SRAM_EXEC at -O2 (~106%), so build the
+# reverb at -Os (as reso does); it fits at ~97% with headroom. The M7 @ 480 MHz has ample compute margin.
+OPT = -Os
 # The reverb is route-aware: ONE stereo voice in Stereo/GenerativeStereo, two independent MONO reverbs
 # (one per deck) in DoubleMono - chosen at runtime by the Route switch, no build flag. Pair with METER=1
 # to read the two-voice (DoubleMono) CPU load on device.
@@ -235,7 +238,7 @@ all: check-boundary
 
 # One-shot variant flash: clean -> build -> flash over DFU. Put the device in DFU mode first
 # (hold Reset ~3s until the bottom pad LEDs breathe white), then `make granular` / `make passthrough`.
-.PHONY: engine-granular engine-passthrough engine-delay engine-edrums engine-reso engine-tape engine-shuttle engine-reverb engine-radio engine-chorus engine-dfilter engine-voice
+.PHONY: engine-granular engine-passthrough engine-delay engine-edrums engine-reso engine-tape engine-shuttle engine-reverb engine-radio engine-chorus engine-dfilter engine-voice engine-gigaverb
 engine-granular:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=granular
@@ -291,6 +294,11 @@ engine-voice:
 	$(MAKE) -j8 ENGINE=voice
 	$(MAKE) ENGINE=voice program-dfu
 
+engine-gigaverb:
+	$(MAKE) clean
+	$(MAKE) -j8 ENGINE=gigaverb
+	$(MAKE) ENGINE=gigaverb program-dfu
+
 # Generate a FAUST engine from a .dsp + JSON manifest (scripts/gen_faust_engine.py): builds the cyfaust
 # kernel(s), emits the FaustEngine/FaustChainEngine<Traits> wrapper, and wires the build + control diagram.
 # See docs/dev/engine-gen.md.   usage:  make faust-engine MANIFEST=src/engine/<name>/<name>.json
@@ -317,7 +325,7 @@ engine-reverb:
 # && .venv/bin/pip install cyfaust`. Override the interpreter with `CYFAUST_PY=/path/to/python` to pin a
 # different libfaust version. Add a kernel: drop <name>.dsp in its engine dir, add a spec here, and bind it.
 CYFAUST_PY ?= .venv/bin/python
-FAUST_KERNELS ?= src/engine/reverb:rv_:dattorro src/engine/reverb:rv_:zita src/engine/reverb:rv_:freeverb src/engine/tape:tfx_:tapefx src/engine/chorus:fx_:chorus src/engine/dfilter:fx_:dfilter src/engine/voice:fx_voice_:osc src/engine/voice:fx_voice_:filter
+FAUST_KERNELS ?= src/engine/reverb:rv_:dattorro src/engine/reverb:rv_:zita src/engine/reverb:rv_:greyhole src/engine/tape:tfx_:tapefx src/engine/chorus:fx_:chorus src/engine/dfilter:fx_:dfilter src/engine/voice:fx_voice_:osc src/engine/voice:fx_voice_:filter
 # `faust-gen` is the former name, kept as a deprecated alias.
 .PHONY: faust-kernels faust-gen
 faust-kernels faust-gen:

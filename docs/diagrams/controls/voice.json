@@ -45,13 +45,13 @@
   },
   "deckB": {
     "knobs": {
-      "Pitch": "drive",
-      "Position": "-",
-      "Size": "cutoff",
+      "Pitch": "cutoff",
+      "Position": "reso",
+      "Size": "drive",
       "Envelope": "-",
       "Mix (SOS)": "mix",
       "Cycle": "-",
-      "Glow": "reso"
+      "Glow": "-"
     }
   }
 }

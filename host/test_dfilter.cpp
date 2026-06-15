@@ -49,23 +49,23 @@ int main() {
 
     DfilterEngine e; e.init(ctx);
 
-    // 1. per-deck params are independent (Size -> "cutoff" on each deck's own instance).
-    e.set_param(ParamId::Size, DeckRef::A, 0.1f);
-    e.set_param(ParamId::Size, DeckRef::B, 0.9f);
-    check(std::fabs(e.param(ParamId::Size, DeckRef::A) - 0.1f) < 1e-4f, "deck A Size round-trips");
-    check(std::fabs(e.param(ParamId::Size, DeckRef::B) - 0.9f) < 1e-4f, "deck B Size round-trips");
-    check(std::fabs(e.param(ParamId::Size, DeckRef::A) - 0.1f) < 1e-4f,
-          "deck B's Size did NOT clobber deck A's (independent state)");
+    // 1. per-deck params are independent (Pitch -> "cutoff" on each deck's own instance).
+    e.set_param(ParamId::Speed, DeckRef::A, 0.1f);
+    e.set_param(ParamId::Speed, DeckRef::B, 0.9f);
+    check(std::fabs(e.param(ParamId::Speed, DeckRef::A) - 0.1f) < 1e-4f, "deck A cutoff round-trips");
+    check(std::fabs(e.param(ParamId::Speed, DeckRef::B) - 0.9f) < 1e-4f, "deck B cutoff round-trips");
+    check(std::fabs(e.param(ParamId::Speed, DeckRef::A) - 0.1f) < 1e-4f,
+          "deck B's cutoff did NOT clobber deck A's (independent state)");
 
-    // 2. fresh engine reports the kernel slider defaults, per deck (cutoff default 1.0 in dfilter.dsp).
+    // 2. fresh engine reports the kernel slider defaults, per deck (cutoff default 1.0 in dfilter.dsp -> Pitch).
     DfilterEngine fresh; fresh.init(ctx);
-    check(std::fabs(fresh.param(ParamId::Size, DeckRef::A) - 1.0f) < 0.02f, "deck A boot = kernel default");
-    check(std::fabs(fresh.param(ParamId::Size, DeckRef::B) - 1.0f) < 0.02f, "deck B boot = kernel default");
+    check(std::fabs(fresh.param(ParamId::Speed, DeckRef::A) - 1.0f) < 0.02f, "deck A boot = kernel default");
+    check(std::fabs(fresh.param(ParamId::Speed, DeckRef::B) - 1.0f) < 0.02f, "deck B boot = kernel default");
 
     // 3. DoubleMono channel independence: deck A cutoff shut (kills 8 kHz on L), deck B open (passes on R).
-    e.set_param(ParamId::Mix,  DeckRef::A, 1.0f); e.set_param(ParamId::Mix,  DeckRef::B, 1.0f); // full wet both
-    e.set_param(ParamId::Size, DeckRef::A, 0.0f);  // deck A cutoff ~40 Hz -> kills the 8 kHz tone on the left
-    e.set_param(ParamId::Size, DeckRef::B, 1.0f);  // deck B cutoff ~20 kHz -> passes it on the right
+    e.set_param(ParamId::Mix,   DeckRef::A, 1.0f); e.set_param(ParamId::Mix,   DeckRef::B, 1.0f); // full wet both
+    e.set_param(ParamId::Speed, DeckRef::A, 0.0f);  // deck A cutoff ~40 Hz -> kills the 8 kHz tone on the left
+    e.set_param(ParamId::Speed, DeckRef::B, 1.0f);  // deck B cutoff ~20 kHz -> passes it on the right
     float rl = 0, rr = 0; bool finite = true;
     run(e, 120, rl, rr, finite);
     check(finite, "output is finite");

@@ -20,13 +20,19 @@ Current engines include:
 
 6. [shuttle](docs/engines/shuttle.md): buffer-based bipolar/reverse varispeed tape (four in-RAM tracks, PITCH as a capstan-speed knob - noon stops, CW forward, CCW reverse)
 
-7. [reverb](docs/engines/reverb.md): route-aware stereo reverb with switchable algorithms (Dattorro plate / Zita-rev1 hall, generated from [Faust](https://faust.grame.fr) sources; optional gen~ gigaverb as a third voice) - the Reel/Slice/Drift switch selects the algorithm, and DoubleMono routing runs an independent mono plate on each deck (the heavier hall/gigaverb stay single-voice in a stereo route, a CPU cap validated on hardware)
+7. [reverb](docs/engines/reverb.md): route-aware stereo reverb with three all-Faust algorithms (Dattorro plate / Zita-rev1 hall / Greyhole, generated from [Faust](https://faust.grame.fr) sources) - the Reel/Slice/Drift switch selects the algorithm, and DoubleMono routing runs an independent mono plate on each deck (the heavier hall/Greyhole stay single-voice in a stereo route, a CPU cap validated on hardware)
 
 8. [gigaverb](docs/engines/gigaverb.md): stereo reverb authored in Max/MSP **gen~** and translated to C++ via [gen-dsp](https://github.com/shakfu/gen-dsp) (Tom Erbe's gigaverb)
 
 9. [radio](docs/engines/radio.md): dual virtual [RadioMusic](https://github.com/TomWhitwell/RadioMusic) - two independent virtual radios (one per deck) over a shared SD library of banks, with the signature free-running "virtual playhead" (each station seems to keep broadcasting while you are tuned elsewhere): PITCH = station tuning, POS = start offset, Alt+PITCH = bank, SIZE = varispeed, ENV = inter-station static, Play/gate = re-tune. Streams headerless raw 16-bit-mono `.raw` files (the original RadioMusic format, at 48 kHz)
 
-10. [passthrough](docs/engines/passthrough.md): minimal stereo passthrough engine demonstrating the platform API
+10. [chorus](docs/engines/chorus.md): stereo chorus - the demo of the **generated** Faust path (author a `.dsp` + a small JSON manifest, no hand-written C++)
+
+11. [dfilter](docs/engines/dfilter.md): dual resonant filter, one independent voice per channel - the generated **parallel (DoubleMono) dual-deck** demo
+
+12. [voice](docs/engines/voice.md): drone oscillator (deck A) into a resonant filter (deck B) - the generated **series (chain) dual-deck** demo (instrument -> FX)
+
+13. [passthrough](docs/engines/passthrough.md): minimal stereo passthrough engine demonstrating the platform API
 
 Engines can be authored in three ways:
 
@@ -85,9 +91,11 @@ The firmware is a fixed hardware/UI **platform** that hosts a swappable DSP **en
 
 - `make -j8 ENGINE=radio` — a **dual virtual [RadioMusic](https://github.com/TomWhitwell/RadioMusic)**: two independent virtual radios (one per deck) browsing a shared `/radio/<bank>/` SD library, blended by the crossfader and routing switch. Its signature is the **free-running virtual playhead** — every station seems to keep broadcasting while you are tuned elsewhere (a per-deck frame clock seeks each opened station to `(clock + START) mod length`). **PITCH** tunes stations (+ V/oct CV), **POS** sets the start offset (+ CV), **Alt+PITCH** picks the bank, **SIZE** adds 0.5–2x varispeed, **ENV** brings in inter-station static, **Play pad / gate-in** re-tune. Streams **16-bit-mono `.raw`** (headerless, the original RadioMusic format) or **`.wav`** (self-describing, carries its own rate) — mix freely in a bank; convert with [`scripts/convert_radio_audio.py`](scripts/convert_radio_audio.py).
 
-- `make -j8 ENGINE=reverb` — a **route-aware** stereo reverb with **switchable algorithms** (a Dattorro plate and a Zita-rev1 hall, the **Reel/Slice/Drift switch** selects live; an optional gen~ gigaverb third voice with `REVERB_GIGAVERB=1`), generated from [Faust](https://faust.grame.fr) sources by cyfaust. **DoubleMono** routing runs an independent mono plate per deck; the heavy hall/gigaverb are single-voice (stereo-route only), a cap that keeps two delay-line-heavy voices off the SDRAM bus at once. Regenerate the kernels with `make faust-gen`.
+- `make -j8 ENGINE=reverb` — a **route-aware** stereo reverb with **three all-Faust algorithms** (a Dattorro plate, a Zita-rev1 hall, and a Greyhole, the **Reel/Slice/Drift switch** selects live), generated from [Faust](https://faust.grame.fr) sources by cyfaust. **DoubleMono** routing runs an independent mono plate per deck; the heavy hall/Greyhole are single-voice (stereo-route only), a cap that keeps two delay-line-heavy voices off the SDRAM bus at once. Built at `-Os` (Greyhole is the heaviest voice). Regenerate the kernels with `make faust-kernels`.
 
 - `make -j8 ENGINE=gigaverb` — a stereo reverb (Tom Erbe's **gigaverb**) authored in Max/MSP **gen~** and translated to C++ by [gen-dsp](https://github.com/shakfu/gen-dsp). The engine directory is generated from a gen~ export with `make gen-engines` (or `scripts/gen_engine.py`); see [`docs/engine-types/gen.md`](docs/engine-types/gen.md).
+
+- `make -j8 ENGINE=chorus` / `dfilter` / `voice` — engines **generated** from a Faust `.dsp` + a small JSON manifest with no hand-written C++ (`make faust-engine MANIFEST=…`): **chorus** (a stereo chorus, the single-deck demo), **dfilter** (a resonant filter per channel, the parallel dual-deck demo), and **voice** (a drone oscillator into a filter, the series dual-deck demo). See [`docs/engine-types/faust.md`](docs/engine-types/faust.md).
 
 - `make -j8 ENGINE=passthrough` — a minimal stereo-passthrough variant.
 
@@ -117,7 +125,7 @@ The bootloader version used in this project enables USB DFU firmware updating fr
 
 `make program-dfu` flashes whatever is currently in `build/` (it does not rebuild). To flash a non-default engine, build it first in the same step, e.g. `make ENGINE=passthrough && make program-dfu`.
 
-For convenience there are one-shot targets that **clean + build + flash** a variant (put the device in DFU mode first, as in step 3): `make engine-granular` (the looper), `make engine-delay`, `make engine-edrums`, `make engine-reso`, `make engine-tape`, `make engine-shuttle`, `make engine-reverb`, and `make engine-passthrough`. The gen~ engine has no one-shot target; flash it with `make clean && make ENGINE=gigaverb && make program-dfu`.
+For convenience there are one-shot targets that **clean + build + flash** a variant (put the device in DFU mode first, as in step 3): `make engine-granular` (the looper), `make engine-delay`, `make engine-edrums`, `make engine-reso`, `make engine-tape`, `make engine-shuttle`, `make engine-radio`, `make engine-reverb`, `make engine-chorus`, `make engine-dfilter`, `make engine-voice`, `make engine-gigaverb`, and `make engine-passthrough`.
 
 Once finished, the device will automatically boot the new firmware. This can "brick" (temporarily) the device and require reinstallation of either the bootloader, the firmware binary, or both.
 

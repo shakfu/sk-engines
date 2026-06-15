@@ -24,9 +24,9 @@ _Generated from [`docs/diagrams/controls/voice.json`](../diagrams/controls/voice
 
 | Control | `ParamId` | Faust slider | Effect |
 |---|---|---|---|
-| **SIZE**    | `Size`  | `cutoff` | low-pass cutoff |
-| **MOD_AMT** | `ModAmp` | `reso`  | resonance / Q |
-| **PITCH**   | `Speed` | `drive` | pre-filter saturation |
+| **PITCH**   | `Speed` | `cutoff` | low-pass cutoff |
+| **POS**     | `Pos`   | `reso`  | resonance / Q |
+| **SIZE**    | `Size`  | `drive` | pre-filter saturation |
 | **SOS**     | `Mix`   | `mix`   | dry/wet |
 
 The same physical knobs mean different things on each deck because each deck drives its own stage. The chain is mono internally and duplicated to the stereo bus; the LED rings show an output-level meter. As an instrument, it makes sound on its own - no input patch needed.
@@ -47,7 +47,7 @@ Three files in `src/engine/voice/`:
 { "engine": "voice", "backend": "faust", "deck_mode": "series",
   "stages": [
     { "dsp": "osc",    "knobs": { "Pitch": "freq", "Size": "shape", "Mix (SOS)": "level" } },
-    { "dsp": "filter", "knobs": { "Size": "cutoff", "Glow": "reso", "Pitch": "drive", "Mix (SOS)": "mix" } }
+    { "dsp": "filter", "knobs": { "Pitch": "cutoff", "Position": "reso", "Size": "drive", "Mix (SOS)": "mix" } }
   ],
   "features": { "meter": true, "color": "0x88ff33" } }
 ```

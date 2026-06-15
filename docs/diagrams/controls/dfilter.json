@@ -3,13 +3,13 @@
   "title": "Dual filter - independent resonant low-pass per deck",
   "subtitle": "parallel DoubleMono: deck A filters left, deck B filters right",
   "knobs": {
-    "Pitch": "drive",
-    "Position": "-",
-    "Size": "cutoff",
+    "Pitch": "cutoff",
+    "Position": "reso",
+    "Size": "drive",
     "Envelope": "-",
     "Mix (SOS)": "mix",
     "Cycle": "-",
-    "Glow": "reso"
+    "Glow": "-"
   },
   "pads": {
     "Play": "-",

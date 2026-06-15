@@ -8,7 +8,7 @@
 // faust_arch.h base types (dsp/UI/Meta, pulled in by these headers) live in the global namespace.
 #include "engine/reverb/faust_kernel_dattorro.h"
 #include "engine/reverb/faust_kernel_zita.h"
-#include "engine/reverb/faust_kernel_freeverb.h"
+#include "engine/reverb/faust_kernel_greyhole.h"
 
 #include <algorithm>
 #include <cmath>
@@ -98,29 +98,29 @@ struct ZitaVoice : ReverbVoice {
     const char* name() const override { return "HALL"; }
 };
 
-// --- Freeverb (Schroeder-Moorer) ----------------------------------------------------------------
-// The third Faust voice (replaces the former gen~ gigaverb): 8 damped combs -> 4 allpasses per channel,
-// warmer/more diffuse than the plate or hall. Its .dsp owns the dry/wet crossfade, so the Mix role binds
-// straight to its "Mix" slider like the plate; a wet-tail low-pass (Tone) and a pre-delay (SizeB) give it
-// the full six controls the plate/hall expose, so no knob is dead.
-struct FreeverbVoice : ReverbVoice {
-    rv_freeverb::mydsp dsp;
+// --- Greyhole (modulated diffusion) -------------------------------------------------------------
+// The third Faust voice (replaces the former gen~ gigaverb): Greyhole - a modulated diffusion network
+// with a pitch-shifter in the feedback, a lush evolving/ambient reverb very unlike the static plate/hall.
+// Its .dsp owns the dry/wet crossfade, so the Mix role binds straight to its "Mix" slider like the plate;
+// all six knob roles map to a real control.
+struct GreyholeVoice : ReverbVoice {
+    rv_greyhole::mydsp dsp;
     void init(int sr) override {
         dsp.init(sr);
         static const Bind kBinds[] = {
-            { nullptr, "Mix",      K_Mix,   0 }, // dry/wet (0..1 wet, like the plate)
-            { nullptr, "RoomSize", K_Decay, 0 }, // comb feedback -> tail length (PITCH)
-            { nullptr, "Damp",     K_Damp,  0 }, // HF damping in the combs
-            { nullptr, "Tone",     K_Tone,  0 }, // wet-tail low-pass (POS)
-            { nullptr, "Spread",   K_SizeA, 0 }, // stereo spread (SIZE)
-            { nullptr, "PreDelay", K_SizeB, 0 }, // pre-delay (MODAMT)
+            { nullptr, "Mix",       K_Mix,   0 }, // dry/wet (0..1 wet, like the plate)
+            { nullptr, "Feedback",  K_Decay, 0 }, // tail length (PITCH)
+            { nullptr, "Damp",      K_Damp,  0 }, // HF damping (ENV)
+            { nullptr, "Diffusion", K_Tone,  0 }, // smear/character (POS)
+            { nullptr, "Size",      K_SizeA, 0 }, // network size (SIZE)
+            { nullptr, "ModDepth",  K_SizeB, 0 }, // modulation depth (MODAMT)
         };
         CaptureUI ui; ui.roles = role; ui.binds = kBinds;
         ui.nbinds = static_cast<int>(sizeof(kBinds) / sizeof(kBinds[0]));
         dsp.buildUserInterface(&ui);
     }
     void compute(FAUSTFLOAT** in, FAUSTFLOAT** out, int n) override { dsp.compute(n, in, out); }
-    const char* name() const override { return "FVERB"; }
+    const char* name() const override { return "GREY"; }
 };
 
 // ParamId (physical knob) -> reverb role. Returns K_Count for ids this engine does not map.
@@ -143,11 +143,11 @@ void ReverbEngine::init(const EngineContext& ctx)
     Arena ar(ctx.arena);
     const int sr = static_cast<int>(ctx.sample_rate);
     // One full set of voices PER DECK so each deck's selected reverb has independent delay-line state
-    // (DoubleMono runs both at once). Dattorro ~126 KB + Zita ~937 KB + Freeverb per deck.
+    // (DoubleMono runs both at once). Dattorro ~126 KB + Zita ~937 KB + Greyhole per deck.
     for (int d = 0; d < DeckRef::Count; d++) {
         if (void* m = ar.alloc<uint8_t>(sizeof(DattorroVoice), alignof(DattorroVoice))) _rv[d][0] = new (m) DattorroVoice();
         if (void* m = ar.alloc<uint8_t>(sizeof(ZitaVoice),     alignof(ZitaVoice)))     _rv[d][1] = new (m) ZitaVoice();
-        if (void* m = ar.alloc<uint8_t>(sizeof(FreeverbVoice), alignof(FreeverbVoice))) _rv[d][2] = new (m) FreeverbVoice();
+        if (void* m = ar.alloc<uint8_t>(sizeof(GreyholeVoice), alignof(GreyholeVoice))) _rv[d][2] = new (m) GreyholeVoice();
 
         for (int v = 0; v < kReverbCount; v++) if (_rv[d][v]) _rv[d][v]->init(sr);
         _active[d] = 0;
@@ -170,7 +170,7 @@ void ReverbEngine::process(const float* const* in, float** out, size_t size)
 
     if (_route == Route::DoubleMono) {
         // Two independent MONO reverbs: in[d] -> deck d's PLATE -> out[d]. DoubleMono is plate-only
-        // (eff_voice caps it): the hall/freeverb are too heavy to run two-up. The Faust plate is stereo,
+        // (eff_voice caps it): the hall/greyhole are too heavy to run two-up. The Faust plate is stereo,
         // so each deck is fed mono (input fanned to both channels) with one output kept; the discarded
         // channel lands in a throwaway scratch. compute() is allocation-free -> ISR-safe.
         static constexpr size_t kMaxBlock = 128; // platform block is 96
@@ -253,9 +253,9 @@ bool ReverbEngine::set_config(ConfigId id, DeckRef::Ref deck, int value)
 void ReverbEngine::render(DisplayModel& m)
 {
     m.clear();
-    // Plate = cool blue, Hall = violet, Freeverb = warm amber (a clear third colour vs the two cool ones).
-    const uint32_t kColor[kReverbCount] = { 0x00aaffu, 0x8800ffu, 0xff8844u };
-    // Algorithm colour + the effective voice index: DoubleMono forces plate (hall/freeverb are stereo-only);
+    // Plate = cool blue, Hall = violet, Greyhole = teal (a clear third colour vs the two cool ones).
+    const uint32_t kColor[kReverbCount] = { 0x00aaffu, 0x8800ffu, 0x33ffccu };
+    // Algorithm colour + the effective voice index: DoubleMono forces plate (hall/greyhole are stereo-only);
     // a stereo route uses deck A's Reel/Slice/Drift selection.
     const bool     dual  = (_route == Route::DoubleMono);
     const int      vidx  = dual ? 0 /*plate*/ : _active[DeckRef::A];
@@ -263,7 +263,7 @@ void ReverbEngine::render(DisplayModel& m)
 
     // The 3 mode LEDs (left/center/right) sit at the Reel/Slice/Drift switch, which on the reverb selects
     // the ALGORITHM - so light the active position in that algorithm's colour. The third position
-    // (freeverb) reads as a distinct amber against plate-blue / hall-violet, and you can see which algorithm
+    // (greyhole) reads as a distinct teal against plate-blue / hall-violet, and you can see which algorithm
     // is active even in silence. (Route is no longer shown here; in DoubleMono the two independent per-deck
     // rings make it visible.)
     DisplayModel::Indicator* mode_led[3] = { &m.mode_left, &m.mode_center, &m.mode_right };
@@ -272,11 +272,11 @@ void ReverbEngine::render(DisplayModel& m)
     // Per-deck ring. The reverb used to light the ring only with the live output level, so the panel was
     // dark whenever the input was quiet and showed nothing about the patch. Instead, draw three things at
     // once, so the ring is always legible:
-    //   - colour   = the active algorithm (plate blue / hall violet / freeverb amber), readable in silence;
+    //   - colour   = the active algorithm (plate blue / hall violet / greyhole teal), readable in silence;
     //   - arc      = the DECAY knob (PITCH) - how long the tail is - so turning it gives instant feedback;
     //   - brightness = the output level, layered on top, so the arc pulses with signal and visibly fades
     //                  out as the reverb tail decays ("is it doing anything?" answered).
-    // DoubleMono runs an independent plate per deck (hall/freeverb are stereo-only), so each ring shows its
+    // DoubleMono runs an independent plate per deck (hall/greyhole are stereo-only), so each ring shows its
     // own deck's decay; a stereo route shows deck A's voice + decay on both rings (one shared voice).
     for (int d = 0; d < DeckRef::Count; d++) {
         const float decay = _v[dual ? d : DeckRef::A][K_Decay];

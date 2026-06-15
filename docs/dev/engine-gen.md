@@ -132,7 +132,7 @@ Two instances of **one** mono kernel: deck A processes the **left** channel, dec
 
 ```json
 { "engine": "dfilter", "backend": "faust", "deck_mode": "parallel",
-  "knobs": { "Size": "cutoff", "Glow": "reso", "Pitch": "drive", "Mix (SOS)": "mix" },
+  "knobs": { "Pitch": "cutoff", "Position": "reso", "Size": "drive", "Mix (SOS)": "mix" },
   "features": { "meter": true, "color": "0xff8833" } }
 ```
 
@@ -146,7 +146,7 @@ The engine is a chain of **two distinct** kernels: deck A's knobs drive the firs
 { "engine": "voice", "backend": "faust", "deck_mode": "series",
   "stages": [
     { "dsp": "osc",    "knobs": { "Pitch": "freq", "Size": "shape", "Mix (SOS)": "level" } },
-    { "dsp": "filter", "knobs": { "Size": "cutoff", "Glow": "reso", "Pitch": "drive", "Mix (SOS)": "mix" } }
+    { "dsp": "filter", "knobs": { "Pitch": "cutoff", "Position": "reso", "Size": "drive", "Mix (SOS)": "mix" } }
   ],
   "features": { "meter": true, "color": "0x88ff33" } }
 ```

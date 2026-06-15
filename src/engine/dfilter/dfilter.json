@@ -4,6 +4,6 @@
   "deck_mode": "parallel",
   "title": "Dual filter - independent resonant low-pass per deck",
   "subtitle": "parallel DoubleMono: deck A filters left, deck B filters right",
-  "knobs": { "Size": "cutoff", "Glow": "reso", "Pitch": "drive", "Mix (SOS)": "mix" },
+  "knobs": { "Pitch": "cutoff", "Position": "reso", "Size": "drive", "Mix (SOS)": "mix" },
   "features": { "meter": true, "color": "0xff8833" }
 }

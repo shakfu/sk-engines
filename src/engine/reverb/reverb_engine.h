@@ -14,7 +14,7 @@ struct ReverbVoice; // defined in reverb_engine.cpp (wraps one generated kernel 
 // ReverbEngine - a multi-algorithm reverb whose DSP is Faust-generated. Each algorithm is a
 // cyfaust-generated kernel (src/engine/reverb/<name>.dsp -> faust_kernel_<name>.h, one per namespace
 // rv_<name>); the physical Reel/Slice/Drift mode switch (ConfigId::Mode) selects which one is live.
-// Currently three Faust voices: a Dattorro plate, a Zita-rev1 hall, and a Freeverb.
+// Currently three Faust voices: a Dattorro plate, a Zita-rev1 hall, and a Greyhole.
 //
 // Route-aware (ConfigId::Route), like the rest of the instrument:
 //   * Stereo / GenerativeStereo -> ONE stereo voice (deck A's selection) reverberates the stereo pair;
@@ -38,7 +38,7 @@ struct ReverbVoice; // defined in reverb_engine.cpp (wraps one generated kernel 
 //   Reel/Slice/Drift switch (ConfigId::Mode) -> reverb algorithm select (per deck)
 class ReverbEngine : public IEngine {
 public:
-    static constexpr int kReverbCount = 3; // dattorro, zita, freeverb (mode switch selects; sync with init())
+    static constexpr int kReverbCount = 3; // dattorro, zita, greyhole (mode switch selects; sync with init())
 
     ReverbEngine() = default;
     ~ReverbEngine() override = default;
@@ -71,7 +71,7 @@ private:
     Route        _route = Route::Stereo; // ConfigId::Route; selects the process() topology
 
     // The voice index actually used for a deck. DoubleMono caps every deck to the PLATE (index 0): the
-    // hall and freeverb are stereo (2-in/2-out) and heavy, so they only run as a single stereo voice (in a
+    // hall and greyhole are stereo (2-in/2-out) and heavy, so they only run as a single stereo voice (in a
     // stereo route), never two-up as mono-per-deck. In a stereo route the deck plays its switch-selected
     // voice (_active). Plate is index 0 by construction (see init()).
     int  eff_voice(int deck) const { return _route == Route::DoubleMono ? 0 : _active[deck]; }
