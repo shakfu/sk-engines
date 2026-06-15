@@ -8,11 +8,11 @@ The platform is intentionally decoupled from any specific engine. Core subsystem
 
 Current engines include:
 
-1. [granular](docs/engines/granular.md): dual-deck granular looper (the original reference and default engine)
+1. [granular](docs/engines/granular.md): dual-deck granular looper (the original reference spotykach firmware as an engine)
 
 2. [delay](docs/engines/delay.md): tempo-synchronized stereo delay with switchable characters (Clean / Tape / Shimmer on the Reel/Slice/Drift switch) and stereo topologies (Stereo / DoubleMono / Ping-pong on the route switch), plus a feedback tone control, a modulation LFO (chorus/flange/vibrato), and a Play-pad freeze
 
-3. [edrums](docs/engines/edrums.md): four-voice Euclidean drum machine
+3. [edrums](docs/engines/edrums.md): four-voice Euclidean drum machine with tweakable synthesized drums
 
 4. [reso](docs/engines/reso.md): resonator/plucked-string instrument based on the [Mutable Instruments Rings DSP code](https://github.com/pichenettes/eurorack/tree/master/rings)
 

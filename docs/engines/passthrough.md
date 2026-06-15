@@ -2,7 +2,7 @@
 
 `ENGINE=passthrough` · `src/engine/passthrough/passthrough_engine.h` (header-only) · class `PassthroughEngine`
 
-The smallest possible engine: stereo in → stereo out, tracking the last-block peak to drive a level meter on the rings. Its purpose is documentation, not music — it shows how little a non-granular engine needs, and is the template to copy when starting a new engine.
+The smallest possible engine: stereo in → stereo out, tracking the last-block peak to drive a level meter on the rings. Its purpose is documentation, not music — it shows how little a non-granular engine needs, and is the template to copy when starting a new engine. It is the minimal `IEngine` reference (a code example), so it is developer-facing by nature and is not split into a separate impl file.
 
 ## What it does
 

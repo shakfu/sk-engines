@@ -4,17 +4,7 @@
 
 The stock Max/MSP `gen~` reverb example (Tom Erbe's gigaverb), exported to C++ and run as an engine through gen-dsp - the first engine built this way, and the worked example for the method. The mechanism (genlib isolation, the arena-bound allocator, the generic `GenEngine<W>` wrapper, the codegen) is documented in [engine-types/gen.md](../engine-types/gen.md); this page is the gigaverb specifics.
 
-## Status at a glance
-
-- 2-in / 2-out, 8 parameters, no `[buffer]`s. Stereo, so it maps 1:1 onto the platform bus.
-
-- Links and fits: `make ENGINE=gigaverb` -> SRAM_EXEC 158732 B (83.3% of 186 KB) at the default `-O2`, no overflow, no `-Os` needed.
-
-- `SRAM` (data) stays flat (~52 KB) despite the reverb delay lines, because all gen~ state is bump-allocated from the injected SDRAM arena.
-
-- `capabilities() = 0`: stereo audio + knob params only (no custom display, MIDI, CV-out, or sequencing).
-
-- Not yet flashed/heard on hardware.
+> Implementation, the file map, and dev notes live in [`docs/dev/gigaverb-impl.md`](../dev/gigaverb-impl.md).
 
 ## Control map
 
@@ -33,14 +23,6 @@ The stock Max/MSP `gen~` reverb example (Tom Erbe's gigaverb), exported to C++ a
 
 This table lives in `src/engine/gigaverb/gigaverb_engine.h` (the `index_of()` switch) and is the one spot to retune; everything else is the generic wrapper. `ParamId::ModSpeed` is intentionally absent - the MODFREQ knob routes to `set_mod_speed()`, which a gen engine does not receive (see [the method doc](../engine-types/gen.md#control-map) for the full reachability rules and the knob grammar in [README.md](README.md)).
 
-## Files
-
-The shared `src/engine/gen/` family and the generated `src/engine/gigaverb/` tree are described in [engine-types/gen.md](../engine-types/gen.md#files). gigaverb-specific:
-
-- `src/engine/gigaverb/gigaverb_engine.h` - the per-engine glue (traits + the control map above). Generated once, then hand-tuned; preserved across re-generation unless `--force-glue`.
-
-- `src/engine/gigaverb/gen/` - the copied gen~ export (Tom Erbe's gigaverb). Also the default source for `make gen-engines` (`GEN_EXPORTS` points back at it), so a regen is reproducible from the checkout.
-
 ## Build / flash / regenerate
 
 ```text
@@ -52,11 +34,3 @@ make gen-engines                               # regenerate from the vendored ex
 ## Also available inside the `reverb` engine
 
 Beyond the standalone `ENGINE=gigaverb` build, this export can be folded into the [`reverb` engine](reverb.md) as a **third selectable voice** alongside the Faust plate and hall: `make ENGINE=reverb REVERB_GIGAVERB=1`. There it is wrapped as a `GigaverbVoice` (driving the same gen~ export by parameter index), gets its own per-deck gen~ arena slice, and - unlike this standalone build - synthesizes a true wet/dry crossfade in software (pins `dry` to 0 and blends against the input) so its Mix knob matches the Faust voices. See [reverb.md](reverb.md#optional-third-voice-gen-gigaverb).
-
-## Notes / TODO
-
-- No display: `capabilities() = 0`, so the platform shows its default UI. A meter would need `render()`.
-
-- Reverb tail / CPU not measured on hardware. Fits SRAM_EXEC at 83% with headroom before `-Os` is needed.
-
-- The `Mix` knob drives gigaverb's `dry` level (not a wet/dry blend) in this standalone build; retune the map if a true mix is wanted (the `reverb` fold-in does this for you).

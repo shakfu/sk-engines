@@ -2,6 +2,12 @@
 
 Spotykach is a fixed hardware/UI **platform** hosting a swappable DSP **engine** (one chosen at build time via `ENGINE=`). This folder documents each shipped engine in detail; this page covers the model they all share. There are three **ways to build** an engine (native C++, Faust/cyfaust, gen~/gen-dsp) — see [`../engine-types/`](../engine-types/README.md). Companion docs: `docs/architecture.md` (platform/engine design), `docs/engine-layout.md` (which files belong to which engine).
 
+**Doc split convention.** Each engine's documentation is split by audience:
+
+- `docs/engines/<name>.md` — **user-facing**: what the engine is and its signature behavior, the control map (knobs/pads/CV/switches), routing/display, SD-card prep + file formats, and the build/flash commands.
+
+- `docs/dev/<name>-impl.md` — **developer-facing**: architecture and internal data flow, the file-by-file map, implementation constants and risks/watch-items, build-system internals, bring-up status, bug writeups, and the roadmap / "what's left". Each engine doc links to its impl notes near the top. (`passthrough` is a minimal reference example and is not split.)
+
 ## The contract an engine implements
 
 Every engine implements `IEngine` (`src/engine/iengine.h`). The audio lifecycle is required:
@@ -66,7 +72,7 @@ The `ParamId` names are granular-flavored (the platform's vocabulary), but a non
 ## Building and flashing a variant
 
 ```text
-make -j8 ENGINE=granular      # default; also: delay | edrums | reso | tape | reverb | passthrough
+make -j8 ENGINE=granular      # default; also: delay | edrums | reso | tape | shuttle | reverb | gigaverb | radio | passthrough
 make ENGINE=edrums program-dfu
 make engine-edrums            # one-shot: clean + build + flash (device in DFU mode)
 make check-boundary           # platform (hw/ui/memory/transport) must not include engine/granular/
@@ -86,4 +92,5 @@ The **Built via** column links to the development method ([`../engine-types/`](.
 | Shuttle | `shuttle` | buffer-based bipolar/reverse varispeed tape (four in-RAM tracks; capstan-speed PITCH, per-track loop window) | [native C++](../engine-types/cpp.md) | [shuttle.md](shuttle.md) |
 | Reverb | `reverb` | route-aware stereo reverb (Dattorro plate / Zita hall, optional gen~ gigaverb), Reel/Slice/Drift switch selects; DoubleMono = two mono plates (heavy hall/gigaverb are stereo-only) | [Faust](../engine-types/faust.md) | [reverb.md](reverb.md) |
 | gigaverb | `gigaverb` | stereo reverb from a Max gen~ patch | [gen~](../engine-types/gen.md) | [gigaverb.md](gigaverb.md) |
+| Radio | `radio` | dual virtual RadioMusic: two SD-streaming "radios" with a free-running virtual playhead; `.raw`/`.wav` stations in numbered banks | [native C++](../engine-types/cpp.md) | [radio.md](radio.md) |
 | Passthrough | `passthrough` | minimal stereo passthrough (reference engine) | [native C++](../engine-types/cpp.md) | [passthrough.md](passthrough.md) |

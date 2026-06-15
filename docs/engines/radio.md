@@ -6,27 +6,13 @@ A **dual virtual [RadioMusic](https://github.com/TomWhitwell/RadioMusic)**. Each
 **independent virtual radio** browsing one shared SD library of banks; the two radios are blended by the
 platform crossfader and placed by the routing switch, so it plays like a pair of radios you tune and mix.
 
-Built on the same SD-streaming stack as the [tape](tape.md) engine (the platform `StreamDeck` service,
-gated by `SPK_USE_STREAM`), so it inherits the lock-free ring + main-loop pump and adds only what
-RadioMusic needs: a headerless raw-16-bit codec, a directory scan, and the free-running playhead.
+Its signature is the **free-running virtual playhead**: every station sounds as though it kept
+broadcasting while you were tuned elsewhere. A per-deck clock runs continuously; tuning to a station lands
+at the position it "would" be playing now, and leaving and returning finds it advanced - exactly like a
+radio.
 
-> **Status: builds + host-tested; hardware bring-up pending.** `make -j8 ENGINE=radio` links at ~82.8%
-> SRAM_EXEC (no record path, no Faust kernels). `make -C host test` includes `test-radio` (raw codec,
-> station/bank quantization, the playhead modulo, varispeed, static, RESET) - all green. The pot/pad/
-> LED/CV paths have no host harness and are unverified on the device.
-
----
-
-## The free-running virtual playhead
-
-The defining RadioMusic behaviour: every station sounds as though it kept broadcasting while you were
-tuned elsewhere. A single monotonic **frame clock** advances each audio block; tuning to a station opens
-its file and seeks to `(clock + START) mod station_length` before streaming forward, so each station
-lands at its "live" position. Leaving a station and returning finds it advanced, exactly like a radio.
-
-The raw 16-bit format makes this cheap: a station's length is `filesize / 2` (a pure `f_stat`, no header
-parse) and a seek is `f_lseek(frame * 2)`. The file open + seek happens off the audio path in `prepare()`
-(main loop); the audio ISR only ever drains the per-deck ring.
+> Implementation, architecture, the file map, and the bug writeups live in
+> [`docs/dev/radio-impl.md`](../dev/radio-impl.md).
 
 ---
 
@@ -34,33 +20,28 @@ parse) and a seek is `f_lseek(frame * 2)`. The file open + seek happens off the 
 
 | Control | `ParamId` / config | Effect |
 |---|---|---|
-| **PITCH** (`Speed`) | + `cv_voct` (V/oct jack) | **STATION** select - the tuning dial. Knob + CV summed, quantized to the nearest station in the bank. |
-| **POS** (`Pos`) | + `cv_size_pos` (size/pos jack) | **START** offset into the station (applied on the next switch / RESET). |
+| **PITCH** (`Speed`) | + V/oct CV jack | **STATION** select - the tuning dial. Knob + CV summed, quantized to the nearest station in the bank. |
+| **POS** (`Pos`) | + size/pos CV jack | **START** offset into the station (applied on the next switch / RESET). |
 | **SIZE** (`Size`) | | **varispeed** 0.5x..2x (center = unity). RadioMusic is fixed-rate; this is a platform bonus. |
 | **ENV** (`Env`) | | inter-station **STATIC** amount (tuning hiss crossfaded in on a station change). |
 | **MIX** (`Mix`) | | deck **volume**. |
 | **Alt+PITCH** (`Aux`) | | **BANK** select (held selector, ring dots) - "hold RESET for bank" on the original. |
 | **Mix fader** (`Crossfade`) | | A/B blend of the two radios. |
 | **Routing switch** (`Route`) | | stereo topology (below). |
-| **Play pad** / **gate-in** | `on_play_pad` / `on_gate_trigger` | **RESET** - (re)start a stopped deck at the live position. Debounced, and a **no-op while the deck is already streaming** (re-seeking a live free-running station is redundant, and honoring a repeated/floating-gate trigger would flush the ring continuously - the constant-stutter bug). The Rev pad is inert. |
-
-`capabilities() = CapOwnDisplay | CapDualDeck | CapAux`. `CapAux` claims Alt+PITCH for the BANK selector
-(the same held-selector mechanism tape uses for slots and edrums for model select). It does **not**
-advertise `CapTapeStorage` - the radio owns its own SD streaming, like tape.
+| **Play pad** / **gate-in** | | **RESET** - re-start a stopped deck at the live position (a no-op while it is already streaming). The Rev pad is inert. |
 
 ### Routing / stereo image
 
-- **LEFT (`DoubleMono`):** radio A hard-left, radio B hard-right (two radios across the stereo field).
-- **CENTRE (`Stereo`):** both radios centred.
-- **RIGHT (`GenerativeStereo`):** each radio at a random pan (re-rolled on entering the mode).
+- **LEFT (DoubleMono):** radio A hard-left, radio B hard-right (two radios across the stereo field).
+- **CENTRE (Stereo):** both radios centred.
+- **RIGHT (GenerativeStereo):** each radio at a random pan (re-rolled on entering the mode).
 
 ### Static (tuning hiss)
 
-A cheap filtered-noise generator (LCG white + one-pole low-pass, no table) crossfades in on each station
-change; **ENV** sets the level. With ENV high, sweeping PITCH switches stations immediately so you hear
-the dial-tuning churn + hiss; with ENV low, a short settle timer means a sweep only opens the station you
-land on (no zipper of file opens). A non-playing deck (empty bank / failed open) outputs dead-air hiss at
-the ENV level.
+A filtered-noise "tuning hiss" crossfades in on each station change; **ENV** sets the level. With ENV
+high, sweeping PITCH switches stations immediately so you hear the dial-tuning churn + hiss; with ENV low,
+a sweep only opens the station you land on (no zipper). A non-playing deck (empty bank) outputs dead-air
+hiss at the ENV level.
 
 ### Display
 
@@ -82,41 +63,36 @@ A shared library both decks browse independently:
 ```
 
 - **Banks** = numbered folders `0`..`15` (mirrors RadioMusic's 16 folders).
-- **Stations** = `.raw` files in a bank, enumerated by directory scan (`f_opendir`/`f_readdir`). Use
-  short **8.3 names** (e.g. `01.raw`) - longer names are skipped so the index stays bounded and the file
-  stays re-openable.
-- **macOS metadata is filtered.** Copying files to a FAT card in Finder writes a hidden AppleDouble
-  companion `._NAME.raw` (~4 KB of metadata, not audio) next to every `NAME.raw`, plus `.DS_Store`. The
-  companion ends in `.raw`, so `scan_bank` explicitly drops it (FAT hidden/system attribute + leading-dot
-  name + a 32 KB minimum size); otherwise each would index as a bogus tiny "station" that loops a sliver
-  of garbage - a fast stutter, alternating with the real stations as you tune. The converter's
-  `from-dir`/`mirror` skip dotfiles on the source side too. To clean an existing card: `dot_clean
-  /Volumes/CARD` then delete any remaining `._*` / `.DS_Store`.
+- **Stations** = `.raw`/`.wav` files in a bank. Use short **8.3 names** (e.g. `01.raw`); longer names are
+  skipped.
+- **macOS users:** copying files to a FAT card in Finder leaves hidden `.DS_Store` and `._*` companion
+  files; the engine filters them, but to clean a card you can run `dot_clean /Volumes/CARD` and delete any
+  remaining `._*` / `.DS_Store`.
 
 ### Audio format
 
-Two interchangeable formats, both **signed 16-bit mono PCM, little-endian** - a WAV body *is* int16, so
-they share one streaming path (`RawStreamReader`):
+Stations are **signed 16-bit mono PCM**, in either format (mix freely in a bank):
 
-- **`.raw`** - headerless (the original RadioMusic format). Length = filesize/2 (a pure `f_stat`, no
-  open). Carries no sample rate, so it assumes 48 kHz unless `rate.txt` overrides (below).
-- **`.wav`** - a 16-bit-mono PCM WAV. The header is parsed (`begin_wav`, a chunk walk validating
-  `fmt=1`/`16-bit`/`mono`) for the body offset, length, and **the file's own sample rate** - so a 44.1k
-  WAV plays at correct pitch with **no `rate.txt`**. Indexing a `.wav` costs one `f_open`+header-parse per
-  file at bank load (a `.raw` costs none); playback cost is identical (the body is int16 either way).
+- **`.raw`** - headerless (the original RadioMusic format). Carries no sample rate, so it assumes 48 kHz
+  unless `rate.txt` overrides (below).
+- **`.wav`** - a 16-bit-mono PCM WAV. Self-describing: it carries **its own sample rate**, so a 44.1k WAV
+  plays at correct pitch with **no `rate.txt`**.
 
-The firmware does no sample conversion - it reads the int16 body straight to float (`int16 * 1/32768` in
-the ISR), so a non-16-bit / stereo / float file is rejected (`.wav`) or plays as garbage (`.raw`). A bank
-can mix `.raw` and `.wav` freely. ~192 KB/s for two decks (half the tape engine's float bandwidth).
+The firmware does no sample conversion, so a non-16-bit / stereo / float file is rejected (`.wav`) or
+plays as garbage (`.raw`). Stations can be arbitrarily long (the originals run ~25 min / 130 MB each) -
+streaming has no length cap.
 
 Convert sources with [`scripts/convert_radio_audio.py`](../../scripts/convert_radio_audio.py). The
-original RadioMusic library is itself headerless 16-bit-mono `.raw` at **44.1 kHz** (folders `0`..`15`
-at the card root), so the converter states that input format (`--in-rate`, default 44100) and resamples
-to 48 kHz. The whole-card `mirror` command reproduces a stock card under `/radio`, preserving names:
+original RadioMusic library is itself headerless 16-bit-mono `.raw` at **44.1 kHz**, so the converter
+resamples it to 48 kHz; `--format wav` writes self-describing WAV stations instead. The whole-card
+`mirror` command reproduces a stock card under `/radio`, preserving names:
 
 ```text
 # mirror a RadioMusic card's 0..15 folders into /radio/0..15 at 48 kHz, keeping names
 scripts/convert_radio_audio.py mirror --keep-names -o /Volumes/SD ~/Downloads/16gb-Disk
+
+# ...as self-describing WAV (no rate.txt needed)
+scripts/convert_radio_audio.py mirror --format wav --keep-names -o /Volumes/SD ~/Downloads/16gb-Disk
 
 # one bank from a folder of your own files
 scripts/convert_radio_audio.py from-dir --bank 0 -o /Volumes/SD ./samples
@@ -125,96 +101,31 @@ scripts/convert_radio_audio.py from-dir --bank 0 -o /Volumes/SD ./samples
 ffmpeg -i in.wav -ac 1 -ar 48000 -f s16le /Volumes/SD/radio/0/01.raw
 ```
 
-### Source sample rate (`rate.txt`)
+### Source sample rate (`rate.txt`, `.raw` only)
 
-A headerless `.raw` carries no sample rate, so the engine assumes the device rate, **48 kHz**, by
-default. To play an **unconverted original card** (44.1 kHz) at correct pitch, drop a one-line text file
-**`/radio/rate.txt`** containing the source rate:
+A headerless `.raw` carries no sample rate, so the engine assumes **48 kHz**. To play an **unconverted
+original card** (44.1 kHz) at correct pitch without converting, drop a one-line text file
+**`/radio/rate.txt`** with the source rate:
 
 ```text
 44100
 ```
 
-The engine reads it once at boot and rebases the resampler (consume `rate/48000` source frames per
-output frame), so noon on SIZE gives correct pitch and the varispeed still works around it. Any rate in
-8000..192000 is accepted (RadioMusic's 11025/22050/44100/48000/96000 all work). With **no** `rate.txt`
-the engine runs at 48 kHz - so cards produced by the converter (already 48 kHz) need no file, and only an
-unconverted original card needs `echo 44100 > /Volumes/SD/radio/rate.txt`. `rate.txt` applies to **`.raw`
-only** - a `.wav` carries its own rate in the header and always plays at correct pitch.
+Any rate in 8000..192000 is accepted (RadioMusic's 11025/22050/44100/48000/96000 all work). It rebases
+playback so SIZE-at-noon gives correct pitch. `rate.txt` applies to `.raw` only - a `.wav` carries its own
+rate. Without conversion *or* `rate.txt`, an original 44.1 kHz card plays ~9% sharp (also pullable by ear
+with SIZE).
 
-So there are three ways to play an original 44.1 kHz library at correct pitch: **convert to 48 kHz
-`.raw`** with `mirror`, **convert to 16-bit `.wav`** (`--format wav`, self-describing, no `rate.txt`), or
-**drop the `.raw` files in as-is and add `rate.txt`**. Without either, an unconverted
-card plays ~9% sharp (also pullable by ear with SIZE). Stations can be arbitrarily long - the originals
-run to ~25 min / 130 MB each; streaming has no length cap, so only the (tiny) per-station name+length
-index sits in RAM.
+So three ways to play an original 44.1 kHz library at correct pitch: **convert to 48 kHz `.raw`** with
+`mirror`, **convert to `.wav`** (`--format wav`, no `rate.txt`), or **drop the `.raw` files in as-is and
+add `rate.txt`**.
 
 ---
 
-## Architecture / files
-
-The audio ISR (`process()`) only touches the per-deck rings: pull int16 frames, run a 2-frame
-linear-interp varispeed resampler, crossfade the static, mix to the soft-limited stereo bus. All FatFs
-work (bank scan, file open + seek, the bank index) runs in `prepare()` (main loop) via `StreamDeck`.
-
-New:
-
-- `src/memory/raw_stream.h` - `RawStreamReader : IChunkSource` (16-bit int16 body, headerless `begin` or
-  WAV-header `begin_wav`; `seek_to_frame`/`rewind` relative to the body offset).
-- `src/engine/radio/radio_engine.{h,cpp}` - the engine.
-- `host/test_radio.cpp` - host suite (wired into `make -C host test`).
-- `scripts/convert_radio_audio.py` - source -> `.raw`/`.wav` converter.
-
-Edited (all `SPK_USE_STREAM`-guarded, byte-identical for non-streaming engines):
-
-- `src/engine/istreamdeck.h` - `start_play_raw`/`start_play_wav` (seek-on-open), `frames_of`,
-  `scan_bank` (filters macOS dotfiles, indexes `.raw`+`.wav`), `BankEntry` (name/frames/rate/is_wav),
-  `read_text` (the `rate.txt` read).
-- `src/hw/stream_deck.{h,cpp}` - the new calls + a `RawStreamReader` per deck.
-- `src/engine/engine_select.h`, `Makefile`, `CMakeLists.txt`, `Makefile.cmake` - register `radio`.
-
----
-
-## Build / test
+## Build / flash
 
 ```text
-make -j8 ENGINE=radio        # build (~82.8% SRAM_EXEC)
+make -j8 ENGINE=radio        # build (~83% SRAM_EXEC)
 make engine-radio            # clean + build + DFU flash
-make -C host test            # host suites incl. test-radio (all green)
+make -C host test            # host suites incl. test-radio
 ```
-
----
-
-## Risks / watch-items
-
-- **Dropouts** when both decks sweep stations at once (each switch is an f_open + seek + ring refill).
-  Two int16 mono streams are ~half the tape engine's proven float bandwidth, so steady-state is expected
-  to hold; sustained simultaneous sweeping is the unmeasured case.
-- **Mount delay** - the card mounts ~1 s after boot; the engine retries the bank scan for `kBootScanMs`
-  (5 s) so stations appear once mounted rather than showing dead air.
-- **First-cut constants** (`kSettleMs`, `kStaticDec`, `kNoiseLevel`, `kStaticThresh`) are tunable by ear
-  on hardware, like the tape engine's loop constants.
-- **START is applied on switch**, not continuously, to keep SD I/O bounded. Continuous scrub would need
-  a lighter in-file seek.
-- **Re-open = ring flush.** A (re)open flushes and re-seeds the per-deck ring, so anything that triggers
-  re-opens at audio rate produces a stutter (the same short grain replayed). Three guards prevent that:
-  - **Station-select hysteresis** (`kStationHyst`) - a deadband so small CV/pot noise near a station
-    boundary doesn't flip the target (oscillation needs to swing > 2x the margin).
-  - **Settle-every-prepare** - the settle timer (`kSettleMs`) is reset whenever the target moves *at all*,
-    so a target that oscillates between two stations (parking PITCH on a boundary) **never settles** and
-    the engine just holds the last clean station instead of re-opening ~5x/s there. (With static turned
-    *up*, switching is immediate by design - "dial tuning" - and boundary stability then rests on the
-    hysteresis alone.)
-  - **RESET** (Play pad + gate) is **debounced** (`kDebounceMs`) and a **no-op on a live deck**, so a
-    repeated/floating-gate trigger can't flush a live stream.
-
----
-
-## What's left
-
-`.wav` support is **done** (`RawStreamReader::begin_wav` + `start_play_wav` + the `scan_bank`/`_do_open`
-dispatch, with per-file rate from the header). Possible future work:
-
-- **Per-station fade/declick** at the loop seam for short stations.
-- **A lighter in-file seek** so START can scrub continuously (it currently applies on a switch).
-- **A file browser / more banks** beyond the fixed 0..15 numbered folders.

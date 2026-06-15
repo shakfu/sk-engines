@@ -1,4 +1,4 @@
-# Spotykach engines architecture
+# sk-engines architecture
 #
 # Fixed hardware/UI PLATFORM hosts ONE swappable DSP engine per firmware build.
 # Selection is a build-time choice (ENGINE=<name> -> engine_select.h). The
@@ -7,14 +7,14 @@
 
 vars: {
   d2-config: {
-    layout-engine: dagre
+    layout-engine: elk
     pad: 40
   }
 }
 direction: down
 
 title: |md
-  # Spotykach -- Platform + Swappable Engine
+  # sk-engines -- Platform + Swappable Engine
   _One board, one interaction language, many instruments. One engine per binary._
 | {
   near: top-center

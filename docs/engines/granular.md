@@ -4,19 +4,7 @@
 
 The original instrument and the default build: a two-deck granular looper/sampler with recording, overdub, feedback, a per-deck step sequencer, FX, and CV/MIDI. This is the largest engine; this page is an orientation. Deeper material lives in `docs/architecture.md`, `docs/engine-layout.md`, and the refactor-history docs.
 
-## The graph
-
-`GranularEngine` owns a `Core` (`src/engine/granular/core.{h,cpp}`) which holds two `Deck`s (A/B) plus the shared mix/pan/click and the per-deck modulators. `Route` (DoubleMono / Stereo / GenerativeStereo) selects the channel topology and infers the panner mode.
-
-Each `Deck` is a full looper voice:
-
-- **Buffer** — the audio loop (record / overdub / feedback), in external SDRAM (sub-allocated from the engine arena; up to ~42 s).
-
-- **Generator** — the granular engine: `kVoxCount` grains (`Vox`), owning start / size / spread / pitch / speed, slicing, and reverse.
-
-- **Track** — a per-deck step sequencer recording `Event`s into a ring of slices (its own pattern divider).
-
-- **Detector / Divider / Dispatcher / Fx** (drive + reduce) / **XFade** (in/out mix).
+> Implementation, the DSP graph, and the file map live in [`docs/dev/granular-impl.md`](../dev/granular-impl.md).
 
 ## Modes (the routing/sequencer behavior the manual describes)
 
@@ -41,7 +29,3 @@ For the exhaustive control reference, the device's user manual is the authority 
 ## Persistence
 
 `Storage` saves/loads loop audio and `config.txt` on the SD card via the engine's byte-range audio port (`audio_data` / `audio_recorded_bytes` / ...); `Settings` persists smaller settings. Granular advertises the tape-storage capability.
-
-## Files
-
-`src/engine/granular/`: the `IEngine` wrapper `granular_engine.{h,cpp}` plus the private DSP (`core`, `deck`, `generator`, `vox`, `buffer`, `track`, `fx*`, `modulator`, `panner`, `detector`, `click`, ...). Build is the default (`ENGINE=granular`, `make engine-granular`). Note: the platform (`hw/ui/memory/transport`) must never include `engine/granular/` — enforced by `make check-boundary`.

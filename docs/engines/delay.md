@@ -4,7 +4,9 @@
 
 Two delay lines (deck A → left, deck B → right) whose delay time **locks to the transport tempo**, stepping through musical divisions. The second engine to consume the platform transport (it *reads* tempo; it does not subscribe to ticks). The Reel/Slice/Drift switch picks the delay **character** and the routing switch picks the stereo **topology**.
 
-## Signal path (per deck, the `Tap` struct)
+> Implementation, the file map, and dev notes live in [`docs/dev/delay-impl.md`](../dev/delay-impl.md).
+
+## Signal path (per deck)
 
 A single delay line over borrowed SDRAM (sub-allocated from the engine arena, sized to hold the longest division at the slowest tempo, ~6 s). Per sample, split into `read_color()` then `write_out()` (so ping-pong can cross the two taps' feedback):
 
@@ -52,18 +54,3 @@ Knob meanings are fixed across characters — the mode only changes the feedback
 - **Ping-pong** — linked + **cross-feedback**: each deck's colored feedback feeds the *other*, so echoes bounce L↔R.
 
 `capabilities()` = `CapOwnDisplay | CapDualDeck`; `route()` reports the topology for the route LED. The engine renders its own display (a division arc tinted by character + an input-level play indicator); the platform composites the clock indicators over it.
-
-## Tests
-
-`make -C host test-delay` (`host/test_delay.cpp`): a fed-back delay rings out and more feedback lengthens the tail; the three characters are distinct + finite; ping-pong cross-feeds (driving deck A produces deck-B output) while DoubleMono does not; the ENV tone changes the output; and every character stays finite + bounded at maximum feedback.
-
-## Notes / possible improvements
-
-- Sync is always on; there is no free-running mode (retired). A tempo-free fine (ms) mode on an Alt layer is still open.
-- Feedback is capped (`·0.95`); Tape/Shimmer additionally soft-clip the loop, and Freeze loops it at unity (the soft-clip keeps Tape/Shimmer frozen loops from running away while they evolve).
-- The mod LFO is one per tap (MODFREQ rate / MOD_AMT depth); in Tape it has a rate+depth floor, which is that character's wow/flutter, so Tape warbles even with the mod knobs down.
-- Still open: dotted/triplet display glyphs; ducking (sidechain the wet to the dry envelope); more characters (diffuse / reverse); a tempo-free fine (ms) mode.
-
-## Files
-
-`src/engine/delay/delay_engine.{h,cpp}`; build via `engine_select.h` (`SPK_ENGINE_DELAY`) + `Makefile` (`ENGINE=delay`, `make engine-delay`). Host test: `host/test_delay.cpp`.

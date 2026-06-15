@@ -8,7 +8,7 @@ It runs **four independent mono tape tracks** - two per deck (A/B). All four fre
 
 The headline control is **PITCH as a bipolar capstan-speed knob**: noon stops the tape (silence), clockwise plays forward up to +2x, counter-clockwise plays in reverse down to -2x. Unity (+1x) lands off-centre, so the **Play pad snaps** the focused track to normal speed.
 
-> **Status: host-verified, pending hardware bring-up.** All eleven host-test groups pass and > `make ENGINE=shuttle` builds + links on target (SRAM_EXEC ~89% with the tape FX, SDRAM arena reserved whole). Not yet > flashed; in particular the four-instance Jiles-Atherton CPU load (see [Tape FX](#tape-fx)) is still to be confirmed on a `METER=1` build. Implementation notes and the memory-variant menu live in `docs/dev/shuttle_impl.md`.
+> Implementation, architecture, the file map, and dev notes live in [`docs/dev/shuttle-impl.md`](../dev/shuttle-impl.md).
 
 ---
 
@@ -66,37 +66,9 @@ Because `shuttle` already uses POS/SIZE for the loop window (where the `tape` en
 
 **Neutral = bypassed.** With drive/character/wow at zero, cutoff fully open and resonance zero (the boot defaults), the kernel is **skipped entirely** rather than run flat: the wow/flutter delay line imposes a fixed ~25 ms delay even at zero depth and the filter is not bit-identity even fully open, so a "neutral" kernel would not be transparent. Skipping it keeps shuttle's varispeed playback **bit-faithful** when the FX is untouched, and confines the (non-trivial) Jiles-Atherton cost to tracks that are both rolling and actually using the FX. The summed bus is `SoftLimit`ed only while the FX is engaged (saturation + a resonant peak can overshoot 0 dBFS); with the FX off the bus stays a plain linear sum.
 
-## Architecture
-
-- **Contiguous per-track buffers** carved from the SDRAM arena at `init()`; `kBufSeconds * sample_rate` frames each (30 s -> 1.44 M frames -> 5.76 MB; 4 tracks = 23 MB of the 48 MB arena).
-
-- **Signed fractional read pointer** (`double`) per track - playback advances by a signed speed and linear-interpolates; reverse is a negative speed, freeze is speed 0 -> silence, ends wrap (loop).
-
-- **Per-track FX** (4 kernel instances) placement-new'd in the arena at `init()`, applied to each track's mono signal (when engaged + rolling) before the pan/sum. See [Tape FX](#tape-fx).
-
-- **Per-track audio** is panned individually into the stereo bus (track volume x A/B mix-fader x per-track pan); the audio ISR (`process`) is the four reads, the optional per-track FX, then the gains.
-
-- **Re-align declick:** an audibly-rolling track dips through a ~1.3 ms fade (out -> jump at the gain minimum -> in) so the pointer jump is click-free; the snap is signalled by a flag and applied in the ISR, so it is race-free and all four tracks snap on the same block.
-
-Capabilities: `CapOwnDisplay | CapDualDeck | CapAux | CapAltPos | CapPitchPickup`.
-
-## Files
-
-- `src/engine/shuttle/shuttle_engine.{h,cpp}` - the engine.
-
-- `host/test_shuttle.cpp` - the headless test (11 groups).
-
-- `src/engine/tape/tapefx.h` - the shared tape-FX kernel wrapper (also used by the `tape` engine).
-
-- Platform: `CapPitchPickup` (`engine_params.h`, `ui/core.ui.{h,cpp}`); `SPK_USE_STREAM` capability flag gating the SD streaming service (`Makefile`, `app.cpp`, `hw/buffer.sdram.{h,cpp}`, `hw/stream_deck.cpp`, `hw/fat_file.cpp`, `memory/storage.h`).
-
 ## Build / test
 
 ```sh
 make -j8 ENGINE=shuttle        # build the firmware
 make -C host test-shuttle      # run the headless test (or `make -C host test` for all engines)
 ```
-
-## Memory variants
-
-The current config is 30 s / 48 kHz / `float32` (23 MB). `docs/dev/shuttle_impl.md` documents the full menu of experiments and their quantified memory/scope: 60 s buffers, `int16` storage (half the memory, no audible cost), lower storage sample rate, a chunked/paged pool allocator (pay-per-use, flexible per-track length), and a soft length cap. It also explains why "dynamic buffer sizing" frees nothing on a single-engine firmware (the arena is statically reserved).
