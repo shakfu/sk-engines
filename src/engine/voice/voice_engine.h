@@ -1,5 +1,5 @@
 // GENERATED from voice.json (deck_mode=series) by scripts/gen_faust_engine.py.
-// Edit the manifest (voice.json), not this file; then re-run the generator / `make engine-gen`.
+// Edit the manifest (voice.json), not this file; then re-run the generator / `make faust-engine`.
 // Voice - drone oscillator (deck A) into a resonant filter (deck B)
 #pragma once
 

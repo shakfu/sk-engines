@@ -156,7 +156,7 @@ def _glue_single(name: str, ns: str, binds, manifest: dict, decks: int) -> str:
     deck_note = ("    // decks=2: parallel DoubleMono - two instances of this mono kernel, deck A=left, "
                  "deck B=right.\n") if decks == 2 else ""
     return f"""// GENERATED from {name}.dsp + {name}.json by scripts/gen_faust_engine.py.
-// Edit the manifest ({name}.json), not this file; then re-run the generator / `make engine-gen`.
+// Edit the manifest ({name}.json), not this file; then re-run the generator / `make faust-engine`.
 // {title}
 #pragma once
 
@@ -203,7 +203,7 @@ def _glue_chain(name: str, stages, manifest: dict) -> str:
     title = manifest.get("title", name)
     (ka, nsa, ba), (kb, nsb, bb) = stages[0], stages[1]
     return f"""// GENERATED from {name}.json (deck_mode=series) by scripts/gen_faust_engine.py.
-// Edit the manifest ({name}.json), not this file; then re-run the generator / `make engine-gen`.
+// Edit the manifest ({name}.json), not this file; then re-run the generator / `make faust-engine`.
 // {title}
 #pragma once
 

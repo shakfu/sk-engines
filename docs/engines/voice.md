@@ -62,7 +62,7 @@ Three files in `src/engine/voice/`:
 Then:
 
 ```text
-make engine-gen MANIFEST=src/engine/voice/voice.json   # both kernels + wrapper + build + diagram
+make faust-engine MANIFEST=src/engine/voice/voice.json   # both kernels + wrapper + build + diagram
 make -j8 ENGINE=voice                                  # build (~84% SRAM_EXEC)
 make -C host test-voice                                # host test (chain + per-stage independence)
 ```

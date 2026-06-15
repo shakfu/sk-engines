@@ -40,7 +40,7 @@ The whole engine is two files in `src/engine/chorus/`:
 Then:
 
 ```text
-make engine-gen MANIFEST=src/engine/chorus/chorus.json   # kernel + wrapper + build wiring + control spec
+make faust-engine MANIFEST=src/engine/chorus/chorus.json   # kernel + wrapper + build wiring + control spec
 make -j8 ENGINE=chorus                                    # build (~80.5% SRAM_EXEC)
 make engine-chorus                                        # clean + build + DFU flash
 make -C host test-chorus                                  # host test

@@ -13,7 +13,7 @@ Author the DSP in [Faust](https://faust.grame.fr) (`.dsp`), generate C++ kernels
 For a single-kernel mono/stereo effect or knobs-only instrument, `scripts/gen_faust_engine.py` produces the whole engine from `src/engine/<name>/<name>.dsp` + a `<name>.json` manifest. The manifest only maps platform knobs to Faust slider labels (ranges are captured from the kernel at `init()`, so they are not duplicated) plus a few feature flags (`meter`, `soft_limit`, a software `wet_dry`). It builds the cyfaust kernel, emits `<name>_engine.h` (a `Traits` struct - the `ParamId`->slider bind table + flags - bound to the shared `FaustEngine<Traits>` in `src/engine/faust/faust_fx.h`), wires the Makefile/`engine_select.h`/CMake (marker-delimited blocks, like the gen~ generator), and emits the control-diagram spec so one manifest drives the engine, the build, and the diagram.
 
 ```text
-make engine-gen MANIFEST=src/engine/chorus/chorus.json   # kernel + wrapper + build + diagram
+make faust-engine MANIFEST=src/engine/chorus/chorus.json   # kernel + wrapper + build + diagram
 make -j8 ENGINE=chorus
 ```
 

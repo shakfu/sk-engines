@@ -1,5 +1,5 @@
 // GENERATED from chorus.dsp + chorus.json by scripts/gen_faust_engine.py.
-// Edit the manifest (chorus.json), not this file; then re-run the generator / `make engine-gen`.
+// Edit the manifest (chorus.json), not this file; then re-run the generator / `make faust-engine`.
 // Chorus - stereo chorus
 #pragma once
 

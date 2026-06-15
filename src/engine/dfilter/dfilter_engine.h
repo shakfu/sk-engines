@@ -1,5 +1,5 @@
 // GENERATED from dfilter.dsp + dfilter.json by scripts/gen_faust_engine.py.
-// Edit the manifest (dfilter.json), not this file; then re-run the generator / `make engine-gen`.
+// Edit the manifest (dfilter.json), not this file; then re-run the generator / `make faust-engine`.
 // Dual filter - independent resonant low-pass per deck
 #pragma once
 

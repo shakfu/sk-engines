@@ -49,7 +49,7 @@ The whole engine is two files in `src/engine/dfilter/`:
 Then:
 
 ```text
-make engine-gen MANIFEST=src/engine/dfilter/dfilter.json   # kernel + wrapper + build + diagram
+make faust-engine MANIFEST=src/engine/dfilter/dfilter.json   # kernel + wrapper + build + diagram
 make -j8 ENGINE=dfilter                                    # build (~83% SRAM_EXEC)
 make -C host test-dfilter                                  # host test (per-deck independence)
 ```

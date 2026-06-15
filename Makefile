@@ -294,12 +294,13 @@ engine-chorus:
 	$(MAKE) -j8 ENGINE=chorus
 	$(MAKE) ENGINE=chorus program-dfu
 
-# Generate a Faust engine from a .dsp + JSON manifest (scripts/gen_faust_engine.py): builds the cyfaust
-# kernel, emits the FaustEngine<Traits> wrapper, and wires the build + control diagram. See
-# docs/dev/engine-gen.md.   usage:  make engine-gen MANIFEST=src/engine/<name>/<name>.json
-.PHONY: engine-gen
-engine-gen:
-	@test -n "$(MANIFEST)" || { echo "usage: make engine-gen MANIFEST=src/engine/<name>/<name>.json"; exit 1; }
+# Generate a FAUST engine from a .dsp + JSON manifest (scripts/gen_faust_engine.py): builds the cyfaust
+# kernel(s), emits the FaustEngine/FaustChainEngine<Traits> wrapper, and wires the build + control diagram.
+# See docs/dev/engine-gen.md.   usage:  make faust-engine MANIFEST=src/engine/<name>/<name>.json
+# (`engine-gen` is the former name, kept as a deprecated alias.)
+.PHONY: faust-engine engine-gen
+faust-engine engine-gen:
+	@test -n "$(MANIFEST)" || { echo "usage: make faust-engine MANIFEST=src/engine/<name>/<name>.json"; exit 1; }
 	$(GEN_PY) scripts/gen_faust_engine.py $(MANIFEST)
 
 # Flash the Faust-generated reverb engine (Dattorro plate / Zita hall).
@@ -356,6 +357,15 @@ GEN_PY ?= .venv/bin/python
 # gen-dsp dropped under the engine dir is itself a valid gen-dsp input), so a regen is reproducible on
 # any checkout without the external gen-dsp source tree. For a new engine, point at your gen~ export dir.
 GEN_EXPORTS ?= src/engine/gigaverb/gen:gigaverb
+# Generate ONE gen~ engine from a gen~ export dir (the gen~ analogue of `make faust-engine`). Wraps the
+# same scripts/gen_engine.py the batch `gen-engines` runs per spec.
+#   usage:  make gen-engine GEN_EXPORT=<gen~-export-dir>:<name>
+.PHONY: gen-engine
+gen-engine:
+	@test -n "$(GEN_EXPORT)" || { echo "usage: make gen-engine GEN_EXPORT=<gen~-export-dir>:<name>"; exit 1; }
+	@spec='$(GEN_EXPORT)'; export=$${spec%:*}; name=$${spec##*:}; \
+	  $(GEN_PY) scripts/gen_engine.py $$export $$name
+
 .PHONY: gen-engines
 gen-engines:
 	@test -n "$(GEN_EXPORTS)" || { echo "set GEN_EXPORTS='<export-dir>:<name> ...' (or run scripts/gen_engine.py directly)"; exit 1; }
