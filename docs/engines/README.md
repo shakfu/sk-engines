@@ -72,7 +72,7 @@ The `ParamId` names are granular-flavored (the platform's vocabulary), but a non
 ## Building and flashing a variant
 
 ```text
-make -j8 ENGINE=granular      # default; also: delay | edrums | reso | tape | shuttle | reverb | gigaverb | radio | chorus | passthrough
+make -j8 ENGINE=granular      # default; also: delay | edrums | reso | tape | shuttle | reverb | gigaverb | radio | chorus | dfilter | voice | passthrough
 make ENGINE=edrums program-dfu
 make engine-edrums            # one-shot: clean + build + flash (device in DFU mode)
 make check-boundary           # platform (hw/ui/memory/transport) must not include engine/granular/
@@ -94,4 +94,6 @@ The **Built via** column links to the development method ([`../engine-types/`](.
 | gigaverb | `gigaverb` | stereo reverb from a Max gen~ patch | [gen~](../engine-types/gen.md) | [gigaverb.md](gigaverb.md) |
 | Radio | `radio` | dual virtual RadioMusic: two SD-streaming "radios" with a free-running virtual playhead; `.raw`/`.wav` stations in numbered banks | [native C++](../engine-types/cpp.md) | [radio.md](radio.md) |
 | Chorus | `chorus` | stereo chorus - the demo of the **generated** Faust path (`.dsp` + JSON manifest, no hand-written C++) | [Faust (generated)](../engine-types/faust.md#generated-engines-no-hand-written-c) | [chorus.md](chorus.md) |
+| Dual filter | `dfilter` | two independent resonant low-pass voices, one per channel - the **generated parallel (DoubleMono) dual-deck** demo | [Faust (generated)](../engine-types/faust.md#generated-engines-no-hand-written-c) | [dfilter.md](dfilter.md) |
+| Voice | `voice` | drone oscillator (deck A) into a resonant filter (deck B) - the **generated series (chain) dual-deck** demo | [Faust (generated)](../engine-types/faust.md#generated-engines-no-hand-written-c) | [voice.md](voice.md) |
 | Passthrough | `passthrough` | minimal stereo passthrough (reference engine) | [native C++](../engine-types/cpp.md) | [passthrough.md](passthrough.md) |

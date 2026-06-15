@@ -1,0 +1,46 @@
+{
+  "engine": "dfilter",
+  "title": "Dual filter - independent resonant low-pass per deck",
+  "subtitle": "parallel DoubleMono: deck A filters left, deck B filters right",
+  "knobs": {
+    "Pitch": "drive",
+    "Position": "-",
+    "Size": "cutoff",
+    "Envelope": "-",
+    "Mix (SOS)": "mix",
+    "Cycle": "-",
+    "Glow": "reso"
+  },
+  "pads": {
+    "Play": "-",
+    "Reverse": "-",
+    "Grit": "-",
+    "Flux": "-",
+    "Seq": "-"
+  },
+  "ring": "output level meter",
+  "crossfade": "-",
+  "switches": {
+    "Mode (L/C/R)": "-",
+    "Routing (L/C/R)": "-",
+    "CV target (U/C/D)": "-",
+    "Out trims A/B": "output trims"
+  },
+  "transport": {
+    "Tap": "-",
+    "Spot": "-"
+  },
+  "cv": {
+    "Size/Pos A/B": "-",
+    "Mix A/B": "-",
+    "V/Oct A/B": "-",
+    "Crossfade CV": "-"
+  },
+  "gates": {
+    "Gate in A/B": "-",
+    "Gate out A/B": "-"
+  },
+  "mod_midi": {
+    "Mod CV out A/B": "-"
+  }
+}

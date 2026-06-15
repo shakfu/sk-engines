@@ -45,6 +45,16 @@
   #include "engine/chorus/chorus_engine.h"
   namespace spotykach { using ActiveEngine = ChorusEngine; }
 // <<< faust:chorus <<<
+// >>> faust:dfilter >>>
+#elif defined(SPK_ENGINE_DFILTER)
+  #include "engine/dfilter/dfilter_engine.h"
+  namespace spotykach { using ActiveEngine = DfilterEngine; }
+// <<< faust:dfilter <<<
+// >>> faust:voice >>>
+#elif defined(SPK_ENGINE_VOICE)
+  #include "engine/voice/voice_engine.h"
+  namespace spotykach { using ActiveEngine = VoiceEngine; }
+// <<< faust:voice <<<
 #else
   #error "No engine selected: build with ENGINE=granular (default), passthrough, delay, edrums, reso, tape, reverb, shuttle, radio, or chorus"
 #endif

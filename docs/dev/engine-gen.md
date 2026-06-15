@@ -2,7 +2,7 @@
 
 **Status: v1 implemented** (the `chorus` demo). Goal: author a **new simple Faust effect or instrument** with a `.dsp` + a small **JSON manifest** and **no hand-written C++** — `make`-it and it's a flashable engine. This generalises the pattern the gen~ generator already uses (`scripts/gen_engine.py`: manifest + marker-wired build + preserved glue) to the Faust path, which was previously all hand-written.
 
-**What shipped:** the shared runtime (`src/engine/faust/{faust_capture.h,faust_fx.h}` — `FaustEngine<Traits>` + the zone-capture `CaptureUI`), the generator (`scripts/engine_gen_common.py` + `scripts/gen_faust_engine.py`, `make engine-gen`), and the `chorus` demo (`src/engine/chorus/chorus.{dsp,json}` → generated `chorus_engine.h`, `ENGINE=chorus` at ~80.5% SRAM_EXEC, `host/test_chorus.cpp`, the control diagram from the same manifest). The hand-written `reverb`/`tape` wrappers were also **refactored onto the shared `faust_capture.h`** (their private `CaptureUI`/`Bind`/`Role` deleted): one zone-capture implementation now serves the generator and both rich engines, re-verified host-green (`reverb`/`tape`/`shuttle` host tests) with reverb's SRAM_EXEC cost +288 B (a `CaptureUI<false>` template flag drops the generator-only slider-default capture from the hand-written path, so they pay nothing extra for it).
+**What shipped:** the shared runtime (`src/engine/faust/{faust_capture.h,faust_fx.h,faust_chain.h}` — `FaustEngine<Traits>` + `FaustChainEngine<Traits>` + the zone-capture `CaptureUI`), the generator (`scripts/engine_gen_common.py` + `scripts/gen_faust_engine.py`, `make engine-gen`), and three demos: `chorus` (single-deck stereo FX, ~80.5% SRAM_EXEC), `dfilter` (parallel/DoubleMono dual-deck, ~83%) and `voice` (series/chain dual-deck — drone osc into a filter, ~84%). Each is `.dsp`(s) + a JSON manifest → generated `<name>_engine.h`, a host test (`test_chorus`/`test_dfilter`/`test_voice`), and a control diagram from the same manifest. The dual-deck modes are §9. The hand-written `reverb`/`tape` wrappers were also **refactored onto the shared `faust_capture.h`** (their private `CaptureUI`/`Bind`/`Role` deleted): one zone-capture implementation now serves the generator and both rich engines, re-verified host-green (`reverb`/`tape`/`shuttle` host tests) with reverb's SRAM_EXEC cost +288 B (a `CaptureUI<false>` template flag drops the generator-only slider-default capture from the hand-written path, so they pay nothing extra for it).
 
 This file scopes the design; the plan in [§7](#7-implementation-plan) was the build order.
 
@@ -119,3 +119,40 @@ Today the zone-capture `CaptureUI` is **duplicated** (a full version in `reverb_
 - **Instruments**: a Faust synth needs CV/gate/MIDI → slider bindings (`cv_voct`→a freq slider, gate→a gate button). v1 covers knob→slider (FX, and knobs-only drones); the input-binding vocabulary is a straightforward schema extension, called out but not built in v1.
 
 - **ROI**: this is machinery for a backend with ~2 engines today. It's justified only by the stated goal — making *new* simple Faust FX near-zero-effort. If that goal holds, v1 pays for itself on the third engine.
+
+## 9. Dual-deck modes (v1.1 — implemented)
+
+v1 generated a **single** logical control set: `FaustEngine::set_param` discarded the `DeckRef` arg, so deck A and deck B knobs collapsed onto one state (chorus). v1.1 adds two ways a generated engine can use **both** decks as independent control banks. The platform already delivers every knob for both decks (`core.ui.cpp` calls `set_param(id, A, ..)` *and* `set_param(id, B, ..)` for all engines); the engine just has to keep per-deck state. `CapDualDeck` is advertised for the dual-deck display/layout, but the routing needs no platform change.
+
+The manifest selects the mode with a `deck_mode` key (absent / `"single"` = v1 behaviour):
+
+### 9a. `parallel` (DoubleMono) — same kernel ×2
+
+Two instances of **one** mono kernel: deck A processes the **left** channel, deck B the **right**, each driven by its own knob bank (the reverb DoubleMono shape, generalised). The two never interact; the crossfader is unused. Requires a **mono** kernel (1-in/1-out). The `knobs` map is shared (both decks expose the same controls), so the manifest is the v1 form plus `"deck_mode": "parallel"`:
+
+```json
+{ "engine": "dfilter", "backend": "faust", "deck_mode": "parallel",
+  "knobs": { "Size": "cutoff", "Glow": "reso", "Pitch": "drive", "Mix (SOS)": "mix" },
+  "features": { "meter": true, "color": "0xff8833" } }
+```
+
+Runtime: `FaustEngine<Traits>` gains `static constexpr int decks` (1 default, 2 for parallel). State becomes `_k[decks]`, `_role[decks][Count]`, `_v[decks][Count]`; `set_param`/`set_mod_speed`/`param` index by the (clamped) deck; `process` runs each instance on its own channel (`decks==1` keeps the v1 mono/stereo/0-in marshalling unchanged); `render` shows a per-deck output meter. For `decks==1` the arrays are size-1 and the codegen collapses to v1 (re-verified).
+
+### 9b. `series` (chain) — two **different** kernels, deck A → stage 1, deck B → stage 2
+
+The engine is a chain of **two distinct** kernels: deck A's knobs drive the first stage, deck B's the second, and the signal flows A→B. This covers **FX→FX** (e.g. drive→filter) and **instrument→FX** (a 0-input generator into an effect — which also exercises the otherwise-untested 0-in path). The chain is mono internally and duplicated to the stereo bus at the output. The manifest lists the two stages (each its own `.dsp` in the engine dir, with its own knob map):
+
+```json
+{ "engine": "voice", "backend": "faust", "deck_mode": "series",
+  "stages": [
+    { "dsp": "osc",    "knobs": { "Pitch": "freq", "Size": "shape", "Mix (SOS)": "level" } },
+    { "dsp": "filter", "knobs": { "Size": "cutoff", "Glow": "reso", "Pitch": "drive", "Mix (SOS)": "mix" } }
+  ],
+  "features": { "meter": true, "color": "0x88ff33" } }
+```
+
+Runtime: a sibling template **`FaustChainEngine<Traits>`** (`src/engine/faust/faust_chain.h`) holds `StageA*`/`StageB*`, two per-deck role tables (deck A's bound to stage A's zones, deck B's to stage B's), and chains `compute` in `process` (stage A's 0-input instrument case feeds silence in). `set_param` is uniform — it writes `_role[deck][r].set(v)`, and because each deck's role table already points at the correct kernel's zones, the wrapper never special-cases which stage. The two stage kernels get engine-prefixed namespaces (`fx_<engine>_<stage>`) so stage names can't collide across engines.
+
+**Still out of scope** (stays hand-written): the runtime route/mode switch (Stereo↔DoubleMono selection, reverb's case), per-deck voice allocation, and >2 decks/stages. v1.1 is exactly "two independent instances/stages, fixed topology" — the largest step that stays pure data, not integration logic.
+
+**Examples shipped:** `dfilter` (parallel — two independent resonant low-pass voices, one per channel) and `voice` (series — a drone oscillator into a resonant filter, deck A = osc, deck B = filter). Both host-tested for per-deck/per-stage independence (the property chorus structurally cannot have).

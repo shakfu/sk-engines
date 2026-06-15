@@ -118,8 +118,22 @@ C_DEFS += -DSPK_ENGINE_CHORUS
 # shared FaustEngine<Traits> wrapper), so there is no engine .cpp.
 ENGINE_SOURCES =
 # <<< faust:chorus <<<
+# >>> faust:dfilter >>> (managed by scripts/gen_faust_engine.py)
+else ifeq ($(ENGINE), dfilter)
+C_DEFS += -DSPK_ENGINE_DFILTER
+# Faust engine generated from dfilter.dsp + dfilter.json - header-only (the cyfaust kernel + the
+# shared FaustEngine<Traits> wrapper), so there is no engine .cpp.
+ENGINE_SOURCES =
+# <<< faust:dfilter <<<
+# >>> faust:voice >>> (managed by scripts/gen_faust_engine.py)
+else ifeq ($(ENGINE), voice)
+C_DEFS += -DSPK_ENGINE_VOICE
+# Faust engine generated from voice.dsp + voice.json - header-only (the cyfaust kernel + the
+# shared FaustEngine<Traits> wrapper), so there is no engine .cpp.
+ENGINE_SOURCES =
+# <<< faust:voice <<<
 else
-$(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', 'edrums', 'reso', 'tape', 'reverb', 'shuttle', 'radio', or 'chorus')
+$(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', 'edrums', 'reso', 'tape', 'reverb', 'shuttle', 'radio', 'chorus', 'dfilter', or 'voice')
 endif
 
 # Opt-in (make ... METER=1): enable the on-device CPU load meter (app.cpp's CpuLoadMeter). It writes
@@ -305,14 +319,14 @@ engine-reverb:
 # && .venv/bin/pip install cyfaust`. Override the interpreter with `CYFAUST_PY=/path/to/python` to pin a
 # different libfaust version. Add a kernel: drop <name>.dsp in its engine dir, add a spec here, and bind it.
 CYFAUST_PY ?= .venv/bin/python
-FAUST_KERNELS ?= src/engine/reverb:rv_:dattorro src/engine/reverb:rv_:zita src/engine/tape:tfx_:tapefx src/engine/chorus:fx_:chorus
+FAUST_KERNELS ?= src/engine/reverb:rv_:dattorro src/engine/reverb:rv_:zita src/engine/tape:tfx_:tapefx src/engine/chorus:fx_:chorus src/engine/dfilter:fx_:dfilter src/engine/voice:fx_voice_:osc src/engine/voice:fx_voice_:filter
 .PHONY: faust-gen
 faust-gen:
 	@for spec in $(FAUST_KERNELS); do \
 	  dir=$${spec%%:*}; rest=$${spec#*:}; pfx=$${rest%%:*}; nm=$${rest##*:}; ns=$$pfx$$nm; \
 	  src=$$dir/$$nm.dsp; out=$$dir/faust_kernel_$$nm.h; \
 	  echo "compiling $$src -> $$out (namespace spotykach::$$ns)"; \
-	  $(CYFAUST_PY) -m cyfaust compile $$src -b cpp -o $$dir/.kernel.gen || exit 1; \
+	  PYTHONUTF8=1 $(CYFAUST_PY) -m cyfaust compile $$src -b cpp -o $$dir/.kernel.gen || exit 1; \
 	  { \
 	    echo '// SYNTHUX ACADEMY /////////////////////////////////////////'; \
 	    echo '// SPOTYKACH ///////////////////////////////////////////////'; \

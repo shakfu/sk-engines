@@ -75,11 +75,13 @@ TEST_STREAM  = $(BUILD)/test_stream
 TEST_SHUTTLE = $(BUILD)/test_shuttle
 TEST_RADIO   = $(BUILD)/test_radio
 TEST_CHORUS  = $(BUILD)/test_chorus
+TEST_DFILTER = $(BUILD)/test_dfilter
+TEST_VOICE   = $(BUILD)/test_voice
 TEST_REVERB_GIGA = $(BUILD)/test_reverb_giga
 TEST_DELAY   = $(BUILD)/test_delay
 BENCH_REVERB     = $(BUILD)/bench_reverb
 
-.PHONY: all clean run test test-granular test-edrums test-reso test-reverb test-reverb-giga test-delay test-tape test-stream test-shuttle test-radio test-chorus bench-reverb
+.PHONY: all clean run test test-granular test-edrums test-reso test-reverb test-reverb-giga test-delay test-tape test-stream test-shuttle test-radio test-chorus test-dfilter test-voice bench-reverb
 all: $(TARGET)
 
 $(TARGET): $(SRC) | $(BUILD)
@@ -119,6 +121,16 @@ $(TEST_CHORUS): test_chorus.cpp $(LIB_SRC) $(ROOT)/src/engine/chorus/chorus_engi
                 $(ROOT)/src/engine/chorus/faust_kernel_chorus.h | $(BUILD)
 	$(CXX) $(CXXFLAGS) test_chorus.cpp $(LIB_SRC) -o $@
 
+# Generated Faust `dfilter` (parallel DoubleMono dual-deck) and `voice` (series chain dual-deck) engines -
+# header-only like chorus (shared FaustEngine / FaustChainEngine wrapper + cyfaust kernels), no extra .cpp.
+$(TEST_DFILTER): test_dfilter.cpp $(LIB_SRC) $(ROOT)/src/engine/dfilter/dfilter_engine.h \
+                 $(ROOT)/src/engine/dfilter/faust_kernel_dfilter.h | $(BUILD)
+	$(CXX) $(CXXFLAGS) test_dfilter.cpp $(LIB_SRC) -o $@
+
+$(TEST_VOICE): test_voice.cpp $(LIB_SRC) $(ROOT)/src/engine/voice/voice_engine.h \
+               $(wildcard $(ROOT)/src/engine/voice/faust_kernel_*.h) | $(BUILD)
+	$(CXX) $(CXXFLAGS) test_voice.cpp $(LIB_SRC) -o $@
+
 # Verifies the gigaverb-as-third-voice integration (SPK_REVERB_GIGAVERB). Not in the default `test`
 # aggregate: it compiles the gen~ runtime, which the lean reverb build deliberately excludes.
 $(TEST_REVERB_GIGA): test_reverb_giga.cpp $(LIB_SRC) $(REVERB_SRC) $(GIGA_SRC) \
@@ -148,7 +160,7 @@ run: $(TARGET)
 
 # `test` runs both engine harnesses. Both inject the transport via EngineContext (granular drives the
 # real platform Transport; edrums uses a small stub ITransport) - the post-transport-decoupling way.
-test: test-granular test-edrums test-reso test-reverb test-reverb-giga test-delay test-tape test-stream test-shuttle test-radio test-chorus
+test: test-granular test-edrums test-reso test-reverb test-reverb-giga test-delay test-tape test-stream test-shuttle test-radio test-chorus test-dfilter test-voice
 
 test-granular: $(TEST)
 	./$(TEST)
@@ -182,6 +194,12 @@ test-radio: $(TEST_RADIO)
 
 test-chorus: $(TEST_CHORUS)
 	./$(TEST_CHORUS)
+
+test-dfilter: $(TEST_DFILTER)
+	./$(TEST_DFILTER)
+
+test-voice: $(TEST_VOICE)
+	./$(TEST_VOICE)
 
 clean:
 	rm -rf $(BUILD)

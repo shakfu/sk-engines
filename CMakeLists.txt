@@ -136,6 +136,16 @@ elseif(ENGINE STREQUAL chorus)
     set(ENGINE_DEFINE SPK_ENGINE_CHORUS)
     set(ENGINE_SOURCES)
 # <<< faust:chorus <<<
+# >>> faust:dfilter >>>
+elseif(ENGINE STREQUAL dfilter)
+    set(ENGINE_DEFINE SPK_ENGINE_DFILTER)
+    set(ENGINE_SOURCES)
+# <<< faust:dfilter <<<
+# >>> faust:voice >>>
+elseif(ENGINE STREQUAL voice)
+    set(ENGINE_DEFINE SPK_ENGINE_VOICE)
+    set(ENGINE_SOURCES)
+# <<< faust:voice <<<
 else()
     message(FATAL_ERROR "Unknown ENGINE '${ENGINE}' - use granular, passthrough, delay, edrums, reso, tape, reverb, shuttle, radio, or gigaverb")
 endif()

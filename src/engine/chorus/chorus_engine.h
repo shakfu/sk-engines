@@ -25,6 +25,7 @@ struct ChorusEngineTraits {
     static int nbinds() { return 4; }
 
     static constexpr Capabilities caps         = CapOwnDisplay;
+    static constexpr int          decks        = 1;
     static constexpr int          wet_dry_role = -1;
     static constexpr bool         soft_limit   = false;
     static constexpr bool         meter        = true;

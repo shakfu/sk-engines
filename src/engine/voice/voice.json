@@ -1,0 +1,12 @@
+{
+  "engine": "voice",
+  "backend": "faust",
+  "deck_mode": "series",
+  "title": "Voice - drone oscillator (deck A) into a resonant filter (deck B)",
+  "subtitle": "series dual-deck: instrument -> FX",
+  "stages": [
+    { "dsp": "osc",    "knobs": { "Pitch": "freq", "Size": "shape", "Mix (SOS)": "level" } },
+    { "dsp": "filter", "knobs": { "Size": "cutoff", "Glow": "reso", "Pitch": "drive", "Mix (SOS)": "mix" } }
+  ],
+  "features": { "meter": true, "color": "0x88ff33" }
+}
