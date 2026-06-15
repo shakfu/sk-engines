@@ -1,10 +1,10 @@
 # Dev notes — route-aware Faust reverb (`reverb` engine)
 
-Implementation/bring-up notes for `ENGINE=reverb`. The user-facing reference (the two algorithms, route-aware topology, control map, the optional gigaverb voice, build/flash commands) is [`docs/engines/reverb.md`](../engines/reverb.md); this file holds the status, the Faust footprint and on-device load measurements, the file map, and the "adding a reverb" how-to.
+Implementation/bring-up notes for `ENGINE=reverb`. The user-facing reference (the three algorithms, route-aware topology, control map, build/flash commands) is [`docs/engines/reverb.md`](../engines/reverb.md); this file holds the status, the Faust footprint and on-device load measurements, the file map, and the "adding a reverb" how-to.
 
 ## Status at a glance
 
-- Implemented and integrated end to end (engine, build system, two Faust kernels + optional gen~ gigaverb).
+- Implemented and integrated end to end (engine, build system, three Faust kernels: plate/hall/freeverb).
 
 - Host-tested: `make -C host test-reverb` (param round-trip, both algorithms ring out, every knob role is bound, the mode switch swaps the kernel, the DoubleMono plate-only cap, and channel isolation). Plus `make -C host bench-reverb` for the process() cost and `make ENGINE=reverb METER=1` for on-device CPU load (non-blocking serial; won't hang).
 
@@ -31,21 +31,20 @@ Arena placement-new keeps `SRAM` (data) flat regardless of delay-line size, so *
 | Build | SRAM_EXEC |
 |---|---|
 | `passthrough` (platform floor) | ~149 KB (78%) |
-| `reverb` (plate + hall, route-aware) | ~175 KB (92.0%) |
-| `reverb METER=1` (adds the USB CDC stack) | ~187 KB (98.2%) |
-| `reverb REVERB_GIGAVERB=1` (3 voices, per-deck gen~) | ~185 KB (97.0%) |
+| `reverb` (plate + hall + freeverb, all Faust, route-aware) | ~184.6 KB (96.9%) |
+| `reverb METER=1` (adds the USB CDC stack; needs `OPT=-Os`) | overflows `-O2`; ~fits at `-Os` |
 
-At ~92% a fourth sizable Faust algorithm would need this engine built at `-Os` (as reso is) or one dropped; the gigaverb fold-in already sits near the ceiling. The `METER` build adds ~12 KB (the USB CDC stack, not the meter itself), so the **3-voice + METER** build overflows `-O2` by ~6 KB and needs `OPT=-Os` to fit.
+At ~97% the three-voice build is near the `-O2` ceiling, so a fourth sizable Faust algorithm would need `OPT=-Os` (as reso is) or one dropped. The `METER` build adds ~12 KB (the USB CDC stack, not the meter itself), which overflows `-O2` on top of the three voices - build it `OPT=-Os` to fit.
 
 ## Files
 
-- `src/engine/reverb/dattorro.dsp`, `zita.dsp` - the active reverb sources. `voice.dsp` - the retained spike voice (not built).
+- `src/engine/reverb/dattorro.dsp`, `zita.dsp`, `freeverb.dsp` - the three active reverb sources. `voice.dsp` - the retained spike voice (not built).
 
 - `src/engine/reverb/faust_kernel_<name>.h` - **generated** (do not hand-edit), one `class mydsp` per namespace `rv_<name>`. Regenerate with `make faust-kernels`.
 
-- `src/engine/reverb/reverb_engine.{h,cpp}` - the `IEngine` wrapper (per-deck arena construction, `CaptureUI` + per-reverb bind tables, role mapping, mode-switch + route handling, render). The optional `GigaverbVoice` and its includes are `#if defined(SPK_REVERB_GIGAVERB)`.
+- `src/engine/reverb/reverb_engine.{h,cpp}` - the `IEngine` wrapper (per-deck arena construction, `CaptureUI` + per-reverb bind tables, role mapping, mode-switch + route handling, render). `DattorroVoice`/`ZitaVoice`/`FreeverbVoice` are three peer Faust kernels; no gen~.
 
-- `host/test_reverb.cpp`, `host/test_reverb_giga.cpp`, `host/bench_reverb.cpp` - the host test, the gigaverb-fold-in test, and the process() cost benchmark.
+- `host/test_reverb.cpp`, `host/bench_reverb.cpp` - the host test (plate/hall/freeverb) and the process() cost benchmark.
 
 - Registered in `src/engine/engine_select.h` and the root `Makefile` (`ENGINE=reverb`, `engine-reverb` flash target, `faust-kernels` codegen target).
 

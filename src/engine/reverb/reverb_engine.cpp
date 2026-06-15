@@ -8,11 +8,7 @@
 // faust_arch.h base types (dsp/UI/Meta, pulled in by these headers) live in the global namespace.
 #include "engine/reverb/faust_kernel_dattorro.h"
 #include "engine/reverb/faust_kernel_zita.h"
-
-#if defined(SPK_REVERB_GIGAVERB)
-#include "engine/gigaverb/_ext_daisy.h" // gigaverb_daisy::wrapper_* (gen~ export C interface)
-#include "engine/gen/genlib_arena.h"    // genlib_arena_bind: point gen~'s allocator at our arena slice
-#endif
+#include "engine/reverb/faust_kernel_freeverb.h"
 
 #include <algorithm>
 #include <cmath>
@@ -102,58 +98,30 @@ struct ZitaVoice : ReverbVoice {
     const char* name() const override { return "HALL"; }
 };
 
-#if defined(SPK_REVERB_GIGAVERB)
-// --- Gigaverb (gen~) ---------------------------------------------------------------------------
-// A third voice whose DSP is the gen~ "gigaverb" export rather than a Faust kernel. gen~ exposes no
-// control zones, so this voice ignores the Role/zone table and overrides set_knob to translate the
-// six reverb roles into gen~ setparameter() calls by index (the same 8-param map gigaverb_engine.h
-// uses standalone; the two params the panel does not drive - 3 early, 6 spread - keep gen~ defaults).
-// The gen~ State (12 delay lines, ~1.59 MB) is allocated by wrapper_create() from the genlib bump
-// allocator, which ReverbEngine::init points at a dedicated arena slice before this voice is built.
-struct GigaverbVoice : ReverbVoice {
-    void* _st = nullptr;
-    long  _block;
-    float _mix = 0.4f; // wet/dry, knob up = wetter (matches _v[K_Mix] default); see compute()
-    explicit GigaverbVoice(long block) : _block(block) {}
-
-    // Reverb role -> gen~ parameter index. K_Mix is NOT here: gigaverb has no wet/dry parameter (its
-    // `dry` param only adds dry passthrough and cannot null the always-on wet tail), so this voice owns
-    // the crossfade in compute() instead - keeping "knob up = wetter" consistent with Plate/Hall.
-    static int gen_index(Knob k) {
-        switch (k) {
-            case K_Decay: return 4; // revtime
-            case K_Damp:  return 1; // damping
-            case K_Tone:  return 0; // bandwidth
-            case K_SizeA: return 5; // roomsize
-            case K_SizeB: return 7; // tail
-            default:      return -1;
-        }
-    }
-    static constexpr int kDryParam = 2; // gen~ "dry": pinned to 0 so the export is pure wet; mix is ours
-
+// --- Freeverb (Schroeder-Moorer) ----------------------------------------------------------------
+// The third Faust voice (replaces the former gen~ gigaverb): 8 damped combs -> 4 allpasses per channel,
+// warmer/more diffuse than the plate or hall. Its .dsp owns the dry/wet crossfade, so the Mix role binds
+// straight to its "Mix" slider like the plate; a wet-tail low-pass (Tone) and a pre-delay (SizeB) give it
+// the full six controls the plate/hall expose, so no knob is dead.
+struct FreeverbVoice : ReverbVoice {
+    rv_freeverb::mydsp dsp;
     void init(int sr) override {
-        _st = gigaverb_daisy::wrapper_create(static_cast<float>(sr), _block);
-        if (_st) gigaverb_daisy::wrapper_set_param(_st, kDryParam, 0.f);
+        dsp.init(sr);
+        static const Bind kBinds[] = {
+            { nullptr, "Mix",      K_Mix,   0 }, // dry/wet (0..1 wet, like the plate)
+            { nullptr, "RoomSize", K_Decay, 0 }, // comb feedback -> tail length (PITCH)
+            { nullptr, "Damp",     K_Damp,  0 }, // HF damping in the combs
+            { nullptr, "Tone",     K_Tone,  0 }, // wet-tail low-pass (POS)
+            { nullptr, "Spread",   K_SizeA, 0 }, // stereo spread (SIZE)
+            { nullptr, "PreDelay", K_SizeB, 0 }, // pre-delay (MODAMT)
+        };
+        CaptureUI ui; ui.roles = role; ui.binds = kBinds;
+        ui.nbinds = static_cast<int>(sizeof(kBinds) / sizeof(kBinds[0]));
+        dsp.buildUserInterface(&ui);
     }
-    void set_knob(Knob k, float v) override {
-        if (k == K_Mix) { _mix = v; return; }
-        if (!_st) return;
-        const int idx = gen_index(k);
-        if (idx < 0) return;
-        const float lo = gigaverb_daisy::wrapper_param_min(_st, idx);
-        const float hi = gigaverb_daisy::wrapper_param_max(_st, idx);
-        gigaverb_daisy::wrapper_set_param(_st, idx, lo + v * (hi - lo));
-    }
-    void compute(FAUSTFLOAT** in, FAUSTFLOAT** out, int n) override {
-        if (!_st) return;
-        gigaverb_daisy::wrapper_perform(_st, in, 2, out, 2, n); // out = pure wet (dry pinned to 0)
-        const float w = _mix, d = 1.f - _mix; // crossfade wet against the dry input
-        for (int c = 0; c < 2; c++)
-            for (int i = 0; i < n; i++) out[c][i] = w * out[c][i] + d * in[c][i];
-    }
-    const char* name() const override { return "GVERB"; }
+    void compute(FAUSTFLOAT** in, FAUSTFLOAT** out, int n) override { dsp.compute(n, in, out); }
+    const char* name() const override { return "FVERB"; }
 };
-#endif // SPK_REVERB_GIGAVERB
 
 // ParamId (physical knob) -> reverb role. Returns K_Count for ids this engine does not map.
 Knob role_for(ParamId id) {
@@ -175,24 +143,11 @@ void ReverbEngine::init(const EngineContext& ctx)
     Arena ar(ctx.arena);
     const int sr = static_cast<int>(ctx.sample_rate);
     // One full set of voices PER DECK so each deck's selected reverb has independent delay-line state
-    // (DoubleMono runs both at once). Dattorro ~126 KB + Zita ~937 KB (+ gigaverb ~2 MB) per deck.
+    // (DoubleMono runs both at once). Dattorro ~126 KB + Zita ~937 KB + Freeverb per deck.
     for (int d = 0; d < DeckRef::Count; d++) {
         if (void* m = ar.alloc<uint8_t>(sizeof(DattorroVoice), alignof(DattorroVoice))) _rv[d][0] = new (m) DattorroVoice();
         if (void* m = ar.alloc<uint8_t>(sizeof(ZitaVoice),     alignof(ZitaVoice)))     _rv[d][1] = new (m) ZitaVoice();
-
-#if defined(SPK_REVERB_GIGAVERB)
-        // gen~ uses its own global bump allocator (resets to offset 0 on bind), so each gigaverb instance
-        // needs a disjoint slab. The genlib data objects are allocated per-call (no global name registry),
-        // so two instances are independent. Bind THIS deck's slab right before its voices' init() so
-        // GigaverbVoice::init -> wrapper_create lands in it. ~1.59 MB measured; 2 MB leaves margin.
-        static constexpr size_t kGigaverbArenaBytes = 2u * 1024u * 1024u;
-        void* gv_slab = ar.alloc<uint8_t>(kGigaverbArenaBytes, 32);
-        if (gv_slab) {
-            if (void* m = ar.alloc<uint8_t>(sizeof(GigaverbVoice), alignof(GigaverbVoice)))
-                _rv[d][2] = new (m) GigaverbVoice(static_cast<long>(ctx.block_size));
-            genlib_arena_bind(gv_slab, kGigaverbArenaBytes);
-        }
-#endif
+        if (void* m = ar.alloc<uint8_t>(sizeof(FreeverbVoice), alignof(FreeverbVoice))) _rv[d][2] = new (m) FreeverbVoice();
 
         for (int v = 0; v < kReverbCount; v++) if (_rv[d][v]) _rv[d][v]->init(sr);
         _active[d] = 0;
@@ -215,7 +170,7 @@ void ReverbEngine::process(const float* const* in, float** out, size_t size)
 
     if (_route == Route::DoubleMono) {
         // Two independent MONO reverbs: in[d] -> deck d's PLATE -> out[d]. DoubleMono is plate-only
-        // (eff_voice caps it): the hall/gigaverb are too heavy to run two-up. The Faust plate is stereo,
+        // (eff_voice caps it): the hall/freeverb are too heavy to run two-up. The Faust plate is stereo,
         // so each deck is fed mono (input fanned to both channels) with one output kept; the discarded
         // channel lands in a throwaway scratch. compute() is allocation-free -> ISR-safe.
         static constexpr size_t kMaxBlock = 128; // platform block is 96
@@ -298,30 +253,43 @@ bool ReverbEngine::set_config(ConfigId id, DeckRef::Ref deck, int value)
 void ReverbEngine::render(DisplayModel& m)
 {
     m.clear();
-    // Plate = cool blue, Hall = violet, Gigaverb = mint.
-#if defined(SPK_REVERB_GIGAVERB)
-    const uint32_t kColor[kReverbCount] = { 0x00aaffu, 0x8800ffu, 0x00ff88u };
-#else
-    const uint32_t kColor[kReverbCount] = { 0x00aaffu, 0x8800ffu };
-#endif
-    // The 3 mode LEDs (left/center/right) mirror the platform convention: they show the ROUTE.
-    DisplayModel::Indicator* mode_led[3] = { &m.mode_left, &m.mode_center, &m.mode_right };
-    const int route_led = (_route == Route::DoubleMono) ? 0 : (_route == Route::GenerativeStereo) ? 2 : 1;
-    *mode_led[route_led] = { 0xffffffu, 0.8f };
+    // Plate = cool blue, Hall = violet, Freeverb = warm amber (a clear third colour vs the two cool ones).
+    const uint32_t kColor[kReverbCount] = { 0x00aaffu, 0x8800ffu, 0xff8844u };
+    // Algorithm colour + the effective voice index: DoubleMono forces plate (hall/freeverb are stereo-only);
+    // a stereo route uses deck A's Reel/Slice/Drift selection.
+    const bool     dual  = (_route == Route::DoubleMono);
+    const int      vidx  = dual ? 0 /*plate*/ : _active[DeckRef::A];
+    const uint32_t color = kColor[vidx];
 
-    // Per-deck ring level + play colour in the effective-voice colour. DoubleMono runs plate on both
-    // decks (hall/gigaverb are stereo-only), so both pads are blue; a stereo route shows deck A's voice.
-    const bool dual = (_route == Route::DoubleMono);
-    const int  vidx = dual ? 0 /*plate*/ : _active[DeckRef::A];
+    // The 3 mode LEDs (left/center/right) sit at the Reel/Slice/Drift switch, which on the reverb selects
+    // the ALGORITHM - so light the active position in that algorithm's colour. The third position
+    // (freeverb) reads as a distinct amber against plate-blue / hall-violet, and you can see which algorithm
+    // is active even in silence. (Route is no longer shown here; in DoubleMono the two independent per-deck
+    // rings make it visible.)
+    DisplayModel::Indicator* mode_led[3] = { &m.mode_left, &m.mode_center, &m.mode_right };
+    if (vidx >= 0 && vidx < kReverbCount) *mode_led[vidx] = { color, 0.85f };
+
+    // Per-deck ring. The reverb used to light the ring only with the live output level, so the panel was
+    // dark whenever the input was quiet and showed nothing about the patch. Instead, draw three things at
+    // once, so the ring is always legible:
+    //   - colour   = the active algorithm (plate blue / hall violet / freeverb amber), readable in silence;
+    //   - arc      = the DECAY knob (PITCH) - how long the tail is - so turning it gives instant feedback;
+    //   - brightness = the output level, layered on top, so the arc pulses with signal and visibly fades
+    //                  out as the reverb tail decays ("is it doing anything?" answered).
+    // DoubleMono runs an independent plate per deck (hall/freeverb are stereo-only), so each ring shows its
+    // own deck's decay; a stereo route shows deck A's voice + decay on both rings (one shared voice).
     for (int d = 0; d < DeckRef::Count; d++) {
-        const uint32_t color = kColor[vidx];
+        const float decay = _v[dual ? d : DeckRef::A][K_Decay];
         const float level = _peak[d] > 1.f ? 1.f : _peak[d];
-        if (level > 1e-4f) {
-            m.ring[d].set_hex_color(color);
-            m.ring[d].set_segment(0.f, level * 0.999f);
-        }
+        // Dim full-ring baseline in the algorithm colour - never fully dark (cf. the radio/tape ring idiom).
+        m.ring[d].set_hex_color(color);
+        m.ring[d].set_brightness(0.10f);
+        m.ring[d].set_segment(0.f, 0.999f);
+        // The decay arc, brighter and pulsing with the output level.
+        m.ring[d].set_brightness(0.35f + 0.60f * level);
+        m.ring[d].set_segment(0.f, decay > 0.f ? decay * 0.999f : 0.001f);
         m.ring[d].set_updated();
-        m.play[d] = { color, 1.f };
+        m.play[d] = { color, 0.35f + 0.60f * level }; // play pad: algorithm colour, also pulsing with level
     }
 }
 

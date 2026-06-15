@@ -63,7 +63,9 @@ std::vector<float> response(EngineContext& ctx, int voice, float mix, ParamId ro
     for (int b = 0; b < kBurst + kTail; b++) {
         for (size_t i = 0; i < host::kBlock; i++) { const float x = (b < kBurst) ? 0.5f * rng.next() : 0.f; il[i] = x; ir[i] = x; }
         e.process(in, o, host::kBlock);
-        for (size_t i = 0; i < host::kBlock; i++) out.push_back(ol[i]);
+        // Sum both channels: a stereo-only control (e.g. Freeverb's Spread detunes only the right channel)
+        // must still register as driving the output, which a left-only measure would miss.
+        for (size_t i = 0; i < host::kBlock; i++) out.push_back(ol[i] + orr[i]);
     }
     return out;
 }
@@ -83,7 +85,7 @@ float tail_energy(const std::vector<float>& v) {
     return s;
 }
 
-const char* kAlgo[2] = { "plate", "hall" };
+const char* kAlgo[3] = { "plate", "hall", "freeverb" };
 const struct { ParamId id; const char* name; } kRoles[6] = {
     { ParamId::Mix,    "Mix"    }, { ParamId::Speed, "Decay" }, { ParamId::Env,    "Damp"  },
     { ParamId::Pos,    "Tone"   }, { ParamId::Size,  "SizeA" }, { ParamId::ModAmp, "SizeB" },
@@ -139,7 +141,7 @@ int main() {
         check(sad(plate, hall) > 1.0f, "plate and hall produce different output (Mode switch swaps the kernel)");
     }
 
-    // --- 5. DoubleMono = plate-only cap; hall/gigaverb are stereo-only --------------------------
+    // --- 5. DoubleMono = plate-only cap; hall/freeverb are stereo-only --------------------------
     {
         float il[host::kBlock], ir[host::kBlock], ol[host::kBlock], orr[host::kBlock];
         const float* in[2] = { il, ir }; float* o[2] = { ol, orr };

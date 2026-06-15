@@ -14,7 +14,7 @@ struct ReverbVoice; // defined in reverb_engine.cpp (wraps one generated kernel 
 // ReverbEngine - a multi-algorithm reverb whose DSP is Faust-generated. Each algorithm is a
 // cyfaust-generated kernel (src/engine/reverb/<name>.dsp -> faust_kernel_<name>.h, one per namespace
 // rv_<name>); the physical Reel/Slice/Drift mode switch (ConfigId::Mode) selects which one is live.
-// Currently: a Dattorro plate and a Zita-rev1 hall (plus a gen~ gigaverb under SPK_REVERB_GIGAVERB).
+// Currently three Faust voices: a Dattorro plate, a Zita-rev1 hall, and a Freeverb.
 //
 // Route-aware (ConfigId::Route), like the rest of the instrument:
 //   * Stereo / GenerativeStereo -> ONE stereo voice (deck A's selection) reverberates the stereo pair;
@@ -28,7 +28,7 @@ struct ReverbVoice; // defined in reverb_engine.cpp (wraps one generated kernel 
 // Memory: a reverb kernel is hundreds of KB of comb/allpass/FDN delay-line state (Dattorro ~126 KB,
 // Zita ~937 KB) - far too big for SRAM. Every kernel is placement-new'd into the injected SDRAM arena
 // at init() (the pattern ResoEngine uses for Rings); only pointers live in this object. Per-deck
-// allocation is ~2.1 MB (Faust) / ~6.2 MB (with gigaverb) - trivial against the 48 MB arena.
+// allocation is ~2.1 MB (all three Faust voices) - trivial against the 48 MB arena.
 //
 // Knob map (reverb-agnostic roles; the 0..1 knob is linear-mapped into each slider's native range):
 //   SOS   (Mix)    -> Mix    (wet/dry)        PITCH (Speed) -> Decay (tail length; biggest knob)
@@ -38,11 +38,7 @@ struct ReverbVoice; // defined in reverb_engine.cpp (wraps one generated kernel 
 //   Reel/Slice/Drift switch (ConfigId::Mode) -> reverb algorithm select (per deck)
 class ReverbEngine : public IEngine {
 public:
-#if defined(SPK_REVERB_GIGAVERB)
-    static constexpr int kReverbCount = 3; // dattorro, zita, gigaverb (Alt+PITCH selects; keep in sync with init())
-#else
-    static constexpr int kReverbCount = 2; // dattorro, zita (keep in sync with init())
-#endif
+    static constexpr int kReverbCount = 3; // dattorro, zita, freeverb (mode switch selects; sync with init())
 
     ReverbEngine() = default;
     ~ReverbEngine() override = default;
@@ -75,9 +71,9 @@ private:
     Route        _route = Route::Stereo; // ConfigId::Route; selects the process() topology
 
     // The voice index actually used for a deck. DoubleMono caps every deck to the PLATE (index 0): the
-    // hall and gigaverb are heavy/SDRAM-bound and two of them at once thrash the cache (measured ~89%
-    // peak), so they are single-voice (stereo route) only. In a stereo route the deck plays its
-    // switch-selected voice (_active). Plate is index 0 by construction (see init()).
+    // hall and freeverb are stereo (2-in/2-out) and heavy, so they only run as a single stereo voice (in a
+    // stereo route), never two-up as mono-per-deck. In a stereo route the deck plays its switch-selected
+    // voice (_active). Plate is index 0 by construction (see init()).
     int  eff_voice(int deck) const { return _route == Route::DoubleMono ? 0 : _active[deck]; }
     void apply_all_knobs(DeckRef::Ref deck); // push that deck's cached knobs into its effective voice
 };

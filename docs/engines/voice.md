@@ -2,13 +2,7 @@
 
 `ENGINE=voice` · `src/engine/voice/` · generated from `osc.dsp` + `filter.dsp` + `voice.json`
 
-A **drone voice** - and the worked example of the **series (chain) dual-deck** generated path: **two
-different** Faust kernels wired in sequence, with deck A driving the first stage and deck B the second.
-Here stage 1 is a **drone oscillator** (an instrument - it generates sound from its knobs with no audio
-input) and stage 2 is a **resonant filter**, so the signal flows **osc → filter → out**. Authored as two
-`.dsp` files plus a JSON manifest with **no hand-written C++** (the generator emits the wrapper on the
-shared `FaustChainEngine<Traits>` template). See [`docs/dev/engine-gen.md`](../dev/engine-gen.md) §9 for
-the dual-deck design and [`docs/engine-types/faust.md`](../engine-types/faust.md) for the Faust path.
+A **drone voice** - and the worked example of the **series (chain) dual-deck** generated path: **two different** Faust kernels wired in sequence, with deck A driving the first stage and deck B the second. Here stage 1 is a **drone oscillator** (an instrument - it generates sound from its knobs with no audio input) and stage 2 is a **resonant filter**, so the signal flows **osc → filter → out**. Authored as two `.dsp` files plus a JSON manifest with **no hand-written C++** (the generator emits the wrapper on the shared `FaustChainEngine<Traits>` template). See [`docs/dev/engine-gen.md`](../dev/engine-gen.md) §9 for the dual-deck design and [`docs/engine-types/faust.md`](../engine-types/faust.md) for the Faust path.
 
 ---
 
@@ -35,9 +29,7 @@ _Generated from [`docs/diagrams/controls/voice.json`](../diagrams/controls/voice
 | **PITCH**   | `Speed` | `drive` | pre-filter saturation |
 | **SOS**     | `Mix`   | `mix`   | dry/wet |
 
-The same physical knobs mean different things on each deck because each deck drives its own stage. The
-chain is mono internally and duplicated to the stereo bus; the LED rings show an output-level meter. As
-an instrument, it makes sound on its own - no input patch needed.
+The same physical knobs mean different things on each deck because each deck drives its own stage. The chain is mono internally and duplicated to the stereo bus; the LED rings show an output-level meter. As an instrument, it makes sound on its own - no input patch needed.
 
 ---
 
@@ -46,9 +38,10 @@ an instrument, it makes sound on its own - no input patch needed.
 Three files in `src/engine/voice/`:
 
 - **`osc.dsp`** - stage 1, a 0-input drone oscillator (`freq`/`shape`/`level`).
+
 - **`filter.dsp`** - stage 2, a resonant low-pass (`cutoff`/`reso`/`drive`/`mix`).
-- **`voice.json`** - the manifest. `"deck_mode": "series"` lists the two stages (stage 1 → deck A,
-  stage 2 → deck B), each with its own knob map:
+
+- **`voice.json`** - the manifest. `"deck_mode": "series"` lists the two stages (stage 1 → deck A, stage 2 → deck B), each with its own knob map:
 
 ```json
 { "engine": "voice", "backend": "faust", "deck_mode": "series",
@@ -64,9 +57,8 @@ Then:
 ```text
 make faust-engine MANIFEST=src/engine/voice/voice.json   # both kernels + wrapper + build + diagram
 make -j8 ENGINE=voice                                  # build (~84% SRAM_EXEC)
+make engine-voice                                      # clean + build + DFU flash
 make -C host test-voice                                # host test (chain + per-stage independence)
 ```
 
-Stage A may have inputs (an FX→FX chain) or none (instrument→FX, as here). The two stage kernels get
-engine-scoped namespaces (`fx_voice_osc`, `fx_voice_filter`) so stage names can't collide across engines.
-`voice_engine.h` and the generated kernels are checked in; regenerate the wrapper with `--force-glue`.
+Stage A may have inputs (an FX→FX chain) or none (instrument→FX, as here). The two stage kernels get engine-scoped namespaces (`fx_voice_osc`, `fx_voice_filter`) so stage names can't collide across engines. `voice_engine.h` and the generated kernels are checked in; regenerate the wrapper with `--force-glue`.

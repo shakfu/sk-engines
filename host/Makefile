@@ -46,18 +46,6 @@ TAPE_SRC    = $(ROOT)/src/engine/tape/tape_engine.cpp
 # The buffer-based shuttle engine (4 in-RAM tape tracks; bipolar/reverse varispeed). Self-contained.
 SHUTTLE_SRC = $(ROOT)/src/engine/shuttle/shuttle_engine.cpp
 RADIO_SRC   = $(ROOT)/src/engine/radio/radio_engine.cpp
-# The SPK_REVERB_GIGAVERB build folds the gen~ "gigaverb" export into ReverbEngine as a third voice.
-# It needs the gen~ glue (the export wrapper + the arena-bound genlib runtime), its include dirs, and
-# the same defines the firmware build sets. Mirrors the ENGINE=reverb REVERB_GIGAVERB=1 Makefile branch.
-# GENLIB_USE_FLOAT32 makes gen~'s t_sample == float, matching what the firmware compiles (genlib_platform.h
-# defines it for __arm__). The gen bridge marshals float** buffers and the engine sizes the gen~ arena
-# slice for float; without this the host would default t_sample to double (8 B), doubling the footprint
-# and breaking the float** marshalling. Set it so the host test exercises the shipped configuration.
-GIGA_DEFS = -DSPK_REVERB_GIGAVERB -DGENLIB_NO_JSON -DGENLIB_USE_FLOAT32 -DDAISY_EXT_NAME=gigaverb \
-            -DGEN_EXPORTED_NAME=gen_exported -DGEN_EXPORTED_HEADER='"gen_exported.h"' -DGEN_EXPORTED_CPP='"gen_exported.cpp"' \
-            -Wno-unused-function -Wno-unused-parameter
-GIGA_INC  = -I$(ROOT)/src/engine/gigaverb -I$(ROOT)/src/engine/gigaverb/gen -I$(ROOT)/src/engine/gigaverb/gen/gen_dsp
-GIGA_SRC  = $(ROOT)/src/engine/gigaverb/_ext_daisy.cpp $(ROOT)/src/engine/gen/genlib_arena.cpp
 # reso's DSP is the Mutable Instruments Rings engine + its stmlib support library (under $(RESO_TP)).
 RINGS_SRC   = $(RESO_TP)/rings/dsp/part.cc $(RESO_TP)/rings/dsp/string.cc \
               $(RESO_TP)/rings/dsp/resonator.cc $(RESO_TP)/rings/dsp/fm_voice.cc \
@@ -77,11 +65,10 @@ TEST_RADIO   = $(BUILD)/test_radio
 TEST_CHORUS  = $(BUILD)/test_chorus
 TEST_DFILTER = $(BUILD)/test_dfilter
 TEST_VOICE   = $(BUILD)/test_voice
-TEST_REVERB_GIGA = $(BUILD)/test_reverb_giga
 TEST_DELAY   = $(BUILD)/test_delay
 BENCH_REVERB     = $(BUILD)/bench_reverb
 
-.PHONY: all clean run test test-granular test-edrums test-reso test-reverb test-reverb-giga test-delay test-tape test-stream test-shuttle test-radio test-chorus test-dfilter test-voice bench-reverb
+.PHONY: all clean run test test-granular test-edrums test-reso test-reverb test-delay test-tape test-stream test-shuttle test-radio test-chorus test-dfilter test-voice bench-reverb
 all: $(TARGET)
 
 $(TARGET): $(SRC) | $(BUILD)
@@ -131,12 +118,6 @@ $(TEST_VOICE): test_voice.cpp $(LIB_SRC) $(ROOT)/src/engine/voice/voice_engine.h
                $(wildcard $(ROOT)/src/engine/voice/faust_kernel_*.h) | $(BUILD)
 	$(CXX) $(CXXFLAGS) test_voice.cpp $(LIB_SRC) -o $@
 
-# Verifies the gigaverb-as-third-voice integration (SPK_REVERB_GIGAVERB). Not in the default `test`
-# aggregate: it compiles the gen~ runtime, which the lean reverb build deliberately excludes.
-$(TEST_REVERB_GIGA): test_reverb_giga.cpp $(LIB_SRC) $(REVERB_SRC) $(GIGA_SRC) \
-                     $(wildcard $(ROOT)/src/engine/reverb/faust_kernel_*.h) | $(BUILD)
-	$(CXX) $(CXXFLAGS) $(GIGA_DEFS) $(GIGA_INC) test_reverb_giga.cpp $(LIB_SRC) $(REVERB_SRC) $(GIGA_SRC) -o $@
-
 # Reverb process() cost benchmark. One binary times both topologies (Stereo vs DoubleMono) by switching
 # the Route at runtime. The ratio is the portable signal; absolute us is host time, not device load.
 REVERB_KERNELS = $(wildcard $(ROOT)/src/engine/reverb/faust_kernel_*.h)
@@ -160,7 +141,7 @@ run: $(TARGET)
 
 # `test` runs both engine harnesses. Both inject the transport via EngineContext (granular drives the
 # real platform Transport; edrums uses a small stub ITransport) - the post-transport-decoupling way.
-test: test-granular test-edrums test-reso test-reverb test-reverb-giga test-delay test-tape test-stream test-shuttle test-radio test-chorus test-dfilter test-voice
+test: test-granular test-edrums test-reso test-reverb test-delay test-tape test-stream test-shuttle test-radio test-chorus test-dfilter test-voice
 
 test-granular: $(TEST)
 	./$(TEST)
@@ -173,9 +154,6 @@ test-reso: $(TEST_RESO)
 
 test-reverb: $(TEST_REVERB)
 	./$(TEST_REVERB)
-
-test-reverb-giga: $(TEST_REVERB_GIGA)
-	./$(TEST_REVERB_GIGA)
 
 test-delay: $(TEST_DELAY)
 	./$(TEST_DELAY)

@@ -90,7 +90,7 @@ The **Built via** column links to the development method ([`../engine-types/`](.
 | Reso | `reso` | dual resonator / pluck voice (Mutable Instruments Rings DSP) | [native C++](../engine-types/cpp.md) | [reso.md](reso.md) |
 | Tape | `tape` | dual streaming SD record/playback decks (no in-memory length cap) + tape FX (wow/flutter, hysteresis) | [native C++](../engine-types/cpp.md) + [Faust](../engine-types/faust.md) | [tape.md](tape.md) |
 | Shuttle | `shuttle` | buffer-based bipolar/reverse varispeed tape (four in-RAM tracks; capstan-speed PITCH, per-track loop window) | [native C++](../engine-types/cpp.md) | [shuttle.md](shuttle.md) |
-| Reverb | `reverb` | route-aware stereo reverb (Dattorro plate / Zita hall, optional gen~ gigaverb), Reel/Slice/Drift switch selects; DoubleMono = two mono plates (heavy hall/gigaverb are stereo-only) | [Faust](../engine-types/faust.md) | [reverb.md](reverb.md) |
+| Reverb | `reverb` | route-aware stereo reverb, three all-Faust algorithms (Dattorro plate / Zita hall / Freeverb), Reel/Slice/Drift switch selects; DoubleMono = two mono plates (heavy hall/freeverb are stereo-only) | [Faust](../engine-types/faust.md) | [reverb.md](reverb.md) |
 | gigaverb | `gigaverb` | stereo reverb from a Max gen~ patch | [gen~](../engine-types/gen.md) | [gigaverb.md](gigaverb.md) |
 | Radio | `radio` | dual virtual RadioMusic: two SD-streaming "radios" with a free-running virtual playhead; `.raw`/`.wav` stations in numbered banks | [native C++](../engine-types/cpp.md) | [radio.md](radio.md) |
 | Chorus | `chorus` | stereo chorus - the demo of the **generated** Faust path (`.dsp` + JSON manifest, no hand-written C++) | [Faust (generated)](../engine-types/faust.md#generated-engines-no-hand-written-c) | [chorus.md](chorus.md) |
