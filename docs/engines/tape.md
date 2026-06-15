@@ -105,7 +105,7 @@ Each deck has its own **analog-tape effect chain** on the playback signal: **wow
 ## Build / flash / test
 
 ```text
-make faust-gen                                    # regenerate the tape-FX kernel (needs the .venv cyfaust)
+make faust-kernels                                # regenerate the tape-FX kernel (needs the .venv cyfaust)
 make engine-tape                                  # clean + build + DFU flash (Make path)
 make -f Makefile.cmake ENGINE=tape program-dfu    # CMake path
 make -j8 ENGINE=tape                              # build only (~86.9% SRAM_EXEC, incl. tape FX)

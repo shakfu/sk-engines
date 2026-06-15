@@ -88,7 +88,7 @@ New (device):
 
 - `src/engine/tape/tape_engine.{h,cpp}` — the engine (slim `IEngine` header + impl): dual decks, varispeed, routing/pan/mix/volume, loop modes, LED feedback, and the per-deck tape FX (`TapeFx`).
 
-- `src/engine/tape/tapefx.dsp` + `faust_kernel_tapefx.h` — the tape-FX Faust source and its **generated** kernel (wow/flutter + J-A hysteresis). Regenerate with `make faust-gen`.
+- `src/engine/tape/tapefx.dsp` + `faust_kernel_tapefx.h` — the tape-FX Faust source and its **generated** kernel (wow/flutter + J-A hysteresis). Regenerate with `make faust-kernels`.
 
 - `src/engine/faust_arch.h` — the shared MIT Faust arch shim (`dsp`/`UI`/`Meta` base types), used by the tape and reverb kernels. Lifted here from `src/engine/reverb/` when a second engine started using Faust.
 

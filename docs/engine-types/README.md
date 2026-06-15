@@ -5,7 +5,7 @@ Spotykach hosts one swappable DSP **engine** behind a fixed platform (see `../en
 | Method | You write | Codegen | Examples | Doc |
 |---|---|---|---|---|
 | **Native C++** | the DSP *and* the `IEngine` wrapper, by hand | none | granular, delay, edrums, reso, passthrough | [cpp.md](cpp.md) |
-| **Faust (cyfaust)** | DSP in a `.dsp`; the `IEngine` wrapper + knob binds by hand | `make faust-gen` -> `faust_kernel_*.h` | reverb, tape (tapefx) | [faust.md](faust.md) |
+| **Faust (cyfaust)** | DSP in a `.dsp`; the `IEngine` wrapper + knob binds by hand | `make faust-kernels` -> `faust_kernel_*.h` | reverb, tape (tapefx) | [faust.md](faust.md) |
 | **gen~ (gen-dsp)** | a Max/MSP `gen~` patch; only a small `ParamId` map by hand | `make gen-engines` -> a whole engine dir | gigaverb | [gen.md](gen.md) |
 
 All three end at the same place: a class implementing `IEngine` (`init`/`prepare`/`process` + opt-in `capabilities`), selected at build time via `ENGINE=`. They differ in **how much you hand-write** and **where the DSP comes from**.

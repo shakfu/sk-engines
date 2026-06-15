@@ -16,7 +16,7 @@ This file scopes the design; the plan in [§7](#7-implementation-plan) was the b
 
 ## 2. What the toolchain already gives us (so the manifest stays minimal)
 
-The generated Faust kernel (`make faust-gen` → `faust_kernel_<name>.h`, `class mydsp` in `namespace spotykach::<prefix><name>`, base types from `engine/faust_arch.h`) already exposes everything structural:
+The generated Faust kernel (`make faust-kernels` → `faust_kernel_<name>.h`, `class mydsp` in `namespace spotykach::<prefix><name>`, base types from `engine/faust_arch.h`) already exposes everything structural:
 
 - **`getNumInputs()` / `getNumOutputs()`** → mono vs stereo. *Not* stated in the manifest.
 
@@ -66,7 +66,7 @@ i.e. the binding key is `(box, label) → role(+slot, +invert)`, exactly the `Bi
 
 For `<name>.dsp` + `<name>.json`:
 
-1. **`faust_kernel_<name>.h`** — via the existing `make faust-gen` (cyfaust `compile -b cpp`). The generator registers `<name>` in the Makefile's `FAUST_KERNELS` list so this happens automatically.
+1. **`faust_kernel_<name>.h`** — via the existing `make faust-kernels` (cyfaust `compile -b cpp`). The generator registers `<name>` in the Makefile's `FAUST_KERNELS` list so this happens automatically.
 
 2. **`src/engine/<name>/<name>_engine.h`** — the wrapper. For a simple FX this is fully generated and never edited: a `const Bind[]` table from the manifest, and a thin `class <Name>Engine : public IEngine` built on the shared Faust adapter ([§5](#5-shared-faust-runtime-new)) that captures zones, forwards `set_param`/`param` with range mapping, runs `compute` with mono/stereo marshalling from `getNumInputs/Outputs`, applies the `features`, and reports `capabilities()`.
 

@@ -32,13 +32,13 @@ Both advertise `CapDualDeck` and need no platform change - the platform already 
 
 ```text
 <name>.dsp ──cyfaust (cpp backend)──▶ faust_kernel_<name>.h   (class mydsp in namespace spotykach::<ns>)
-                  make faust-gen                    │
+                  make faust-kernels                │
    reverb_engine.cpp  ─ placement-new into arena ───┘ + CaptureUI binds zones to roles
 ```
 
-`make faust-gen` reads `FAUST_KERNELS` in the root `Makefile` - one `<dir>:<namespace-prefix>:<name>` spec per kernel - and for each compiles `<dir>/<name>.dsp` to `<dir>/faust_kernel_<name>.h`. cyfaust runs only at codegen time on the host; the generated headers are checked in, so a normal `arm-none-eabi-g++` build needs no cyfaust.
+`make faust-kernels` reads `FAUST_KERNELS` in the root `Makefile` - one `<dir>:<namespace-prefix>:<name>` spec per kernel - and for each compiles `<dir>/<name>.dsp` to `<dir>/faust_kernel_<name>.h`. cyfaust runs only at codegen time on the host; the generated headers are checked in, so a normal `arm-none-eabi-g++` build needs no cyfaust.
 
-cyfaust's cpp backend has no class-rename flag - every kernel is `class mydsp`. To let several coexist in one binary, `faust-gen`, per kernel: wraps the generated class in its own namespace `spotykach::<ns>`, rewrites the generated `__mydsp_H__` include guard to a per-kernel name (else the first kernel's guard suppresses the rest), and hoists the kernel's own `#include`s to global scope (a namespaced `#include` would pull `<cmath>` into the namespace). The class's unqualified `dsp`/`UI`/`Meta` base types then resolve to **`src/engine/faust_arch.h`** - a hand-written, MIT-licensed arch shim, so Faust's GPL-with-exception architecture headers are not vendored.
+cyfaust's cpp backend has no class-rename flag - every kernel is `class mydsp`. To let several coexist in one binary, `faust-kernels`, per kernel: wraps the generated class in its own namespace `spotykach::<ns>`, rewrites the generated `__mydsp_H__` include guard to a per-kernel name (else the first kernel's guard suppresses the rest), and hoists the kernel's own `#include`s to global scope (a namespaced `#include` would pull `<cmath>` into the namespace). The class's unqualified `dsp`/`UI`/`Meta` base types then resolve to **`src/engine/faust_arch.h`** - a hand-written, MIT-licensed arch shim, so Faust's GPL-with-exception architecture headers are not vendored.
 
 ## The wrapper (what you hand-write)
 
@@ -72,7 +72,7 @@ python3 -m venv .venv && .venv/bin/pip install cyfaust   # one-time
 make ENGINE=reverb              # build; the link prints SRAM_EXEC usage
 make ENGINE=reverb program-dfu  # flash (device in DFU first)
 make engine-reverb              # one-shot: clean + build + flash
-make faust-gen                  # regenerate faust_kernel_*.h for every spec in FAUST_KERNELS
+make faust-kernels              # regenerate faust_kernel_*.h for every spec in FAUST_KERNELS
 #   CYFAUST_PY=/path/to/python  # pin a different libfaust version
 ```
 

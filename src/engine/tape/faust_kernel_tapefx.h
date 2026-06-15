@@ -2,7 +2,7 @@
 // SPOTYKACH ///////////////////////////////////////////////
 #pragma once
 
-// GENERATED FILE - do not edit by hand. Regenerate with `make faust-gen` (cyfaust cpp backend).
+// GENERATED FILE - do not edit by hand. Regenerate with `make faust-kernels` (cyfaust cpp backend).
 // Source: src/engine/tape/tapefx.dsp. The generated `class mydsp` is wrapped in namespace spotykach::tfx_tapefx; its
 // dsp/UI/Meta base types resolve to the shared arch shim (see engine/faust_arch.h).
 

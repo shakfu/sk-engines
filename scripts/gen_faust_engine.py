@@ -4,7 +4,7 @@
 The Faust analogue of scripts/gen_engine.py (gen~). For `src/engine/<name>/<name>.dsp` +
 `<name>.json` it:
 
-  1. builds the cyfaust kernel (`make faust-gen` -> `faust_kernel_<name>.h`, namespace
+  1. builds the cyfaust kernel (`make faust-kernels` -> `faust_kernel_<name>.h`, namespace
      `spotykach::fx_<name>`),
   2. parses the kernel's sliders (label + enclosing box) to validate the manifest's bindings,
   3. emits `<name>_engine.h`: a Traits struct (the ParamId -> slider Bind table + feature flags) bound to
@@ -109,8 +109,8 @@ def _kernel_spec(name: str, prefix: str, kname: str) -> str:
 
 def _build_kernel(root: Path, name: str, prefix: str, kname: str):
     spec = _kernel_spec(name, prefix, kname)
-    print(f"  $ make faust-gen FAUST_KERNELS={spec}")
-    subprocess.run(["make", "faust-gen", f"FAUST_KERNELS={spec}"], cwd=root, check=True)
+    print(f"  $ make faust-kernels FAUST_KERNELS={spec}")
+    subprocess.run(["make", "faust-kernels", f"FAUST_KERNELS={spec}"], cwd=root, check=True)
 
 
 def _ensure_faust_kernels(root: Path, name: str, prefix: str, kname: str):

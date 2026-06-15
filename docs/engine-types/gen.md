@@ -73,7 +73,7 @@ gen-dsp runs only at codegen time on the host; the firmware build is plain `arm-
 
    ```text
    .venv/bin/python scripts/gen_engine.py /path/to/export myverb
-   # or batch, via the Makefile (analogue of `make faust-gen`):
+   # or batch, via the Makefile (analogue of `make faust-kernels`):
    make gen-engines GEN_EXPORTS="/path/to/export:myverb /path/to/other:thing"
    ```
 

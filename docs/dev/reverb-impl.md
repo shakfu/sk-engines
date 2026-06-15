@@ -41,13 +41,13 @@ At ~92% a fourth sizable Faust algorithm would need this engine built at `-Os` (
 
 - `src/engine/reverb/dattorro.dsp`, `zita.dsp` - the active reverb sources. `voice.dsp` - the retained spike voice (not built).
 
-- `src/engine/reverb/faust_kernel_<name>.h` - **generated** (do not hand-edit), one `class mydsp` per namespace `rv_<name>`. Regenerate with `make faust-gen`.
+- `src/engine/reverb/faust_kernel_<name>.h` - **generated** (do not hand-edit), one `class mydsp` per namespace `rv_<name>`. Regenerate with `make faust-kernels`.
 
 - `src/engine/reverb/reverb_engine.{h,cpp}` - the `IEngine` wrapper (per-deck arena construction, `CaptureUI` + per-reverb bind tables, role mapping, mode-switch + route handling, render). The optional `GigaverbVoice` and its includes are `#if defined(SPK_REVERB_GIGAVERB)`.
 
 - `host/test_reverb.cpp`, `host/test_reverb_giga.cpp`, `host/bench_reverb.cpp` - the host test, the gigaverb-fold-in test, and the process() cost benchmark.
 
-- Registered in `src/engine/engine_select.h` and the root `Makefile` (`ENGINE=reverb`, `engine-reverb` flash target, `faust-gen` codegen target).
+- Registered in `src/engine/engine_select.h` and the root `Makefile` (`ENGINE=reverb`, `engine-reverb` flash target, `faust-kernels` codegen target).
 
 ## Adding a reverb
 

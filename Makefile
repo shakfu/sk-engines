@@ -46,7 +46,7 @@ ENGINE_SOURCES = src/engine/radio/radio_engine.cpp
 else ifeq ($(ENGINE), reverb)
 C_DEFS += -DSPK_ENGINE_REVERB
 # Stereo reverb (Dattorro plate / Zita hall) whose DSP is Faust-generated. The cyfaust-generated kernels
-# (faust_kernel_<name>.h) are produced from the .dsp sources by `make faust-gen`; the arch shim
+# (faust_kernel_<name>.h) are produced from the .dsp sources by `make faust-kernels`; the arch shim
 # (faust_arch.h) is hand-written + MIT. The kernels' delay-line state is placement-new'd into the SDRAM
 # arena, so SRAM stays flat; the link's -Wl,--print-memory-usage shows SRAM_EXEC (the binding region).
 ENGINE_SOURCES = src/engine/reverb/reverb_engine.cpp
@@ -321,8 +321,9 @@ engine-reverb:
 # different libfaust version. Add a kernel: drop <name>.dsp in its engine dir, add a spec here, and bind it.
 CYFAUST_PY ?= .venv/bin/python
 FAUST_KERNELS ?= src/engine/reverb:rv_:dattorro src/engine/reverb:rv_:zita src/engine/tape:tfx_:tapefx src/engine/chorus:fx_:chorus src/engine/dfilter:fx_:dfilter src/engine/voice:fx_voice_:osc src/engine/voice:fx_voice_:filter
-.PHONY: faust-gen
-faust-gen:
+# `faust-gen` is the former name, kept as a deprecated alias.
+.PHONY: faust-kernels faust-gen
+faust-kernels faust-gen:
 	@for spec in $(FAUST_KERNELS); do \
 	  dir=$${spec%%:*}; rest=$${spec#*:}; pfx=$${rest%%:*}; nm=$${rest##*:}; ns=$$pfx$$nm; \
 	  src=$$dir/$$nm.dsp; out=$$dir/faust_kernel_$$nm.h; \
@@ -332,7 +333,7 @@ faust-gen:
 	    echo '// SYNTHUX ACADEMY /////////////////////////////////////////'; \
 	    echo '// SPOTYKACH ///////////////////////////////////////////////'; \
 	    echo '#pragma once'; echo ''; \
-	    echo "// GENERATED FILE - do not edit by hand. Regenerate with \`make faust-gen\` (cyfaust cpp backend)."; \
+	    echo "// GENERATED FILE - do not edit by hand. Regenerate with \`make faust-kernels\` (cyfaust cpp backend)."; \
 	    echo "// Source: $$src. The generated \`class mydsp\` is wrapped in namespace spotykach::$$ns; its"; \
 	    echo "// dsp/UI/Meta base types resolve to the shared arch shim (see engine/faust_arch.h)."; echo ''; \
 	    grep '^#include' $$dir/.kernel.gen; \
@@ -345,7 +346,7 @@ faust-gen:
 	done
 	@echo "regenerated faust kernels"
 
-# Regenerate every gen~ engine via gen-dsp's Daisy backend (the gen~ analogue of faust-gen).
+# Regenerate every gen~ engine via gen-dsp's Daisy backend (the gen~ analogue of faust-kernels).
 # GEN_EXPORTS lists one "<gen~-export-dir>:<name>" spec per engine: scripts/gen_engine.py runs gen-dsp
 # into src/engine/gen_<name>/, keeps only the genlib-isolation bridge (drops gen-dsp's board main and
 # private allocator), emits <name>_engine.h (a ParamId map you retune by hand -- preserved across

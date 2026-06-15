@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate an sk-engines IEngine from a Max gen~ export via gen-dsp.
 
-This is the gen~ analogue of `make faust-gen`. For a gen~ export it:
+This is the gen~ analogue of `make faust-kernels`. For a gen~ export it:
 
   1. runs gen-dsp's Daisy backend into a temp dir,
   2. syncs the genlib-isolation bridge (the wrapper_* C interface, the copied
