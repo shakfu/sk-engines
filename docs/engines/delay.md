@@ -48,13 +48,17 @@ Knob meanings are fixed across characters — the mode only changes the feedback
 ### Characters (`ConfigId::Mode`, per deck; ring tint blue / amber / violet)
 
 - **Clean** — clean digital repeats. Identical to the original delay when ENV is up.
+
 - **Tape** — a slow wow/flutter LFO on the read time + the tone low-pass + soft saturation in the loop: warbly, degrading dub/analog repeats.
+
 - **Shimmer** — the feedback is pitch-shifted **+12** each pass (a second crossfading shifter), so repeats climb into an octave wash.
 
 ### Topologies (`ConfigId::Route`; shown on the mode L/C/R LEDs)
 
 - **DoubleMono** — two independent mono delays (deck A → L and deck B → R, each with its own controls).
+
 - **Stereo** — linked: both delays share deck A's controls (a coherent stereo delay; deck B's strip inert).
+
 - **Ping-pong** — linked + **cross-feedback**: each deck's colored feedback feeds the *other*, so echoes bounce L↔R.
 
 `capabilities()` = `CapOwnDisplay | CapDualDeck`; `route()` reports the topology for the route LED. The engine renders its own display (a division arc tinted by character + an input-level play indicator); the platform composites the clock indicators over it.

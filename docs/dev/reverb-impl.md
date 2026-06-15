@@ -1,9 +1,6 @@
 # Dev notes — route-aware Faust reverb (`reverb` engine)
 
-Implementation/bring-up notes for `ENGINE=reverb`. The user-facing reference (the two algorithms,
-route-aware topology, control map, the optional gigaverb voice, build/flash commands) is
-[`docs/engines/reverb.md`](../engines/reverb.md); this file holds the status, the Faust footprint and
-on-device load measurements, the file map, and the "adding a reverb" how-to.
+Implementation/bring-up notes for `ENGINE=reverb`. The user-facing reference (the two algorithms, route-aware topology, control map, the optional gigaverb voice, build/flash commands) is [`docs/engines/reverb.md`](../engines/reverb.md); this file holds the status, the Faust footprint and on-device load measurements, the file map, and the "adding a reverb" how-to.
 
 ## Status at a glance
 

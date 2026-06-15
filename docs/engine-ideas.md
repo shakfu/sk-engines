@@ -43,9 +43,7 @@ The bare-metal budget (see [Feasibility](#feasibility-the-shared-constraints)) r
 
 "Cost" is rough per-sample CPU + memory + integration effort, low to high. Tiers below group them.
 
-> **Shipped:** #12 **Radio** is implemented (`ENGINE=radio`) - it reuses the tape engine's `SPK_USE_STREAM`
-> streaming stack and adds a headerless raw-16-bit codec, a directory scan, and the free-running virtual
-> playhead. See [`docs/engines/radio.md`](engines/radio.md).
+> **Shipped:** #12 **Radio** is implemented (`ENGINE=radio`) - it reuses the tape engine's `SPK_USE_STREAM` > streaming stack and adds a headerless raw-16-bit codec, a directory scan, and the free-running virtual > playhead. See [`docs/engines/radio.md`](engines/radio.md).
 
 ---
 

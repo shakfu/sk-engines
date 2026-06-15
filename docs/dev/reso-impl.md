@@ -1,8 +1,6 @@
 # Dev notes — dual resonator / pluck (`reso` engine)
 
-Implementation/bring-up notes for `ENGINE=reso`. The user-facing reference (concept, modes, control map,
-knob defaults, build commands) is [`docs/engines/reso.md`](../engines/reso.md); this file holds the
-internals, the build system, the file map, and the bug writeups.
+Implementation/bring-up notes for `ENGINE=reso`. The user-facing reference (concept, modes, control map, knob defaults, build commands) is [`docs/engines/reso.md`](../engines/reso.md); this file holds the internals, the build system, the file map, and the bug writeups.
 
 ## Status at a glance
 

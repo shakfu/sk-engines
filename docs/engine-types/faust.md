@@ -3,6 +3,7 @@
 Author the DSP in [Faust](https://faust.grame.fr) (`.dsp`), generate C++ kernels with [cyfaust](https://github.com/shakfu/cyfaust) (a Cython wrapper of libfaust), and wrap them behind `IEngine`. There are two ways to write that wrapper:
 
 - **Generated** (a `.dsp` + a small JSON manifest, **no C++**) - for a simple single-kernel mono/stereo effect. The generator emits the wrapper on the shared `FaustEngine<Traits>` template. See [Generated engines](#generated-engines-no-hand-written-c) below and the design in [`docs/dev/engine-gen.md`](../dev/engine-gen.md).
+
 - **Hand-written** - for a rich engine with several interchangeable algorithms, route-aware topology, or custom display (the `reverb` case). You keep full control of selection, topology, and rendering.
 
 **Implementations:** [reverb](../engines/reverb.md) (hand-written: Dattorro plate + Zita hall, mode switch selects, route-aware), [tape](../engines/tape.md) (a native engine whose `tapefx` wow/flutter + hysteresis is a Faust kernel), [chorus](../engines/chorus.md) (generated, the demo). The build-system detail and footprint table also live in `src/engine/reverb/README.md`.

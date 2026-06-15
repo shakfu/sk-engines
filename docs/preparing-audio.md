@@ -1,9 +1,6 @@
 # Preparing audio for the SD card (tape / shuttle)
 
-The `tape` and `shuttle` engines read audio straight off the SD card into the audio path
-with **no format conversion on-device**. They accept exactly one format; anything else is
-rejected (the deck's amber error LED **strobes** for a wrong-format file vs a steady amber
-for an empty slot). So source files must be converted on a computer first.
+The `tape` and `shuttle` engines read audio straight off the SD card into the audio path with **no format conversion on-device**. They accept exactly one format; anything else is rejected (the deck's amber error LED **strobes** for a wrong-format file vs a steady amber for an empty slot). So source files must be converted on a computer first.
 
 ## Supported format
 
@@ -14,9 +11,7 @@ for an empty slot). So source files must be converted on a computer first.
 | Channels | **mono** (stereo is down-mixed) | `-ac 1` | `-c 1` |
 | Sample rate | **48000 Hz** | `-ar 48000` | `-r 48000` |
 
-Common mistakes that still play as garbage / get rejected: 16-bit PCM, **32-bit *integer*** PCM
-(`pcm_s32le` — not the same as float; this is the easy one to get wrong), stereo, and 44.1 kHz
-(no on-device resampling, so it would otherwise play ~8% flat).
+Common mistakes that still play as garbage / get rejected: 16-bit PCM, **32-bit *integer*** PCM (`pcm_s32le` — not the same as float; this is the easy one to get wrong), stereo, and 44.1 kHz (no on-device resampling, so it would otherwise play ~8% flat).
 
 ## Card layout
 
@@ -27,13 +22,11 @@ tape    -> /tapes/tape_<a|b>_<1..8>.wav
 shuttle -> /shuttle/tape_<a|b>_<1..8>.wav
 ```
 
-The shuttle is **RAM-capped at ~30 s per track** — longer files are truncated on load. The tape
-engine streams from the card, so its files can be any length.
+The shuttle is **RAM-capped at ~30 s per track** — longer files are truncated on load. The tape engine streams from the card, so its files can be any length.
 
 ## Recommended: the batch script
 
-[`scripts/convert_tape_audio.py`](../scripts/convert_tape_audio.py) wraps ffmpeg/sox, converts to
-the exact format, verifies the output header, and can name files into deck slots:
+[`scripts/convert_tape_audio.py`](../scripts/convert_tape_audio.py) wraps ffmpeg/sox, converts to the exact format, verifies the output header, and can name files into deck slots:
 
 ```sh
 # Fill tape deck A's slots 1.. (-> out/tapes/tape_a_1.wav, tape_a_2.wav, ...)
@@ -49,8 +42,7 @@ scripts/convert_tape_audio.py -o out *.wav
 scripts/convert_tape_audio.py --tool sox in.wav
 ```
 
-It exits non-zero and prints `FAIL` if a converted file doesn't match the required format, so it is
-safe to script. Copy the resulting `tapes/` or `shuttle/` folder to the card root.
+It exits non-zero and prints `FAIL` if a converted file doesn't match the required format, so it is safe to script. Copy the resulting `tapes/` or `shuttle/` folder to the card root.
 
 ## Manual one-liners
 
@@ -72,9 +64,7 @@ sox in.wav -c 1 -r 48000 -e floating-point -b 32 tape_a_1.wav
 for f in *.wav; do sox "$f" -c 1 -r 48000 -e floating-point -b 32 "out/$f"; done
 ```
 
-Both tools add a small `fact`/`LIST` metadata chunk before the audio (pushing the `data` chunk to
-~offset 58-92). The firmware tolerates header metadata up to 256 bytes, so this is fine — no need to
-strip it.
+Both tools add a small `fact`/`LIST` metadata chunk before the audio (pushing the `data` chunk to ~offset 58-92). The firmware tolerates header metadata up to 256 bytes, so this is fine — no need to strip it.
 
 ## Verify
 

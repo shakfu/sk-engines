@@ -65,7 +65,9 @@ Each track can run the same tape-FX kernel as the [`tape`](tape.md) engine - **w
 Because `shuttle` already uses POS/SIZE for the loop window (where the `tape` engine puts drive/character), the FX is driven from this engine's free controls - the two end-of-chain effect pads plus the MOD knobs:
 
 - **grit pad = saturation:** hold **grit + PITCH** for drive (amount), **grit + MIX** for character (the J-A tone).
+
 - **flux pad = filter:** hold **flux + PITCH** for cutoff, **flux + MIX** for resonance. Cutoff **boots fully open**, so the filter is inert until you sweep it down (the flux+PITCH pickup seeds open -> turn down to engage).
+
 - **MOD_AMT / MODFREQ = wow/flutter** depth / rate.
 
 **Neutral = bypassed.** With drive/character/wow at zero, cutoff fully open and resonance zero (the boot defaults), the kernel is **skipped entirely** rather than run flat: the wow/flutter delay line imposes a fixed ~25 ms delay even at zero depth and the filter is not bit-identity even fully open, so a "neutral" kernel would not be transparent. Skipping it keeps shuttle's varispeed playback **bit-faithful** when the FX is untouched, and confines the (non-trivial) Jiles-Atherton cost to tracks that are both rolling and actually using the FX. The summed bus is `SoftLimit`ed only while the FX is engaged (saturation + a resonant peak can overshoot 0 dBFS); with the FX off the bus stays a plain linear sum.

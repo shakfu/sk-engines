@@ -2,9 +2,7 @@
 
 > Resume point for the streaming **tape** engine - the in-SDRAM length cap is removed and the engine is > hardware-verified as a **dual-deck** machine: two independent mono decks, routing switch + mix fader + > per-deck pan/volume, and four ENV loop modes. (`reso` shipped separately - see `docs/engines/reso.md` > and `CHANGELOG.md` `[0.2.2]`.)
 
-The user-facing reference (controls, SD-card layout, file formats, build commands) is
-[`docs/engines/tape.md`](../engines/tape.md); this file holds the internals, the file map, the risks, and
-the bug writeups.
+The user-facing reference (controls, SD-card layout, file formats, build commands) is [`docs/engines/tape.md`](../engines/tape.md); this file holds the internals, the file map, the risks, and the bug writeups.
 
 ## TL;DR — where we are
 
@@ -212,6 +210,4 @@ Chain: **wow/flutter -> Jiles-Atherton hysteresis/saturation -> resonant low-pas
 
 - `reso` engine shipped (Mutable Instruments Rings voice; renamed from `karp`); pitch bug root-caused (`cv_voct` clobbering the knob) + fixed; defaults engine-seeded; Alt+PITCH model selector; vendored Rings/stmlib trimmed under `src/engine/reso/thirdparty/`. See `docs/engines/reso.md`, `CHANGELOG.md` `[0.2.2]`.
 
-- Opt-in CMake build added (additive; `make -f Makefile.cmake`); the `make` build stays canonical.
-</content>
-</invoke>
+- Opt-in CMake build added (additive; `make -f Makefile.cmake`); the `make` build stays canonical. </content> </invoke>

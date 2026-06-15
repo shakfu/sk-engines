@@ -1,8 +1,6 @@
 # Dev notes — dual granular looper / sampler (`granular` engine)
 
-Implementation, the DSP graph, and the file map for `ENGINE=granular`. The user-facing reference (modes,
-transport, controls, persistence) is [`docs/engines/granular.md`](../engines/granular.md). Granular is the
-reference engine; the architecture is also covered in [`docs/architecture.md`](../architecture.md).
+Implementation, the DSP graph, and the file map for `ENGINE=granular`. The user-facing reference (modes, transport, controls, persistence) is [`docs/engines/granular.md`](../engines/granular.md). Granular is the reference engine; the architecture is also covered in [`docs/architecture.md`](../architecture.md).
 
 ## The graph
 

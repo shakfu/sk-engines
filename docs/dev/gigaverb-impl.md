@@ -1,7 +1,6 @@
 # Dev notes — gigaverb (`gigaverb` engine)
 
-Implementation, the file map, and dev notes for `ENGINE=gigaverb`. The user-facing reference (control map,
-build commands, the reverb fold-in) is [`docs/engines/gigaverb.md`](../engines/gigaverb.md).
+Implementation, the file map, and dev notes for `ENGINE=gigaverb`. The user-facing reference (control map, build commands, the reverb fold-in) is [`docs/engines/gigaverb.md`](../engines/gigaverb.md).
 
 ## Status at a glance
 

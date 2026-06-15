@@ -4,8 +4,7 @@
 
 A **dual streaming tape deck**: two independent **mono** decks (A/B), each playing or recording its own arbitrarily long file on the SD card, removing the in-SDRAM loop-length cap that bounds the other engines (~42 s float / ~84 s int16, `kSourceMaxSeconds` in `src/config.h`). A deck is **play-XOR-record** (no overdub), so the two run like a pair of record decks - play deck A while recording deck B, then play both together and beat-match by ear with each deck's PITCH. It is a **linear** player/recorder, not a granular scrubber - random SD seek cannot meet the 2 ms audio deadline, so each tape only ever streams forward.
 
-> Implementation, architecture, the file map, and the bug/bring-up writeups live in
-> [`docs/dev/tape-impl.md`](../dev/tape-impl.md).
+> Implementation, architecture, the file map, and the bug/bring-up writeups live in > [`docs/dev/tape-impl.md`](../dev/tape-impl.md).
 
 ---
 
@@ -113,5 +112,4 @@ make -j8 ENGINE=tape                              # build only (~86.9% SRAM_EXEC
 make -C host test                                 # host suites incl. test-tape / test-stream (all green)
 ```
 
-On hardware, after ~1 s for the SD to mount: pick a slot per deck with **Alt+PITCH** (ring shows the selector), then **Alt+Play(A)** records input A and **Alt+Play(B)** records input B into the selected slots; **Play(A)** / **Play(B)** play them back simultaneously (A->L, B->R). Turn each deck's **PITCH** for varispeed, **Alt+POS** to pan (LEFT routing), **MIX** for volume, **ENV** for the loop mode; the **mix fader** blends A/B and the **routing switch** picks the pan topology. Files land under **`/tapes/`** as `tape_a_<n>.wav` / `tape_b_<n>.wav`.
-</content>
+On hardware, after ~1 s for the SD to mount: pick a slot per deck with **Alt+PITCH** (ring shows the selector), then **Alt+Play(A)** records input A and **Alt+Play(B)** records input B into the selected slots; **Play(A)** / **Play(B)** play them back simultaneously (A->L, B->R). Turn each deck's **PITCH** for varispeed, **Alt+POS** to pan (LEFT routing), **MIX** for volume, **ENV** for the loop mode; the **mix fader** blends A/B and the **routing switch** picks the pan topology. Files land under **`/tapes/`** as `tape_a_<n>.wav` / `tape_b_<n>.wav`. </content>

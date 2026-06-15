@@ -1,10 +1,6 @@
 # Dev notes — four-drum Euclidean drum machine (`edrums` engine)
 
-Implementation/bring-up notes for `ENGINE=edrums`. The user-facing reference (concept, the four-drum
-layout, drum models, output routing, the control map, and how to play it) is
-[`docs/engines/edrums.md`](../engines/edrums.md); this file holds the file map, the sequencer internals,
-the hardware-test feedback/resolutions, the roadmap, the known limitations, and the QSPI-persist
-mechanics.
+Implementation/bring-up notes for `ENGINE=edrums`. The user-facing reference (concept, the four-drum layout, drum models, output routing, the control map, and how to play it) is [`docs/engines/edrums.md`](../engines/edrums.md); this file holds the file map, the sequencer internals, the hardware-test feedback/resolutions, the roadmap, the known limitations, and the QSPI-persist mechanics.
 
 ## Sequencer: `dsp/CPattern`
 
