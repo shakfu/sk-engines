@@ -1,0 +1,17 @@
+{
+  "engine": "gigaverb",
+  "backend": "gen",
+  "title": "Gigaverb - stereo reverb from a gen~ patch",
+  "export": "src/engine/gigaverb/gen",
+  "board": "seed",
+  "knobs": {
+    "Pitch":     "bandwidth",
+    "Envelope":  "damping",
+    "Mix (SOS)": "dry",
+    "Position":  "revtime",
+    "Size":      "roomsize",
+    "Glow":      "tail",
+    "Feedback":  "spread",
+    "EnvSize":   "early"
+  }
+}

@@ -6,7 +6,7 @@ Spotykach hosts one swappable DSP **engine** behind a fixed platform (see `../en
 |---|---|---|---|---|
 | **Native C++** | the DSP *and* the `IEngine` wrapper, by hand | none | granular, delay, edrums, reso, passthrough | [cpp.md](cpp.md) |
 | **Faust (cyfaust)** | DSP in a `.dsp`; the `IEngine` wrapper + knob binds by hand | `make faust-kernels` -> `faust_kernel_*.h` | reverb, tape (tapefx) | [faust.md](faust.md) |
-| **gen~ (gen-dsp)** | a Max/MSP `gen~` patch; only a small `ParamId` map by hand | `make gen-engines` -> a whole engine dir | gigaverb | [gen.md](gen.md) |
+| **gen~ (gen-dsp)** | a Max/MSP `gen~` patch + a small JSON manifest (the knob map); no C++ | `make gen-engine` -> a whole engine dir | gigaverb | [gen.md](gen.md) |
 
 All three end at the same place: a class implementing `IEngine` (`init`/`prepare`/`process` + opt-in `capabilities`), selected at build time via `ENGINE=`. They differ in **how much you hand-write** and **where the DSP comes from**.
 
@@ -24,6 +24,6 @@ All three end at the same place: a class implementing `IEngine` (`init`/`prepare
 
 - **Faust (cyfaust)** - closed-form signal-processing DSP you would rather write declaratively, especially with several interchangeable algorithms (reverb ships a plate + a hall). You still hand-write the wrapper, so you keep full control of knob mapping, selection, and display. The generated kernel is pure DSP; you bind it.
 
-- **gen~ (gen-dsp)** - you already have, or prefer to patch in, a Max `gen~` graph. Fastest path from a gen~ export to a running engine and the least firmware code (the wrapper is fully generic - you only edit a knob map). Currently capability-minimal: stereo audio + knob params, no custom display/MIDI/CV yet (`capabilities() = 0`).
+- **gen~ (gen-dsp)** - you already have, or prefer to patch in, a Max `gen~` graph. Fastest path from a gen~ export to a running engine and the least firmware code (the wrapper is fully generic - you only write a `knobs` JSON manifest, same declarative method as Faust, no C++). Currently capability-minimal: stereo audio + knob params, no custom display/MIDI/CV yet (`capabilities() = 0`).
 
 A single engine can mix methods: **tape** is a native C++ engine (SD-streaming decks) that also embeds a Faust `tapefx` kernel for its wow/flutter + hysteresis - it appears under both Native C++ and Faust.

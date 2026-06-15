@@ -363,14 +363,21 @@ GEN_PY ?= .venv/bin/python
 # gen-dsp dropped under the engine dir is itself a valid gen-dsp input), so a regen is reproducible on
 # any checkout without the external gen-dsp source tree. For a new engine, point at your gen~ export dir.
 GEN_EXPORTS ?= src/engine/gigaverb/gen:gigaverb
-# Generate ONE gen~ engine from a gen~ export dir (the gen~ analogue of `make faust-engine`). Wraps the
-# same scripts/gen_engine.py the batch `gen-engines` runs per spec.
-#   usage:  make gen-engine GEN_EXPORT=<gen~-export-dir>:<name>
+# Generate ONE gen~ engine (the gen~ analogue of `make faust-engine`). Two forms:
+#   make gen-engine MANIFEST=src/engine/<name>/<name>.json   # unified: knob map from the JSON manifest
+#   make gen-engine GEN_EXPORT=<gen~-export-dir>:<name>      # bootstrap: positional default knob map
+# MANIFEST runs gen-dsp on the manifest's `export` then emits index_of() from its `knobs`; add NOGEN=1 to
+# regenerate the glue only (reuse the synced export, no gen-dsp), FORCE=1 to overwrite the generated header.
 .PHONY: gen-engine
 gen-engine:
-	@test -n "$(GEN_EXPORT)" || { echo "usage: make gen-engine GEN_EXPORT=<gen~-export-dir>:<name>"; exit 1; }
-	@spec='$(GEN_EXPORT)'; export=$${spec%:*}; name=$${spec##*:}; \
-	  $(GEN_PY) scripts/gen_engine.py $$export $$name
+	@if [ -n "$(MANIFEST)" ]; then \
+	  $(GEN_PY) scripts/gen_engine.py --manifest $(MANIFEST) $(if $(NOGEN),--no-gen) $(if $(FORCE),--force-glue); \
+	elif [ -n "$(GEN_EXPORT)" ]; then \
+	  spec='$(GEN_EXPORT)'; export=$${spec%:*}; name=$${spec##*:}; \
+	  $(GEN_PY) scripts/gen_engine.py $$export $$name $(if $(FORCE),--force-glue); \
+	else \
+	  echo "usage: make gen-engine MANIFEST=src/engine/<name>/<name>.json [NOGEN=1] [FORCE=1]   (or GEN_EXPORT=<export-dir>:<name>)"; exit 1; \
+	fi
 
 .PHONY: gen-engines
 gen-engines:

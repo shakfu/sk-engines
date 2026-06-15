@@ -33,7 +33,16 @@ I/O is marshalled to the platform stereo bus in `GenEngine::process()`: the firs
 
 ## Control map
 
-`GenEngine` forwards `set_param(ParamId, deck, v01)` to the per-engine glue, which maps each `ParamId` to a gen~ parameter index and linear-maps the normalized 0..1 value into that param's declared `[min,max]` (from `manifest.json`). This `index_of()` switch is the **one spot you hand-edit per engine**. The generator emits a positional default over only the `ParamId`s the platform actually delivers to a single-deck engine via `set_param()` - the six plain panel knobs (`Size/Pos/Speed/Env/Mix/ModAmp`, the same six the reverb engine uses), then the no-capability modifier layers. It deliberately omits `ModSpeed` (the MODFREQ knob routes to `set_mod_speed()`, which the generic wrapper does not override), `Aux`/`AltPos` (need `CapAux`/`CapAltPos`), and `Win`/`PolySlice` (granular slice modes). See [gigaverb](../engines/gigaverb.md) for a worked control map.
+`GenEngine` forwards `set_param(ParamId, deck, v01)` to the per-engine glue, which maps each `ParamId` to a gen~ parameter index and linear-maps the normalized 0..1 value into that param's declared `[min,max]` (from `manifest.json`). That `index_of()` switch is **generated from a hand-authored `<name>.json` manifest** - the same declarative method as the Faust generator. The manifest's `knobs` block maps a control name to a gen~ param **name**:
+
+```json
+{ "engine": "gigaverb", "backend": "gen", "export": "src/engine/gigaverb/gen",
+  "knobs": { "Pitch": "bandwidth", "Position": "revtime", "Size": "roomsize",
+             "Envelope": "damping", "Mix (SOS)": "dry", "Glow": "tail",
+             "Feedback": "spread", "EnvSize": "early" } }
+```
+
+The generator resolves each control name to a `ParamId` (shared with Faust; modifier-layer params with no friendly label - `Feedback`, `EnvSize`, ... - are written as their `ParamId` name), looks the param name up in the export's `manifest.json` for its index + range, **validates** it exists (a typo errors at generate time, not runtime), and emits `index_of()`. Bind only the `ParamId`s the platform delivers to a single-deck engine via `set_param()` - the six plain panel knobs (`Size/Pos/Speed/Env/Mix/ModAmp`) plus the no-capability modifier layers. `ModSpeed` is unreachable (MODFREQ routes to `set_mod_speed()`, which the generic wrapper does not override); `Aux`/`AltPos` need `CapAux`/`CapAltPos`. Without a manifest the generator falls back to a positional default (`gen param i -> _PRIMARY[i]`) to **bootstrap** a new engine. See [gigaverb](../engines/gigaverb.md) for a worked control map.
 
 ## Files
 
@@ -49,7 +58,8 @@ I/O is marshalled to the platform stereo bus in `GenEngine::process()`: the firs
 
   - `manifest.json` - the front-end-agnostic IR (I/O counts, params with min/max/default, buffers).
 
-  - `<name>_engine.h` - the per-engine glue (traits struct + `ParamId` map). **Generated once, then hand-tuned**; re-running the generator preserves it unless `--force-glue`.
+  - `<name>.json` - the **hand-authored manifest** (`knobs` map + the `export` path); the one file you write.
+  - `<name>_engine.h` - the per-engine glue (traits struct + `ParamId` map), **generated from the manifest** (or a positional default to bootstrap); re-running the generator preserves it unless `--force-glue`.
 
 - `scripts/gen_engine.py` - the host-side code generator (driver around gen-dsp).
 
@@ -69,17 +79,22 @@ gen-dsp runs only at codegen time on the host; the firmware build is plain `arm-
 
 1. **Author + export in Max.** Build the patch in `gen~`, then export the code (the gen~ export inspector, or the `exportcode` message) to a directory containing `gen_exported.cpp` and `gen_dsp/`.
 
-2. **Generate the engine.** One command runs gen-dsp, keeps the isolation bridge, drops gen-dsp's board `main()` + private allocator, emits `<name>_engine.h`, and wires the Makefile + `engine_select.h`:
+2. **Bootstrap once to read the params.** Run the generator positionally to run gen-dsp, keep the isolation bridge, drop gen-dsp's board `main()` + private allocator, sync the export's `manifest.json` (the param names + ranges), and emit a starter `<name>_engine.h` + wiring:
 
    ```text
    .venv/bin/python scripts/gen_engine.py /path/to/export myverb
-   # or batch, via the Makefile (analogue of `make faust-kernels`):
-   make gen-engines GEN_EXPORTS="/path/to/export:myverb /path/to/other:thing"
    ```
 
-   `<name>` must be lowercase `[a-z0-9_]`; the engine becomes `ENGINE=myverb`. `make gen-engines` with no args regenerates whatever `GEN_EXPORTS` defaults to in the Makefile.
+   `<name>` must be lowercase `[a-z0-9_]`; the engine becomes `ENGINE=myverb`. This positional form emits a positional-default knob map - enough to read the gen~ param names out of `src/engine/myverb/manifest.json`.
 
-3. **Map the knobs.** Edit `index_of()` in `src/engine/myverb/myverb_engine.h`. The generator emits a positional default over the reachable `ParamId`s (with each param's name + range in a comment); reassign to taste. This is the only file you hand-edit.
+3. **Map the knobs in a manifest.** Write `src/engine/myverb/myverb.json` with `"backend": "gen"`, an `export` path, and a `knobs` map (control name -> gen~ param name, from the synced `manifest.json`), then re-emit the glue from it:
+
+   ```text
+   make gen-engine MANIFEST=src/engine/myverb/myverb.json FORCE=1          # gen-dsp + glue
+   make gen-engine MANIFEST=src/engine/myverb/myverb.json NOGEN=1 FORCE=1  # glue only, after a knob edit
+   ```
+
+   The generator validates every param name against the export and emits `index_of()` - you never hand-edit the C++. Batch-regenerate every gen~ engine with `make gen-engines` (analogue of `make faust-kernels`).
 
 4. **Build + flash.** Engine switches go through `make clean` (see below):
 
@@ -88,7 +103,7 @@ gen-dsp runs only at codegen time on the host; the firmware build is plain `arm-
    make ENGINE=myverb program-dfu           # flash (device in DFU mode first)
    ```
 
-**Re-generating** after editing the patch: re-run the same command. The mechanical files are refreshed wholesale; `myverb_engine.h` (your knob map) is preserved unless you pass `--force-glue`.
+**Re-generating** after editing the patch or the manifest: re-run `make gen-engine MANIFEST=... FORCE=1` (drop `FORCE` to preserve the generated header).
 
 **Removing** an engine: `scripts/gen_engine.py myverb --remove` deletes `src/engine/myverb/` and unwires both files. Run `make clean` once afterward (see below).
 
@@ -106,6 +121,6 @@ The platform/engine boundary guard is unaffected: gen sources live under `src/en
 
 - `capabilities() = 0`: no custom display, MIDI, CV-out, or sequencing. A gen engine that wants a meter could override `render()` (see passthrough); CV-out would need `process_cv()`. The generic wrapper is deliberately minimal.
 
-- The default knob map is positional and arbitrary beyond reachability - a starting point, not a designed control surface. Per-patch tuning lives in `<name>_engine.h`.
+- The control surface is designed in `<name>.json` (the `knobs` map); the positional default is only a bootstrap starting point. The generated `<name>_engine.h` is derived from the manifest, not hand-edited.
 
 - gen~ buffers (`[buffer]`) are instantiated but nothing loads samples into them yet; a sample-loading path is future work.

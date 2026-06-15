@@ -10,20 +10,30 @@ This is the gen~ analogue of `make faust-kernels`. For a gen~ export it:
      sk-engines platform provides those, and genlib allocation is routed into
      the EngineContext SDRAM arena by src/engine/gen/genlib_arena.cpp,
   3. emits <name>_engine.h: a traits struct forwarding to the export's
-     <name>_daisy namespace plus a default ParamId -> gen-parameter map, bound
-     to the generic GenEngine<W> in src/engine/gen/gen_engine.h,
+     <name>_daisy namespace plus a ParamId -> gen-parameter map, bound to the
+     generic GenEngine<W> in src/engine/gen/gen_engine.h,
   4. idempotently wires the Makefile ENGINE switch and engine_select.h (in
      marker-delimited blocks, safe to re-run).
 
-The ParamId map is the one non-mechanical spot -- a positional default you
-retune by hand. The glue file is NOT overwritten on re-run unless --force-glue
-is given, so hand-tuning survives regeneration of the mechanical files.
+The ParamId map (which platform knob drives which gen~ param) comes from one of
+two sources, unified with the Faust generator:
+
+  * --manifest <name>.json: a hand-authored manifest with a `knobs` map
+    (control name -> gen~ param NAME), resolved + VALIDATED against the export's
+    auto-generated manifest.json -- the same declarative method as Faust. The
+    manifest's `export` names the gen~ export dir; --no-gen skips re-running
+    gen-dsp and regenerates only the glue/wiring from the synced files.
+
+  * positional <gen_export_dir> <name>: a positional default (gen param i ->
+    _PRIMARY[i]) to BOOTSTRAP a new engine, then hand-tuned. The glue is NOT
+    overwritten on re-run unless --force-glue, so a hand-tuned map survives.
 
 One-time scaffolding this assumes already exists (created with the first gen
 engine, not by this script): the shared family src/engine/gen/ and `$(GEN_INC)`
 appended to C_INCLUDES in the Makefile.
 
 Usage:
+    python scripts/gen_engine.py --manifest <name>.json [--no-gen] [--force-glue]
     python scripts/gen_engine.py <gen_export_dir> <name> [--board seed] [--force-glue]
 """
 
@@ -37,6 +47,8 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+import engine_gen_common as common
 
 # Mechanical files copied from the gen-dsp output into the engine dir. The board
 # main and the private allocator are intentionally excluded.
@@ -100,41 +112,63 @@ def _sync_mechanical(src: Path, dst: Path) -> None:
             shutil.copytree(s, t)
 
 
-def _glue_source(name: str, manifest: dict) -> str:
-    ns = f"{name}_daisy"
-    cls = _class_name(name)
-    params = manifest.get("params", [])
-
-    # Build the ParamId -> index switch and a human-readable map comment.
-    cases: list[str] = []
-    map_lines: list[str] = []
+def _cases_positional(params: list) -> tuple[str, str]:
+    """The arbitrary-but-sensible default: gen param i -> _PRIMARY[i]. Used to bootstrap a new engine
+    (no hand-authored manifest yet); the generated index_of() is then hand-tuned."""
+    cases, map_lines = [], []
     for p in params:
         i = p["index"]
         rng = f'[{p["min"]:g}..{p["max"]:g}]'
         if i < len(_PRIMARY):
             pid = _PRIMARY[i]
-            cases.append(
-                f'            case ParamId::{pid}:'.ljust(40)
-                + f'return {i};  // gen "{p["name"]}" {rng}'
-            )
+            cases.append(f'            case ParamId::{pid}:'.ljust(40) + f'return {i};  // gen "{p["name"]}" {rng}')
             map_lines.append(f'//   {pid:<10} -> {i} {p["name"]} {rng}')
         else:
-            map_lines.append(
-                f'//   (unmapped)  -> {i} {p["name"]} {rng}  '
-                f'-- add a ParamId case below to reach it'
-            )
-    cases_block = "\n".join(cases) if cases else "            // (no parameters)"
-    map_block = "\n".join(map_lines) if map_lines else "//   (no parameters)"
+            map_lines.append(f'//   (unmapped)  -> {i} {p["name"]} {rng}  -- add a ParamId case below to reach it')
+    return ("\n".join(cases) if cases else "            // (no parameters)",
+            "\n".join(map_lines) if map_lines else "//   (no parameters)")
+
+
+def _cases_from_knobs(params: list, knobs: dict) -> tuple[str, str]:
+    """Build index_of() from a hand-authored manifest's `knobs` map (control name -> gen~ param NAME),
+    the gen~ analogue of the Faust manifest. Validates each param name against the export's manifest."""
+    by_name = {p["name"]: p for p in params}
+    cases, map_lines = [], []
+    for control_key, param_name in knobs.items():
+        if param_name in (None, "-", ""):
+            continue
+        pid = common.knob_to_paramid(control_key)
+        p = by_name.get(param_name)
+        if p is None:
+            raise SystemExit(f"manifest binds {control_key!r} -> {param_name!r}, which is not a gen~ "
+                             f"parameter of this export; available: {sorted(by_name)}")
+        i = p["index"]
+        rng = f'[{p["min"]:g}..{p["max"]:g}]'
+        cases.append(f'            case ParamId::{pid}:'.ljust(40) + f'return {i};  // gen "{param_name}" {rng}')
+        map_lines.append(f'//   {pid:<10} -> {i} {param_name} {rng}')
+    return ("\n".join(cases) if cases else "            // (no bindings)",
+            "\n".join(map_lines) if map_lines else "//   (no bindings)")
+
+
+def _glue_source(name: str, cases_block: str, map_block: str, from_manifest: bool) -> str:
+    ns = f"{name}_daisy"
+    cls = _class_name(name)
+    if from_manifest:
+        provenance = (f"// GENERATED by scripts/gen_engine.py from {name}.json. The ParamId map below comes\n"
+                      f"// from the manifest's `knobs` (control name -> gen~ param); edit the manifest, not this\n"
+                      f"// file, then re-run `make gen-engine MANIFEST=...`. Preserved on re-run unless --force-glue.")
+    else:
+        provenance = ("// GENERATED by scripts/gen_engine.py. The mechanical wrapper files in this\n"
+                      "// directory are regenerated wholesale; THIS file is generated once and then\n"
+                      "// hand-tuned -- re-running gen_engine.py preserves it unless --force-glue.\n"
+                      f"// The ParamId map below (normalized 0..1 -> [min,max]) is a positional default;\n"
+                      "// reassign cases in index_of() to taste (or supply a manifest):")
 
     return f"""// {name}_engine.h - gen~ "{name}" bound to the generic GenEngine.
 //
-// GENERATED by scripts/gen_engine.py. The mechanical wrapper files in this
-// directory are regenerated wholesale; THIS file is generated once and then
-// hand-tuned -- re-running gen_engine.py preserves it unless --force-glue.
+{provenance}
 //
-// The export's wrapper_* C interface lives in namespace `{ns}` (from
-// -DDAISY_EXT_NAME={name}). The ParamId map below (normalized 0..1 -> [min,max])
-// is a positional default; reassign cases in index_of() to taste:
+// The export's wrapper_* C interface lives in namespace `{ns}` (from -DDAISY_EXT_NAME={name}):
 {map_block}
 
 #pragma once
@@ -269,54 +303,84 @@ def _wire_engine_select(root: Path, name: str) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description="Generate an sk-engines engine from a gen~ export.")
     ap.add_argument("export", type=Path, nargs="?",
-                    help="gen~ export directory (contains gen_exported.cpp + gen_dsp/); omit with --remove")
-    ap.add_argument("name", help="engine name, e.g. gigaverb -> ENGINE=gigaverb")
+                    help="gen~ export directory (positional/bootstrap mode); with --manifest it is taken from the manifest")
+    ap.add_argument("name", nargs="?", help="engine name (positional/bootstrap mode); with --manifest it comes from the manifest")
+    ap.add_argument("--manifest", type=Path,
+                    help="hand-authored <name>.json (backend:gen) - the unified method: emits index_of() from its `knobs` map")
+    ap.add_argument("--no-gen", action="store_true",
+                    help="skip running gen-dsp; reuse the already-synced gen/ + manifest.json (regenerate glue/wiring only)")
     ap.add_argument("--board", default="seed", help="gen-dsp Daisy board variant (default: seed)")
     ap.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parent.parent,
                     help="sk-engines repo root (default: parent of scripts/)")
     ap.add_argument("--force-glue", action="store_true",
-                    help="overwrite <name>_engine.h even if it exists (drops hand-tuned ParamId map)")
+                    help="overwrite <name>_engine.h even if it exists (drops a hand-tuned ParamId map)")
     ap.add_argument("--remove", action="store_true",
                     help="delete src/engine/<name>/ and unwire it from the Makefile + engine_select.h")
     args = ap.parse_args()
-
-    if not re.fullmatch(r"[a-z][a-z0-9_]*", args.name):
-        raise SystemExit(f"invalid name {args.name!r}: use lowercase [a-z0-9_], starting with a letter")
     root = args.repo_root.resolve()
 
+    # The hand-authored manifest (unified method) supplies the engine name, the export dir, and the knob map.
+    man = json.loads(args.manifest.read_text()) if args.manifest else None
+    name = (man.get("engine") if man else None) or args.name or (args.manifest.stem if args.manifest else None)
+    if not name:
+        raise SystemExit("need an engine name: a positional <name>, or --manifest <name>.json")
+    if not re.fullmatch(r"[a-z][a-z0-9_]*", name):
+        raise SystemExit(f"invalid name {name!r}: use lowercase [a-z0-9_], starting with a letter")
+
     if args.remove:
-        print(f"gen_engine: removing {args.name}")
-        _unwire(root, args.name)
+        print(f"gen_engine: removing {name}")
+        _unwire(root, name)
         return 0
 
-    if args.export is None:
-        raise SystemExit("export directory is required (or pass --remove to delete an engine)")
-    export = args.export.resolve()
-    if not export.is_dir():
-        raise SystemExit(f"export not found: {export}")
-    engine_dir = root / "src" / "engine" / args.name
+    engine_dir = root / "src" / "engine" / name
 
-    print(f"gen_engine: {export} -> {engine_dir} (ENGINE={args.name})")
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp_out = Path(tmp) / args.name
-        _run_gen_dsp(export, args.name, args.board, tmp_out)
-        manifest = json.loads((tmp_out / "manifest.json").read_text())
-        _sync_mechanical(tmp_out, engine_dir)
+    # Resolve the gen~ export dir: the manifest's `export`, else the positional argument.
+    export = None
+    if man and man.get("export"):
+        e = Path(man["export"])
+        export = e if e.is_absolute() else (root / e)
+    elif args.export:
+        export = args.export.resolve()
 
-    glue = engine_dir / f"{args.name}_engine.h"
+    # Get the gen-dsp manifest (auto-generated param descriptions). Either re-run gen-dsp + sync, or
+    # (with --no-gen) reuse the copy already synced into the engine dir.
+    if args.no_gen:
+        mf = engine_dir / "manifest.json"
+        if not mf.is_file():
+            raise SystemExit(f"--no-gen needs an already-synced {mf.relative_to(root)} (run once without --no-gen first)")
+        auto = json.loads(mf.read_text())
+        print(f"gen_engine: {name} (--no-gen; reusing {mf.relative_to(root)})")
+    else:
+        if export is None:
+            raise SystemExit("need a gen~ export: a positional <export> dir, or `export` in the manifest")
+        if not export.is_dir():
+            raise SystemExit(f"export not found: {export}")
+        print(f"gen_engine: {export} -> {engine_dir} (ENGINE={name})")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_out = Path(tmp) / name
+            _run_gen_dsp(export, name, (man or {}).get("board", args.board), tmp_out)
+            auto = json.loads((tmp_out / "manifest.json").read_text())
+            _sync_mechanical(tmp_out, engine_dir)
+
+    params = auto.get("params", [])
+    if man:
+        cases, map_block = _cases_from_knobs(params, man.get("knobs", {}))
+    else:
+        cases, map_block = _cases_positional(params)
+
+    glue = engine_dir / f"{name}_engine.h"
     if glue.exists() and not args.force_glue:
         print(f"  keep   {glue.relative_to(root)} (exists; --force-glue to regenerate)")
     else:
-        glue.write_text(_glue_source(args.name, manifest))
+        glue.write_text(_glue_source(name, cases, map_block, from_manifest=bool(man)))
         print(f"  write  {glue.relative_to(root)}")
 
-    _wire_makefile(root, args.name, manifest)
-    _wire_engine_select(root, args.name)
+    _wire_makefile(root, name, auto)
+    _wire_engine_select(root, name)
 
-    n = len(manifest.get("params", []))
-    print(f"  wired  Makefile + engine_select.h  ({manifest['num_inputs']}in/"
-          f"{manifest['num_outputs']}out, {n} params)")
-    print(f"  build: make ENGINE={args.name}")
+    print(f"  wired  Makefile + engine_select.h  ({auto['num_inputs']}in/"
+          f"{auto['num_outputs']}out, {len(params)} params)")
+    print(f"  build: make ENGINE={name}")
     return 0
 
 

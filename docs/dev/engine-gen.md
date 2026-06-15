@@ -91,8 +91,9 @@ Today the zone-capture `CaptureUI` is **duplicated** (a full version in `reverb_
 
 1. **Side JSON vs `.dsp` metadata.** Recommend **side JSON**: uniform across Faust *and* gen~, tooling-friendly, and Faust per-slider metadata is library-dependent. Cost: a second file to keep aligned with the `.dsp` — mitigated by the generate-time label validation (§4).
 
-2. **Extend `gen_engine.py` vs a new front-end.** Recommend **a small shared module** (`scripts/engine_gen_common.py`) for the marker-wired build registration + preserved-glue, used by both the gen~ generator (unchanged behaviour) and a new **`scripts/gen_faust_engine.py`** Faust front-end.
+2. **Extend `gen_engine.py` vs a new front-end.** Recommend **a small shared module** (`scripts/engine_gen_common.py`) for the marker-wired build registration + preserved-glue, used by both the gen~ generator and a new **`scripts/gen_faust_engine.py`** Faust front-end.
    Same manifest *schema* across both backends (`"backend": "faust" | "gen"`); different kernel build step.
+   **Done (later):** the gen~ generator was unified onto the manifest method too - it now reads a hand-authored `<name>.json` `knobs` map (control name -> gen~ param name) and emits `index_of()` from it, instead of a hand-tuned C++ switch. The control-name->`ParamId` resolver is shared in `engine_gen_common.knob_to_paramid` (extended to accept raw `ParamId` names for modifier-layer params like `Feedback`/`EnvSize`). So both backends are now declarative-JSON: Faust maps knobs->slider labels, gen~ maps knobs->gen~ param names. `gigaverb` is the worked example (`src/engine/gigaverb/gigaverb.json`).
 
 3. **Demo engine.** A small **flat-slider stereo FX** so the demo `.dsp` is ~10 lines of `hslider()` (the `tapefx.dsp` style — no boxes, no repeated labels) and the manifest is the §3 minimal form. Candidate: a **wavefolder + tone** or a **chorus/flanger**. Exact pick at implementation.
 

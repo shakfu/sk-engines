@@ -12,6 +12,44 @@ import re
 from pathlib import Path
 
 
+# Platform control name (the friendly knob labels used in manifests + the control-diagram specs) ->
+# ParamId. The first six are the plain panel knobs delivered via set_param(); Cycle/MODFREQ reaches an
+# engine via set_mod_speed() (the Faust runtime routes ModSpeed there).
+KNOB_PARAM = {
+    "pitch": "Speed", "speed": "Speed",
+    "position": "Pos", "pos": "Pos",
+    "size": "Size",
+    "envelope": "Env", "env": "Env",
+    "mix (sos)": "Mix", "mix": "Mix", "sos": "Mix",
+    "cycle": "ModSpeed", "modfreq": "ModSpeed", "modspeed": "ModSpeed",
+    "glow": "ModAmp", "mod_amt": "ModAmp", "modamt": "ModAmp", "modamp": "ModAmp",
+}
+
+# Every ParamId enum name (engine/engine_params.h, minus the Count sentinel). A manifest may bind a
+# modifier-layer param that has no friendly knob label (e.g. Feedback on SOS+Alt, EnvSize on ENV+chord)
+# by writing its ParamId name directly as the knob key.
+PARAM_IDS = (
+    "Pos", "FluxFb", "Env", "EnvSize", "Size", "Win", "PolySlice", "Speed",
+    "FluxIntensity", "GritIntensity", "FluxMix", "GritMix", "Feedback", "Mix",
+    "ModSpeed", "ModAmp", "Tempo", "ClickMix", "PanSpeed", "PanRange",
+    "KeyInterval", "Crossfade", "AltPos", "Aux",
+)
+
+
+def knob_to_paramid(key: str) -> str:
+    """Resolve a manifest knob key -> ParamId name. Accepts a friendly control label (Pitch, Position,
+    Size, Envelope, Mix (SOS), Cycle, Glow) or a raw ParamId name (Feedback, EnvSize, Aux, ...)."""
+    k = key.strip()
+    if k.lower() in KNOB_PARAM:
+        return KNOB_PARAM[k.lower()]
+    for pid in PARAM_IDS:
+        if pid.lower() == k.lower():
+            return pid
+    raise SystemExit(
+        f"unknown control/param {key!r} - use a knob label (Pitch, Position, Size, Envelope, "
+        f"Mix (SOS), Cycle, Glow) or a ParamId name (e.g. Feedback, EnvSize, Aux)")
+
+
 def class_name(name: str) -> str:
     return "".join(p.capitalize() for p in re.split(r"[_\-]", name)) + "Engine"
 

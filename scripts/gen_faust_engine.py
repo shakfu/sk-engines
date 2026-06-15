@@ -43,25 +43,10 @@ from pathlib import Path
 
 import engine_gen_common as common
 
-# Platform control name (the control-diagram vocabulary + hardware aliases) -> ParamId. The first 6 reach
-# the engine via set_param(); Cycle/MODFREQ reaches it via set_mod_speed() (FaustEngine routes ModSpeed).
-_KNOB_PARAM = {
-    "pitch": "Speed", "speed": "Speed",
-    "position": "Pos", "pos": "Pos",
-    "size": "Size",
-    "envelope": "Env", "env": "Env",
-    "mix (sos)": "Mix", "mix": "Mix", "sos": "Mix",
-    "cycle": "ModSpeed", "modfreq": "ModSpeed", "modspeed": "ModSpeed",
-    "glow": "ModAmp", "mod_amt": "ModAmp", "modamt": "ModAmp", "modamp": "ModAmp",
-}
-
-
 def _param_for(knob: str) -> str:
-    pid = _KNOB_PARAM.get(knob.strip().lower())
-    if not pid:
-        raise SystemExit(f"unknown control name {knob!r} - use one of: "
-                         "Pitch, Position, Size, Envelope, Mix (SOS), Cycle, Glow")
-    return pid
+    # The control-name -> ParamId resolver is shared with the gen~ generator (engine_gen_common); it also
+    # accepts a raw ParamId name (Feedback, EnvSize, ...) for modifier-layer params with no knob label.
+    return common.knob_to_paramid(knob)
 
 
 def _bindings(knobs: dict):

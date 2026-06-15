@@ -25,7 +25,7 @@ _Generated from [`docs/diagrams/controls/gigaverb.json`](../diagrams/controls/gi
 | SOS + Alt | `Feedback` | spread | 0..100 |
 | ENV + chord | `EnvSize` | early | 0..1 |
 
-This table lives in `src/engine/gigaverb/gigaverb_engine.h` (the `index_of()` switch) and is the one spot to retune; everything else is the generic wrapper. `ParamId::ModSpeed` is intentionally absent - the MODFREQ knob routes to `set_mod_speed()`, which a gen engine does not receive (see [the method doc](../engine-types/gen.md#control-map) for the full reachability rules and the knob grammar in [README.md](README.md)).
+This map is **declared in `src/engine/gigaverb/gigaverb.json`** - the `knobs` block (control name -> gen~ param name), the gen~ analogue of a Faust engine's manifest. The generator resolves it (control -> `ParamId`, param name -> index, validated against the export) and emits the `index_of()` switch in `gigaverb_engine.h`; **edit the manifest, not the generated `.h`**, then re-run the generator. `ParamId::ModSpeed` is intentionally absent - the MODFREQ knob routes to `set_mod_speed()`, which a gen engine does not receive (see [the method doc](../engine-types/gen.md#control-map) for the full reachability rules and the knob grammar in [README.md](README.md)).
 
 ## Build / flash / regenerate
 
@@ -33,5 +33,6 @@ This table lives in `src/engine/gigaverb/gigaverb_engine.h` (the `index_of()` sw
 make -j8 ENGINE=gigaverb           # build; the link prints SRAM_EXEC usage
 make ENGINE=gigaverb program-dfu   # flash (device in DFU mode first)
 make engine-gigaverb               # one-shot: clean + build + flash
-make gen-engine GEN_EXPORT=src/engine/gigaverb/gen:gigaverb   # regenerate from the vendored export (keeps the knob map)
+make gen-engine MANIFEST=src/engine/gigaverb/gigaverb.json            # regenerate (gen-dsp + glue) from the manifest
+make gen-engine MANIFEST=src/engine/gigaverb/gigaverb.json NOGEN=1 FORCE=1   # glue only (no gen-dsp), after editing the knob map
 ```
