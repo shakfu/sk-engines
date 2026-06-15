@@ -48,6 +48,7 @@ from pathlib import Path
 DEFAULT_ENGINES = [
     "delay",
     "edrums",
+    "radio",
     "reso",
     "reverb",
     "shuttle",
