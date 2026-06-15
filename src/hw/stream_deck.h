@@ -43,6 +43,7 @@ public:
     // Raw 16-bit-mono streaming for the radio engine (main loop). start_play_raw seeks-on-open to the
     // free-running playhead position; frames_of/scan_bank build the bank index off the audio path.
     bool start_play_raw(DeckRef::Ref deck, const char* path, uint32_t start_frame, bool loop) override;
+    bool start_play_wav(DeckRef::Ref deck, const char* path, uint32_t start_frame, bool loop) override;
     uint32_t frames_of(const char* path) const override;
     int  scan_bank(const char* dir, BankEntry* out, int max) const override;
     int  read_text(const char* path, char* buf, int max) const override;

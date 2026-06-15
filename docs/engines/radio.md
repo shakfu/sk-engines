@@ -95,10 +95,19 @@ A shared library both decks browse independently:
 
 ### Audio format
 
-**Headerless raw signed 16-bit mono PCM, little-endian, 48 kHz** (`.raw`) - the original RadioMusic
-format, fixed here to the device rate so no on-device resampling is needed. The firmware does no
-conversion: it reads the body straight into int16 frames (`int16 * 1/32768` to float in the ISR), so a
-wrong-format file plays as garbage. ~192 KB/s for two decks (half the tape engine's float bandwidth).
+Two interchangeable formats, both **signed 16-bit mono PCM, little-endian** - a WAV body *is* int16, so
+they share one streaming path (`RawStreamReader`):
+
+- **`.raw`** - headerless (the original RadioMusic format). Length = filesize/2 (a pure `f_stat`, no
+  open). Carries no sample rate, so it assumes 48 kHz unless `rate.txt` overrides (below).
+- **`.wav`** - a 16-bit-mono PCM WAV. The header is parsed (`begin_wav`, a chunk walk validating
+  `fmt=1`/`16-bit`/`mono`) for the body offset, length, and **the file's own sample rate** - so a 44.1k
+  WAV plays at correct pitch with **no `rate.txt`**. Indexing a `.wav` costs one `f_open`+header-parse per
+  file at bank load (a `.raw` costs none); playback cost is identical (the body is int16 either way).
+
+The firmware does no sample conversion - it reads the int16 body straight to float (`int16 * 1/32768` in
+the ISR), so a non-16-bit / stereo / float file is rejected (`.wav`) or plays as garbage (`.raw`). A bank
+can mix `.raw` and `.wav` freely. ~192 KB/s for two decks (half the tape engine's float bandwidth).
 
 Convert sources with [`scripts/convert_radio_audio.py`](../../scripts/convert_radio_audio.py). The
 original RadioMusic library is itself headerless 16-bit-mono `.raw` at **44.1 kHz** (folders `0`..`15`
@@ -130,10 +139,12 @@ The engine reads it once at boot and rebases the resampler (consume `rate/48000`
 output frame), so noon on SIZE gives correct pitch and the varispeed still works around it. Any rate in
 8000..192000 is accepted (RadioMusic's 11025/22050/44100/48000/96000 all work). With **no** `rate.txt`
 the engine runs at 48 kHz - so cards produced by the converter (already 48 kHz) need no file, and only an
-unconverted original card needs `echo 44100 > /Volumes/SD/radio/rate.txt`.
+unconverted original card needs `echo 44100 > /Volumes/SD/radio/rate.txt`. `rate.txt` applies to **`.raw`
+only** - a `.wav` carries its own rate in the header and always plays at correct pitch.
 
-So there are two ways to use an original 44.1 kHz card: **convert it** to 48 kHz with `mirror` (no
-`rate.txt` needed), or **drop the files in as-is and add `rate.txt`**. Without either, an unconverted
+So there are three ways to play an original 44.1 kHz library at correct pitch: **convert to 48 kHz
+`.raw`** with `mirror`, **convert to 16-bit `.wav`** (`--format wav`, self-describing, no `rate.txt`), or
+**drop the `.raw` files in as-is and add `rate.txt`**. Without either, an unconverted
 card plays ~9% sharp (also pullable by ear with SIZE). Stations can be arbitrarily long - the originals
 run to ~25 min / 130 MB each; streaming has no length cap, so only the (tiny) per-station name+length
 index sits in RAM.
@@ -148,16 +159,18 @@ work (bank scan, file open + seek, the bank index) runs in `prepare()` (main loo
 
 New:
 
-- `src/memory/raw_stream.h` - `RawStreamReader : IChunkSource` (headerless 16-bit body; `seek_to_frame`).
+- `src/memory/raw_stream.h` - `RawStreamReader : IChunkSource` (16-bit int16 body, headerless `begin` or
+  WAV-header `begin_wav`; `seek_to_frame`/`rewind` relative to the body offset).
 - `src/engine/radio/radio_engine.{h,cpp}` - the engine.
 - `host/test_radio.cpp` - host suite (wired into `make -C host test`).
-- `scripts/convert_radio_audio.py` - source -> `.raw` converter.
+- `scripts/convert_radio_audio.py` - source -> `.raw`/`.wav` converter.
 
 Edited (all `SPK_USE_STREAM`-guarded, byte-identical for non-streaming engines):
 
-- `src/engine/istreamdeck.h` - `start_play_raw` (seek-on-open), `frames_of`, `scan_bank`, `BankEntry`,
+- `src/engine/istreamdeck.h` - `start_play_raw`/`start_play_wav` (seek-on-open), `frames_of`,
+  `scan_bank` (filters macOS dotfiles, indexes `.raw`+`.wav`), `BankEntry` (name/frames/rate/is_wav),
   `read_text` (the `rate.txt` read).
-- `src/hw/stream_deck.{h,cpp}` - the three new calls + a `RawStreamReader` per deck.
+- `src/hw/stream_deck.{h,cpp}` - the new calls + a `RawStreamReader` per deck.
 - `src/engine/engine_select.h`, `Makefile`, `CMakeLists.txt`, `Makefile.cmake` - register `radio`.
 
 ---
@@ -199,33 +212,9 @@ make -C host test            # host suites incl. test-radio (all green)
 
 ## What's left
 
-### `.wav` station support (16-bit mono PCM)
+`.wav` support is **done** (`RawStreamReader::begin_wav` + `start_play_wav` + the `scan_bank`/`_do_open`
+dispatch, with per-file rate from the header). Possible future work:
 
-Accept **16-bit mono PCM `.wav`** stations alongside `.raw` (the format RadioMusic's 2017 firmware
-added). Additive and not difficult - a WAV body *is* int16 PCM, byte-identical to a `.raw` once the
-header is skipped, so the int16 `_pull` + resampler are unchanged, and the `StreamDeck` `Deck` already
-holds both a `WavStreamReader` and the `RawStreamReader`. Steps:
-
-1. `WavStreamReader::seek_to_frame(frame)` - the same one-liner as `RawStreamReader`, seeking to
-   `_data_start + frame*2` (it already computes `_data_start`/`_data_size` from the chunk walk).
-2. Relax its format gate to accept **16-bit mono PCM** (`fmt == 1`, `bits == 16`) regardless of the
-   build's float/int default - e.g. a `begin(f, expect_bits, expect_fmt)` parameter. *This is the only
-   part needing real thought; everything else is mechanical.*
-3. `StreamDeck::start_play_wav(deck, path, start_frame, loop)` - mirrors `start_play_raw` but binds the
-   WAV reader and seeks past the header.
-4. `scan_bank` also enumerates `.wav`, with a per-`BankEntry` flag (raw vs wav).
-5. `RadioEngine::_do_open` dispatches to the raw or wav entry by that flag.
-
-Two subtleties, both minor:
-
-- **Indexing cost.** A `.raw` length is a pure `f_stat` (filesize/2, no file open); a WAV's length is the
-  *data-chunk* size, so indexing a bank of WAVs means an `f_open` + header parse per station (like tape's
-  slot probe). Fine for <=48 files at boot, just not as cheap as raw.
-- The format gate (step 2) is the only code wired to the build's float/int default; the rest is
-  extension-dispatch bookkeeping.
-
-**Bonus:** a WAV header carries its own sample rate, so WAV stations could auto-rebase *per file* (a
-44.1k WAV would just play correctly), making `rate.txt` unnecessary for them - at the cost of a per-station
-rate ratio instead of the global one. That is the natural place to take it.
-
-Estimate: ~half a day incl. host tests, no architectural change. Mixed raw + wav banks supported.
+- **Per-station fade/declick** at the loop seam for short stations.
+- **A lighter in-file seek** so START can scrub continuously (it currently applies on a switch).
+- **A file browser / more banks** beyond the fixed 0..15 numbered folders.

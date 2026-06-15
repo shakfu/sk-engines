@@ -49,23 +49,26 @@ def have(tool):
     return shutil.which(tool) is not None
 
 
-def convert_one(src, dst, tool, in_rate):
-    """Decode `src` to raw s16le mono 48k at `dst`. Returns True on success.
+def convert_one(src, dst, tool, in_rate, fmt):
+    """Decode `src` to a 16-bit mono 48 kHz station at `dst`. Returns True on success.
 
-    A `.raw` input is HEADERLESS (original RadioMusic / our own format), so the decoder cannot
-    autodetect its layout - we must state it: signed 16-bit mono at `in_rate` (the original cards
-    are 44.1 kHz). Container inputs (.wav/.mp3/...) are self-describing and read normally.
+    `fmt` is "raw" (headerless s16le, the original RadioMusic format) or "wav" (a 16-bit-mono PCM WAV,
+    which carries its own sample rate so it needs no rate.txt on the card). A `.raw` INPUT is headerless,
+    so the decoder cannot autodetect its layout - we state it: signed 16-bit mono at `in_rate` (the
+    original cards are 44.1 kHz). Container inputs (.wav/.mp3/...) are self-describing and read normally.
     """
     is_raw_in = src.lower().endswith(".raw")
     if tool == "ffmpeg":
         in_flags = (["-f", "s16le", "-ar", str(in_rate), "-ac", "1"] if is_raw_in else [])
+        out_flags = (["-f", "s16le"] if fmt == "raw" else ["-f", "wav"])
         cmd = (["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"] + in_flags +
-               ["-i", src, "-ac", "1", "-ar", str(TARGET_RATE), "-f", "s16le", "-acodec", "pcm_s16le", dst])
+               ["-i", src, "-ac", "1", "-ar", str(TARGET_RATE), "-acodec", "pcm_s16le"] + out_flags + [dst])
     elif tool == "sox":
         in_flags = (["-t", "raw", "-r", str(in_rate), "-e", "signed-integer", "-b", "16", "-c", "1", "-L"]
                     if is_raw_in else [])
-        cmd = ["sox"] + in_flags + [src, "-t", "raw", "-r", str(TARGET_RATE), "-c", "1",
-                                    "-e", "signed-integer", "-b", "16", "-L", dst]
+        out_flags = (["-t", "raw"] if fmt == "raw" else ["-t", "wav"])
+        cmd = ["sox"] + in_flags + [src] + out_flags + ["-r", str(TARGET_RATE), "-c", "1",
+                                                        "-e", "signed-integer", "-b", "16", "-L", dst]
     else:
         raise ValueError(f"unknown tool {tool}")
     try:
@@ -76,12 +79,13 @@ def convert_one(src, dst, tool, in_rate):
         return False
 
 
-def out_name(index, src, keep_names):
+def out_name(index, src, keep_names, fmt):
+    ext = "." + fmt    # ".raw" or ".wav"
     if keep_names:
         base = os.path.splitext(os.path.basename(src))[0]
         base = base[:8]                      # keep the 8.3 stem short / re-openable
-        return f"{base}.raw"
-    return f"{index:02d}.raw"
+        return f"{base}{ext}"
+    return f"{index:02d}{ext}"
 
 
 def list_audio(directory, recursive=False):
@@ -108,9 +112,9 @@ def convert_into_bank(srcs, bank, args, tool):
     os.makedirs(bank_dir, exist_ok=True)
     ok = 0
     for i, src in enumerate(srcs, start=1):
-        dst = os.path.join(bank_dir, out_name(i, src, args.keep_names))
+        dst = os.path.join(bank_dir, out_name(i, src, args.keep_names, args.format))
         print(f"  [{bank}] {src} -> {dst}")
-        if convert_one(src, dst, tool, args.in_rate):
+        if convert_one(src, dst, tool, args.in_rate, args.format):
             ok += 1
     return ok, len(srcs)
 
@@ -158,6 +162,9 @@ def main():
                         help="decoder/encoder to use (default: ffmpeg)")
     common.add_argument("-o", "--outdir", default=".",
                         help="output root (the /radio tree is created under it)")
+    common.add_argument("--format", choices=["raw", "wav"], default="raw",
+                        help="output format: 'raw' (headerless s16le, needs rate.txt for non-48k) or "
+                             "'wav' (16-bit PCM WAV, self-describing rate, no rate.txt). Default: raw")
     common.add_argument("--keep-names", action="store_true",
                         help="keep original (truncated 8.3) basenames instead of 01.raw, 02.raw ...")
     common.add_argument("--in-rate", type=int, default=44100,

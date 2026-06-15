@@ -22,7 +22,10 @@ void RadioEngine::prepare() {
 
     // Read the optional on-card rate.txt once, during the boot window (the SD mounts ~1 s in). Default
     // stays 48 kHz if the file is absent; a present file rebases the resampler for that card's rate.
-    if (!_rate_loaded && (_try_load_rate() || now >= kBootScanMs)) _rate_loaded = true;
+    if (!_rate_loaded && (_try_load_rate() || now >= kBootScanMs)) {
+        _rate_loaded = true;
+        _deck_rate_ratio[0] = _deck_rate_ratio[1] = _src_rate_ratio;  // default until a station sets its own
+    }
 
     for (DeckRef::Ref d : { DeckRef::A, DeckRef::B }) {
         const int i = (d == DeckRef::A) ? 0 : 1;
@@ -200,9 +203,10 @@ void RadioEngine::_render_deck(DeckRef::Ref d, float* mono, size_t n) {
     const int i = (d == DeckRef::A) ? 0 : 1;
     if (_stream->is_playing(d)) {
         if (!_primed[i]) { _cur[i] = _pull(d); _next[i] = _pull(d); _phase[i] = 0.f; _primed[i] = true; }
-        // Source-frames advanced per output frame = the SIZE varispeed x the source-rate rebase (so a
-        // 44.1k card with rate.txt plays at correct pitch, and SIZE varies around that).
-        const float step = _speed[i] * _src_rate_ratio;
+        // Source-frames advanced per output frame = the SIZE varispeed x the open station's source-rate
+        // rebase (a .wav's header rate, or rate.txt for .raw), so it plays at correct pitch and SIZE
+        // varies around that.
+        const float step = _speed[i] * _deck_rate_ratio[i];
         for (size_t s = 0; s < n; s++) {
             const float station = _cur[i] + (_next[i] - _cur[i]) * _phase[i];   // varispeed interp
             const float st      = _env_n[i] * _static_env[i];                   // static crossfade amount
@@ -270,10 +274,17 @@ void RadioEngine::_do_open(DeckRef::Ref d, int station, uint32_t now) {
     uint32_t start = static_cast<uint32_t>((_start_n[i] + _start_cv[i]) * static_cast<float>(L));
     if (start >= L) start = L - 1;
     const uint32_t offset = static_cast<uint32_t>((_clock + start) % L);  // the free-running live position
-    if (_stream->start_play_raw(d, _path(i, station), offset, /*loop=*/true)) {
+    const BankEntry& st = _stations[i][station];
+    const char* path = _path(i, station);
+    const bool ok = st.is_wav ? _stream->start_play_wav(d, path, offset, /*loop=*/true)
+                              : _stream->start_play_raw(d, path, offset, /*loop=*/true);
+    if (ok) {
         _open_station[i] = station;
         _primed[i]       = false;
         _static_env[i]   = 1.f;                              // tuning burst (level gated by ENV)
+        // A .wav plays at its header rate; a .raw uses the global rate.txt ratio.
+        _deck_rate_ratio[i] = (st.is_wav && st.rate > 0) ? static_cast<float>(st.rate) / 48000.f
+                                                         : _src_rate_ratio;
     } else {
         _open_station[i] = -1;
         _err_until[i]    = now + kErrFlashMs;

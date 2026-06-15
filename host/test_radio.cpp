@@ -50,6 +50,27 @@ std::vector<uint8_t> ramp_i16(uint32_t frames) {
     return v;
 }
 
+// Build a WAV (RIFF) with the given fmt/channels/bits/rate and a `frames`-frame body. For 16-bit mono it
+// writes the int16 ramp (so seek/read can be checked); otherwise a zero body of the right size.
+std::vector<uint8_t> wav_make(uint16_t fmt, uint16_t ch, uint16_t bits, uint32_t rate, uint32_t frames) {
+    auto le16 = [](std::vector<uint8_t>& v, uint16_t x){ v.push_back(x & 0xff); v.push_back((x >> 8) & 0xff); };
+    auto le32 = [](std::vector<uint8_t>& v, uint32_t x){ for (int i = 0; i < 4; i++) v.push_back((x >> (8 * i)) & 0xff); };
+    auto tag  = [](std::vector<uint8_t>& v, const char* s){ for (int i = 0; i < 4; i++) v.push_back((uint8_t)s[i]); };
+    const uint16_t blockAlign = (uint16_t)(ch * (bits / 8));
+    const uint32_t dataBytes  = frames * blockAlign;
+    std::vector<uint8_t> v;
+    tag(v, "RIFF"); le32(v, 36 + dataBytes); tag(v, "WAVE");
+    tag(v, "fmt "); le32(v, 16); le16(v, fmt); le16(v, ch); le32(v, rate);
+    le32(v, rate * blockAlign); le16(v, blockAlign); le16(v, bits);
+    tag(v, "data"); le32(v, dataBytes);
+    if (fmt == 1 && ch == 1 && bits == 16) {
+        for (uint32_t i = 0; i < frames; i++) { int16_t s = (int16_t)(i * 7 + 1); v.push_back(s & 0xff); v.push_back((s >> 8) & 0xff); }
+    } else {
+        v.insert(v.end(), dataBytes, 0);
+    }
+    return v;
+}
+
 // Fake stream deck: a fixed 4-station bank, sine playback, and a record of the last start_play_raw().
 struct FakeStream : IStreamDeck {
     uint32_t L[4] = { 10000, 20000, 33333, 48000 };   // station frame-lengths
@@ -79,10 +100,21 @@ struct FakeStream : IStreamDeck {
     uint32_t loop_frames(DeckRef::Ref) const override { return 0; }
     bool exists(const char*) const override { return true; }
 
+    bool     wav_mode = false;        // scan_bank reports .wav stations (is_wav=true, rate=wav_rate)
+    uint32_t wav_rate = 44100;
+    bool     last_was_wav[2] = { false, false };
+
     bool start_play_raw(DeckRef::Ref deck, const char* path, uint32_t start_frame, bool loop) override {
         const int i = (deck == DeckRef::A) ? 0 : 1;
         std::strncpy(last_path[i], path, sizeof(last_path[i]) - 1);
-        last_frame[i] = start_frame; last_loop[i] = loop; open_calls[i]++;
+        last_frame[i] = start_frame; last_loop[i] = loop; open_calls[i]++; last_was_wav[i] = false;
+        playing[i] = true;
+        return true;
+    }
+    bool start_play_wav(DeckRef::Ref deck, const char* path, uint32_t start_frame, bool loop) override {
+        const int i = (deck == DeckRef::A) ? 0 : 1;
+        std::strncpy(last_path[i], path, sizeof(last_path[i]) - 1);
+        last_frame[i] = start_frame; last_loop[i] = loop; open_calls[i]++; last_was_wav[i] = true;
         playing[i] = true;
         return true;
     }
@@ -104,10 +136,12 @@ struct FakeStream : IStreamDeck {
     int scan_bank(const char*, BankEntry* out, int max) const override {
         const int n = (max < 4) ? max : 4;
         for (int s = 0; s < n; s++) {
-            // names "01.raw".."04.raw"
+            // names "01.raw".."04.raw" (or .wav in wav_mode)
             out[s].name[0] = '0'; out[s].name[1] = (char)('1' + s);
-            std::strcpy(out[s].name + 2, ".raw");
+            std::strcpy(out[s].name + 2, wav_mode ? ".wav" : ".raw");
             out[s].frames = L[s];
+            out[s].is_wav = wav_mode;
+            out[s].rate   = wav_mode ? wav_rate : 0;
         }
         return n;
     }
@@ -174,6 +208,32 @@ int main() {
         MemFile f2; f2.buf = ramp_i16(10); f2.buf.push_back(0xAA);   // 21 bytes
         RawStreamReader r2; r2.begin(&f2, (uint32_t)f2.buf.size());
         check(r2.frames() == 10, "raw: odd trailing byte is floored to a whole frame");
+    }
+
+    // A2. RawStreamReader::begin_wav - 16-bit mono PCM header parse, body offset, seek, rate, rejection.
+    {
+        const uint32_t frames = 500, rate = 44100;
+        MemFile f; f.buf = wav_make(1, 1, 16, rate, frames);
+        RawStreamReader r; uint32_t got_rate = 0;
+        check(r.begin_wav(&f, (uint32_t)f.buf.size(), got_rate), "wav: begin_wav accepts 16-bit mono PCM");
+        check(r.frames() == frames, "wav: frames = data-chunk size / 2 (past the header)");
+        check(got_rate == rate, "wav: header sample rate reported out");
+
+        check(r.seek_to_frame(100), "wav: seek_to_frame past the header");
+        uint8_t blk[2]; r.read(blk, 2);
+        int16_t s0 = (int16_t)(blk[0] | (blk[1] << 8));
+        check(s0 == (int16_t)(100 * 7 + 1), "wav: seek lands on the exact frame (body-relative)");
+        r.rewind(); r.read(blk, 2);
+        int16_t r0 = (int16_t)(blk[0] | (blk[1] << 8));
+        check(r0 == (int16_t)(0 * 7 + 1), "wav: rewind returns to the body start, not the file start");
+
+        auto rejects = [](std::vector<uint8_t> bytes) {
+            MemFile m; m.buf = std::move(bytes); uint32_t rr; RawStreamReader x;
+            return !x.begin_wav(&m, (uint32_t)m.buf.size(), rr);
+        };
+        check(rejects(wav_make(1, 2, 16, 48000, 100)), "wav: stereo rejected");
+        check(rejects(wav_make(1, 1,  8, 48000, 100)), "wav: 8-bit rejected");
+        check(rejects(wav_make(3, 1, 32, 48000, 100)), "wav: float rejected");
     }
 
     // --- B. RadioEngine through IEngine -----------------------------------------------------------
@@ -344,6 +404,36 @@ int main() {
 
         check(f1 && f2, "rate: output finite in both 44.1k and 48k modes");
         check(sad(at441, at48) > 1.0f, "rate: /radio/rate.txt=44100 rebases playback vs the 48k default");
+    }
+
+    // B9. .wav stations: the engine dispatches to start_play_wav and rebases to the header's OWN rate (no
+    // rate.txt needed), so a 44.1k WAV and a 48k WAV play at different rates.
+    {
+        stream.rate_txt[0] = '\0';
+        stream.wav_mode = true;
+
+        stream.wav_rate = 44100;
+        RadioEngine e; make(e);
+        e.set_param(ParamId::Env, DeckRef::A, 0.5f);     // immediate open
+        e.set_param(ParamId::Speed, DeckRef::A, 0.0f);
+        e.prepare();
+        check(stream.last_was_wav[0], "wav: engine opens a .wav station via start_play_wav");
+        check(std::strstr(stream.last_path[0], ".wav") != nullptr, "wav: open path carries the .wav extension");
+        bool f1 = true; stream.phase[0] = 0.0;
+        const auto at441 = run(e, 40, f1);
+
+        stream.wav_rate = 48000;
+        RadioEngine e2; make(e2);
+        e2.set_param(ParamId::Env, DeckRef::A, 0.5f);
+        e2.set_param(ParamId::Speed, DeckRef::A, 0.0f);
+        e2.prepare();
+        bool f2 = true; stream.phase[0] = 0.0;
+        const auto at48 = run(e2, 40, f2);
+
+        check(f1 && f2, "wav: output finite");
+        check(sad(at441, at48) > 1.0f, "wav: the header sample rate rebases playback (44.1k vs 48k differ)");
+
+        stream.wav_mode = false;     // restore
     }
 
     if (g_failures == 0) { std::printf("OK: all radio checks passed\n"); return 0; }

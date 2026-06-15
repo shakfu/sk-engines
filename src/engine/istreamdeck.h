@@ -21,11 +21,14 @@ namespace spotykach {
 //    on_play_pad/on_record_pad handlers, which the UI invokes outside the audio ISR). They touch FatFs.
 //  - is_playing / is_recording are cheap state reads, safe from either side.
 // One enumerated station in a radio bank (scan_bank below): its 8.3-safe filename (so the path stays
-// small/bounded) and its length in frames (filesize / 2, signed-16 mono). Files with longer names are
-// skipped by the scanner, so `name` is always a re-openable FatFs short name.
+// small/bounded) and its length in frames (signed-16 mono). Files with longer names are skipped by the
+// scanner, so `name` is always a re-openable FatFs short name. A station is either a headerless `.raw`
+// (is_wav=false) or a 16-bit-mono `.wav` (is_wav=true), opened via start_play_raw / start_play_wav.
 struct BankEntry {
     char     name[13];   // up to 12 chars + NUL (8.3)
-    uint32_t frames;     // length in source frames (filesize / 2)
+    uint32_t frames;     // length in source frames (body bytes / 2)
+    uint32_t rate;       // source sample rate: 0 for raw (headerless -> use rate.txt), else the wav rate
+    bool     is_wav;     // false = headerless .raw, true = 16-bit-mono PCM .wav
 };
 
 struct IStreamDeck {
@@ -64,6 +67,10 @@ struct IStreamDeck {
     // (seek-on-open - the free-running-playhead jump). `loop` rewinds at EOF instead of finishing.
     // False if the deck is busy or the file is missing.
     virtual bool     start_play_raw(DeckRef::Ref, const char* /*path*/, uint32_t /*start_frame*/,
+                                    bool /*loop*/) { return false; }
+    // As start_play_raw, but for a 16-bit-mono PCM .wav: the header is parsed and the seek is past it.
+    // False if busy / missing / not a 16-bit-mono PCM WAV.
+    virtual bool     start_play_wav(DeckRef::Ref, const char* /*path*/, uint32_t /*start_frame*/,
                                     bool /*loop*/) { return false; }
     // Length of a raw file in frames (f_stat filesize / 2; 0 if missing). No file open - used to index a
     // bank's station lengths for the modulo math. Main-loop only.

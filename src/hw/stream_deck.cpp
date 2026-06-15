@@ -13,6 +13,17 @@ using namespace spotykach;
 // any empty/truncated file. No real station is a fraction of a second; 32 KB ~= 0.34 s of mono int16 @48k.
 static constexpr uint32_t kMinStationBytes = 32u * 1024u;
 
+// Build "dir/name" into buf; false if it would not fit. Used to probe a .wav station's header in scan_bank.
+static bool join_path(const char* dir, const char* name, char* buf, int cap) {
+    int n = 0;
+    for (const char* p = dir;  *p; ++p) { if (n >= cap - 1) return false; buf[n++] = *p; }
+    if (n >= cap - 1) return false;
+    buf[n++] = '/';
+    for (const char* p = name; *p; ++p) { if (n >= cap - 1) return false; buf[n++] = *p; }
+    buf[n] = '\0';
+    return true;
+}
+
 void StreamDeck::init(const Mem& m) {
     _d[0].ring.init(m.ring_a, m.ring_a_bytes);
     _d[1].ring.init(m.ring_b, m.ring_b_bytes);
@@ -87,6 +98,23 @@ bool StreamDeck::start_play_raw(DeckRef::Ref deck, const char* path, uint32_t st
     return true;
 }
 
+// As start_play_raw, but the source is a 16-bit-mono PCM .wav: begin_wav parses the header (the file's
+// own rate is captured into the bank index by scan_bank, not here) and the seek lands past it.
+bool StreamDeck::start_play_wav(DeckRef::Ref deck, const char* path, uint32_t start_frame, bool loop) {
+    Deck& d = _d[deck];
+    if (d.mode.load(std::memory_order_acquire) != Mode::idle || d.finalizing) return false;
+    FILINFO fno;
+    if (f_stat(path, &fno) != FR_OK) return false;
+    if (!d.file.open_read(path)) return false;
+    uint32_t rate = 0;
+    if (!d.raw.begin_wav(&d.file, static_cast<uint32_t>(fno.fsize), rate)) { d.file.close(); return false; }
+    d.raw.seek_to_frame(start_frame);
+    d.play.set_loop(loop);
+    d.play.start(&d.raw);
+    d.mode.store(Mode::play, std::memory_order_release);
+    return true;
+}
+
 uint32_t StreamDeck::frames_of(const char* path) const {
     FILINFO fno;
     if (f_stat(path, &fno) != FR_OK) return 0;
@@ -113,19 +141,41 @@ int StreamDeck::scan_bank(const char* dir, BankEntry* out, int max) const {
         if (fno.fattrib & (AM_DIR | AM_HID | AM_SYS)) continue;      // skip dirs + macOS hidden dotfiles
         const char* name = fno.fname;
         if (name[0] == '.') continue;                               // skip .DS_Store / ._* (when visible)
-        // measure name length and locate the last '.'; require a short (<=12 char) name ending in .raw
+        // measure name length and locate the last '.'; require a short (<=12 char) name ending in
+        // .raw (headerless) or .wav (16-bit-mono PCM).
         int len = 0; const char* dot = nullptr;
         for (const char* p = name; *p; ++p) { if (*p == '.') dot = p; ++len; }
         if (len == 0 || len > 12 || !dot) continue;
         const char* e = dot + 1;
-        const bool is_raw = (e[0] == 'r' || e[0] == 'R') && (e[1] == 'a' || e[1] == 'A') &&
-                            (e[2] == 'w' || e[2] == 'W') && e[3] == '\0';
-        if (!is_raw) continue;
+        auto eq = [](char c, char lo) { return c == lo || c == (lo - 32); };  // case-insensitive
+        const bool is_raw = eq(e[0], 'r') && eq(e[1], 'a') && eq(e[2], 'w') && e[3] == '\0';
+        const bool is_wav = eq(e[0], 'w') && eq(e[1], 'a') && eq(e[2], 'v') && e[3] == '\0';
+        if (!is_raw && !is_wav) continue;
         if (fno.fsize < kMinStationBytes) continue;                 // AppleDouble stub / too-short file
+
+        uint32_t frames = 0, rate = 0;
+        if (is_wav) {
+            // Open + parse the header for the body length and the file's own sample rate; skip a file
+            // that is not 16-bit mono PCM. One f_open per WAV at bank load - off the audio path.
+            char path[64];
+            if (!join_path(dir, name, path, sizeof(path))) continue;
+            FatFile wf;
+            if (!wf.open_read(path)) continue;
+            RawStreamReader probe;
+            const bool ok = probe.begin_wav(&wf, static_cast<uint32_t>(fno.fsize), rate);
+            wf.close();
+            if (!ok) continue;
+            frames = probe.frames();
+        } else {
+            frames = static_cast<uint32_t>(fno.fsize) / RawStreamReader::kBytesPerFrame;
+        }
+
         int j = 0;
         for (; name[j] && j < 12; ++j) out[count].name[j] = name[j];
         out[count].name[j] = '\0';
-        out[count].frames = static_cast<uint32_t>(fno.fsize) / RawStreamReader::kBytesPerFrame;
+        out[count].frames = frames;
+        out[count].rate   = rate;       // 0 for raw -> the engine uses rate.txt; else the wav's own rate
+        out[count].is_wav = is_wav;
         ++count;
     }
     f_closedir(&dp);

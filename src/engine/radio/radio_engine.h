@@ -101,8 +101,11 @@ private:
     // Source sample rate (RadioMusic .raw files are headerless, so the rate cannot be read from the
     // file). Default 48 kHz -> ratio 1.0; an optional /radio/rate.txt (e.g. "44100") rebases the
     // resampler so an unconverted original card plays at correct pitch. Loaded once at boot.
-    float _src_rate_ratio = 1.f;             // source_rate / 48000 (frames consumed per output frame)
+    float _src_rate_ratio = 1.f;             // global rate.txt ratio (source_rate / 48000) for .raw files
     bool  _rate_loaded    = false;
+    // Effective rate ratio of the station currently open on each deck: a .wav carries its own rate in the
+    // header (so it plays at correct pitch with no rate.txt), a headerless .raw falls back to rate.txt.
+    float _deck_rate_ratio[2] = { 1.f, 1.f };
 
     // Per-deck bank index (scanned in prepare()) and the currently-open station/bank.
     BankEntry _stations[2][kMaxStations];
