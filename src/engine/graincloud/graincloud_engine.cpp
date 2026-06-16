@@ -56,9 +56,9 @@ void GraincloudEngine::set_param(const ParamId id, const DeckRef::Ref ref, const
             case ParamId::Speed:    gc->set_transpose(v); break; // PITCH    -> transpose
             case ParamId::Env:      gc->set_spray(v);     break; // ENV      -> position spray
             case ParamId::ModAmp:   gc->set_spread(v);    break; // MOD_AMT  -> pitch + pan spread
-            case ParamId::Aux:      gc->set_glisson(v);   break; // Alt+PITCH-> glisson (pitch glide)
+            case ParamId::Aux:      gc->set_scan_speed(v); break; // Alt+PITCH-> playhead speed (0=freeze..4x)
             case ParamId::AltPos:   gc->set_vibrato(v);   break; // Alt+POS  -> vibrato depth
-            case ParamId::Feedback: gc->set_pong(v > 0.5f); break; // Alt+SOS -> pong/loop-mode toggle
+            case ParamId::Feedback: gc->set_glisson(v);    break; // Alt+SOS  -> glisson (per-grain pitch glide)
             default: break;
         }
     }

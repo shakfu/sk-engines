@@ -98,10 +98,11 @@ void GfCloud::set_density(float v)   { _density= clampf(v, 0.f, 1.f); }
 void GfCloud::set_spread(float v)    { _spread = clampf(v, 0.f, 1.f); }
 void GfCloud::set_transpose(float v) { _rate = std::exp2f((clampf(v, 0.f, 1.f) - 0.5f) * 4.f); } // 0.5=unity, +/-2 oct
 void GfCloud::set_direction(int sw) {
-    // Mode switch sends: top=0, centre=1, down=2 (verified on hardware). Make the CENTRE the natural
-    // forward rest position: centre(1)->forward, top(0)->reverse, down(2)->random per grain.
-    _dir = (sw == 1) ? 0 : (sw == 0) ? 1 : 2; // _dir: 0 forward, 1 reverse, 2 random
+    // Mode switch sends centre=0, top=1, down=2 (verified on hardware), so passing the value straight
+    // through gives the CENTRE (rest) position forward: centre(0)->forward, top(1)->reverse, down(2)->random.
+    _dir = sw; // _dir: 0 forward, 1 reverse, 2 random
 }
+void GfCloud::set_scan_speed(float v) { float c = clampf(v, 0.f, 1.f); _scan_speed = c * c * 4.f; } // 0=freeze, 0.5=1x, 1=4x
 void GfCloud::set_glisson(float v)   { _glisson = clampf(v, 0.f, 1.f); }
 void GfCloud::set_vibrato(float v)   { _vibrato = clampf(v, 0.f, 1.f); }
 void GfCloud::set_pong(bool on)      { _pong = on; }
@@ -156,7 +157,7 @@ void GfCloud::compute_block() {
     // this scan, so pitch-shifting doesn't change the playback speed.
     const double gc_rate   = (1.0 / static_cast<double>(dur_s)) / _sr;
     const int    rec       = static_cast<int>(_buf->rec_size());
-    const double scan_rate = (_dir == 1 ? -1.0 : 1.0) / (rec > 0 ? rec : 1); // playhead step per sample
+    const double scan_rate = _scan_speed * (_dir == 1 ? -1.0 : 1.0) / (rec > 0 ? rec : 1); // playhead step/sample (Alt+PITCH speed)
     const float  center    = clampf(_center, 0.f, 1.f);
     double gp = _gc_ph, sp = _scan_phase;
     for (int i = 0; i < kBlock; i++) {

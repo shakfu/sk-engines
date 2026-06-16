@@ -4,11 +4,11 @@
   "subtitle": "two clouds scattered over a recorded buffer",
 
   "knobs": {
-    "Pitch": "grain transpose (+V/Oct, MIDI); Alt = select loop slot (SD)",
-    "Position": "cloud centre position in the buffer",
+    "Pitch": "grain transpose (+V/Oct, MIDI); Alt = playhead speed",
+    "Position": "cloud centre position in the buffer; Alt = vibrato depth",
     "Size": "position spray (spread of grain start points)",
     "Envelope": "grain duration / window",
-    "Mix (SOS)": "dry/wet",
+    "Mix (SOS)": "dry/wet; Alt = glisson (per-grain pitch glide)",
     "Cycle": "grain density (grains/sec)",
     "Glow": "pitch + pan spray (per-grain randomization)"
   },

@@ -38,9 +38,10 @@ public:
 
     // GrainflowLib character params, on the cloud's spare control surfaces:
     void set_direction(int mode); // Mode switch - 0 forward, 1 reverse, 2 random per grain
-    void set_glisson(float v);    // Alt+PITCH   - per-grain pitch glide (0.5 = none, bipolar)
+    void set_scan_speed(float v); // Alt+PITCH   - playhead speed: 0 = freeze, noon = 1x, up to 4x
+    void set_glisson(float v);    // Alt+SOS     - per-grain pitch glide (0.5 = none, bipolar)
     void set_vibrato(float v);    // Alt+POS     - per-grain vibrato depth (0 = off)
-    void set_pong(bool on);       // Alt+SOS     - loop/read mode: normal vs pong (fold)
+    void set_pong(bool on);       // loop/read mode: normal vs pong (fold) - currently unmapped
 
     // Per-sample: returns the next cloud sample (recomputes a block at each 96-sample boundary).
     void process(float& out0, float& out1);
@@ -81,6 +82,7 @@ private:
     int   _dir = 0;        // 0 fwd, 1 reverse, 2 random
     bool  _pong = false;
     int   _active = kMaxGrains;
+    float _scan_speed = 1.f;  // playhead speed multiplier (0 = freeze, 1 = 1x)
     double _gc_ph = 0.0;
     double _scan_phase = 0.0; // playhead position (0..1), auto-advances through the buffer
 };

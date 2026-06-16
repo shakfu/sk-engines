@@ -28,11 +28,11 @@ Per deck:
 | **MOD_AMT** | per-grain pitch + pan spread |
 | **SOS** | dry/wet |
 | **Mode switch (L/C/R)** | grain direction: top = reverse, centre = forward, down = random |
-| **Alt + PITCH** | glisson (per-grain pitch glide) |
+| **Alt + PITCH** | playhead speed (down = freeze, noon = 1x, up = 4x) |
 | **Alt + POS** | vibrato depth |
-| **Alt + SOS** | loop/read mode: normal vs pong (fold) |
+| **Alt + SOS** | glisson (per-grain pitch glide) |
 
-The cloud knobs are tapped from the raw knob values directly (bypassing granular's mode-dependent routing), so they always control the cloud. The four GrainflowLib character controls (direction / glisson / vibrato / pong) sit on the otherwise-idle Mode switch and Alt layers.
+The cloud knobs are tapped from the raw knob values directly (bypassing granular's mode-dependent routing), so they always control the cloud. The GrainflowLib character controls (direction / playhead speed / vibrato / glisson) sit on the otherwise-idle Mode switch and the three routable Alt layers (Alt+PITCH/POS/SOS). Pong is implemented but unmapped (only three Alt knob-layers route on this platform).
 
 Grain count is 8 per deck (a conservative, CPU-safe default; raise after a `METER` run). The cloud guarantees >=2 overlapping grains for a smooth (non-tremolo) envelope.
 
