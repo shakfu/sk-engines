@@ -27,7 +27,7 @@ Per deck:
 | **MODFREQ** | grain density (overlap) |
 | **MOD_AMT** | per-grain pitch + pan spread |
 | **SOS** | dry/wet |
-| **Mode switch (L/C/R)** | grain direction: forward / reverse / random |
+| **Mode switch (L/C/R)** | grain direction: top = reverse, centre = forward, down = random |
 | **Alt + PITCH** | glisson (per-grain pitch glide) |
 | **Alt + POS** | vibrato depth |
 | **Alt + SOS** | loop/read mode: normal vs pong (fold) |

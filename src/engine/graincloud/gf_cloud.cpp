@@ -97,7 +97,11 @@ void GfCloud::set_duration(float v)  { _dur    = clampf(v, 0.f, 1.f); }
 void GfCloud::set_density(float v)   { _density= clampf(v, 0.f, 1.f); }
 void GfCloud::set_spread(float v)    { _spread = clampf(v, 0.f, 1.f); }
 void GfCloud::set_transpose(float v) { _rate = std::exp2f((clampf(v, 0.f, 1.f) - 0.5f) * 4.f); } // 0.5=unity, +/-2 oct
-void GfCloud::set_direction(int mode) { _dir = mode; }
+void GfCloud::set_direction(int sw) {
+    // Mode switch sends: top=0, centre=1, down=2 (verified on hardware). Make the CENTRE the natural
+    // forward rest position: centre(1)->forward, top(0)->reverse, down(2)->random per grain.
+    _dir = (sw == 1) ? 0 : (sw == 0) ? 1 : 2; // _dir: 0 forward, 1 reverse, 2 random
+}
 void GfCloud::set_glisson(float v)   { _glisson = clampf(v, 0.f, 1.f); }
 void GfCloud::set_vibrato(float v)   { _vibrato = clampf(v, 0.f, 1.f); }
 void GfCloud::set_pong(bool on)      { _pong = on; }

@@ -25,7 +25,7 @@
   "crossfade": "morph between the two clouds (A/B)",
 
   "switches": {
-    "Mode (L/C/R)": "grain direction: forward / reverse / random",
+    "Mode (L/C/R)": "grain direction: top reverse / centre forward / down random",
     "Routing (L/C/R)": "-",
     "CV target (U/C/D)": "-",
     "Out trims A/B": "output trims"
