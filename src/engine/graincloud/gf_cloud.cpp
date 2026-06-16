@@ -145,17 +145,26 @@ void GfCloud::compute_block() {
     // Loop/read mode (Alt+SOS): pong (fold) vs normal. gf folds when loop_mode.base > 1.1.
     _col.param_set(0, PN::loop_mode,   PT::base,   _pong ? 2.f : 0.f);
 
-    const double gc_rate = (1.0 / static_cast<double>(dur_s)) / _sr;
-    double gp = _gc_ph;
-    const float center = clampf(_center, 0.f, 1.f);
+    // The grain-clock phasor (sets grain duration) and the PLAYHEAD (traversal) that scans the buffer.
+    // The playhead auto-advances at 1x (real-time playthrough), looping, so the sample actually plays;
+    // POS offsets/scrubs it; reverse mode runs it backward. Grain transpose (PITCH) is independent of
+    // this scan, so pitch-shifting doesn't change the playback speed.
+    const double gc_rate   = (1.0 / static_cast<double>(dur_s)) / _sr;
+    const int    rec       = static_cast<int>(_buf->rec_size());
+    const double scan_rate = (_dir == 1 ? -1.0 : 1.0) / (rec > 0 ? rec : 1); // playhead step per sample
+    const float  center    = clampf(_center, 0.f, 1.f);
+    double gp = _gc_ph, sp = _scan_phase;
     for (int i = 0; i < kBlock; i++) {
         gp += gc_rate; if (gp >= 1.0) gp -= 1.0;
+        sp += scan_rate; sp -= std::floor(sp);          // playhead wraps 0..1
+        double t = center + sp; t -= std::floor(t);      // offset by POS, mod 1
         _gc[i] = static_cast<float>(gp);
-        _tr[i] = center;
+        _tr[i] = static_cast<float>(t);
         _fm[i] = 0.f;
         _am[i] = 0.f;
     }
     _gc_ph = gp;
+    _scan_phase = sp;
 
     _io.block_size = kBlock;
     _io.samplerate = static_cast<int>(_sr);

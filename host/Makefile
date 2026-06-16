@@ -36,6 +36,10 @@ TRANSPORT_SRC = $(wildcard $(ROOT)/src/transport/*.cpp)
 ENGINE_SRC  = $(wildcard $(ROOT)/src/engine/*.cpp)
 DAISYSP_SRC = $(wildcard $(DAISYSP)/*/*.cpp)
 LIB_SRC     = $(CORE_SRC) $(DSP_SRC) $(TRANSPORT_SRC) $(ENGINE_SRC) $(DAISYSP_SRC)
+# graincloud is a separate copy of the granular tree; its test links graincloud/*.cpp INSTEAD of the
+# granular CORE_SRC (same class names live in both, so never link both into one binary).
+GC_CORE_SRC = $(wildcard $(ROOT)/src/engine/graincloud/*.cpp)
+GC_LIB_SRC  = $(GC_CORE_SRC) $(DSP_SRC) $(TRANSPORT_SRC) $(ENGINE_SRC) $(DAISYSP_SRC)
 # The edrums/reso/reverb engines live under src/engine/<name>/ (outside the wildcards above); add for tests.
 DELAY_SRC   = $(ROOT)/src/engine/delay/delay_engine.cpp
 EDRUMS_SRC  = $(ROOT)/src/engine/edrums/edrums_engine.cpp
@@ -92,6 +96,13 @@ $(TEST_RESO): test_reso.cpp $(LIB_SRC) $(RESO_SRC) $(RINGS_SRC) | $(BUILD)
 # graincloud kernel smoke test (the de-STL'd GrainflowLib only; no engine/LIB deps).
 $(TEST_GRAINCLOUD_KERNEL): test_graincloud_kernel.cpp $(wildcard $(GRAINCLOUD_TP)/grainflow/*.h) | $(BUILD)
 	$(CXX) $(CXXFLAGS) test_graincloud_kernel.cpp -o $@
+
+# graincloud full-engine test (links the graincloud tree, NOT granular).
+TEST_GRAINCLOUD = $(BUILD)/test_graincloud
+$(TEST_GRAINCLOUD): test_graincloud.cpp $(GC_LIB_SRC) | $(BUILD)
+	$(CXX) $(CXXFLAGS) test_graincloud.cpp $(GC_LIB_SRC) -o $@
+test-graincloud: $(TEST_GRAINCLOUD)
+	./$(TEST_GRAINCLOUD)
 
 # graincloud scattered-read benchmark (self-contained; the #11 feasibility gate).
 $(BENCH_GRAINCLOUD): bench_graincloud.cpp | $(BUILD)

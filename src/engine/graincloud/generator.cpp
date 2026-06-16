@@ -298,10 +298,14 @@ void Generator::process(float& out0, float& out1)
   
   if (_buffer->is_empty()) return;
 
+  // Play-pad gate: the cloud is silent unless the deck is playing (set via Deck::play/stop). Without
+  // this the cloud would granulate the buffer continuously (incl. a preloaded sample) even with Play off.
+  if (!_playing) { _is_active.reset(); return; }
+
   // GrainflowLib cloud. Its parameters are set DIRECTLY from the engine's raw knobs (see
   // GraincloudEngine::set_param), NOT from granular's mode-dependent Generator fields, so the cloud
-  // always has consistent control. Continuous (no Vox triggering); "generating" while it has content.
-  // (The Vox array is kept allocated/compiled so Deck/Drifter are unchanged, but produces no audio.)
+  // always has consistent control. (The Vox array is kept allocated/compiled so Deck/Drifter are
+  // unchanged, but produces no audio.)
   (void)set_increment;
   _gf->process(out0, out1);
   _is_active.set(0, true);

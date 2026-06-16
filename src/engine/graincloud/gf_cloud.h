@@ -79,6 +79,7 @@ private:
     bool  _pong = false;
     int   _active = kMaxGrains;
     double _gc_ph = 0.0;
+    double _scan_phase = 0.0; // playhead position (0..1), auto-advances through the buffer
 };
 
 // Per-deck GfCloud instances (regular RAM, not the SDRAM arena). ref 0 = deck A, 1 = deck B.

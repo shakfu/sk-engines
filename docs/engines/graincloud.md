@@ -20,10 +20,10 @@ Per deck:
 
 | Control | cloud meaning |
 |---|---|
-| **POS** | cloud centre position in the buffer |
-| **SIZE** | position spray of grain starts |
-| **PITCH** | grain transpose |
-| **ENV** | grain duration |
+| **POS** | cloud centre / playhead scrub position |
+| **SIZE** | grain size (duration, ~8 ms – 1.5 s) |
+| **PITCH** | grain transpose (independent of playhead speed) |
+| **ENV** | position spray of grain starts |
 | **MODFREQ** | grain density (overlap) |
 | **MOD_AMT** | per-grain pitch + pan spread |
 | **SOS** | dry/wet |

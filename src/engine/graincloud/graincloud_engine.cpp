@@ -19,6 +19,9 @@ void GraincloudEngine::init(const EngineContext& ctx)
     _speed_map.init();
     for (auto ref : { DeckRef::A, DeckRef::B }) {
         auto& deck = _core.deck(ref);
+        // graincloud: lock the deck to Reel so the Play pad plays immediately (no slice-queue), and the
+        // L/C/R switch is free to mean grain direction (set_config(Mode)) instead of the granular mode.
+        deck.set_mode(Mode::Reel);
         auto& fx = deck.fx();
         _param_cache[static_cast<size_t>(ParamId::Pos)][ref]           = deck.norm_start();
         _param_cache[static_cast<size_t>(ParamId::GritMix)][ref]       = fx.grit_mix();
@@ -49,9 +52,9 @@ void GraincloudEngine::set_param(const ParamId id, const DeckRef::Ref ref, const
         GfCloud* gc = gf_cloud_acquire(static_cast<int>(deck_ref));
         switch (id) {
             case ParamId::Pos:      gc->set_center(v);    break; // POS      -> cloud centre
-            case ParamId::Size:     gc->set_spray(v);     break; // SIZE     -> position spray
+            case ParamId::Size:     gc->set_duration(v);  break; // SIZE     -> grain size (duration)
             case ParamId::Speed:    gc->set_transpose(v); break; // PITCH    -> transpose
-            case ParamId::Env:      gc->set_duration(v);  break; // ENV      -> grain duration
+            case ParamId::Env:      gc->set_spray(v);     break; // ENV      -> position spray
             case ParamId::ModAmp:   gc->set_spread(v);    break; // MOD_AMT  -> pitch + pan spread
             case ParamId::Aux:      gc->set_glisson(v);   break; // Alt+PITCH-> glisson (pitch glide)
             case ParamId::AltPos:   gc->set_vibrato(v);   break; // Alt+POS  -> vibrato depth
@@ -134,16 +137,12 @@ bool GraincloudEngine::set_config(const ConfigId id, const DeckRef::Ref ref, con
             _core.mod(deck_ref).set_lfo_type(t);
             return false;
         }
-        case ConfigId::Mode: {
+        case ConfigId::Mode:
             // The L/C/R mode switch picks the cloud's grain direction: 0 forward, 1 reverse, 2 random.
+            // The deck stays in Reel mode (forced at init) for simple immediate Play; the switch no
+            // longer changes the granular deck mode.
             gf_cloud_acquire(static_cast<int>(deck_ref))->set_direction(v);
-            auto& deck = _core.deck(deck_ref);
-            const Mode nm = v == 2 ? Mode::Drift : v == 1 ? Mode::Reel : Mode::Slice;
-            if (nm == deck.mode()) return false;
-            deck.set_mode(nm);
-            _core.infer_panner_mode();
-            return true;
-        }
+            return false;
         case ConfigId::StartModOn: _core.deck(deck_ref).set_start_mod_on(v != 0); return false;
         case ConfigId::SizeModOn:  _core.deck(deck_ref).set_size_mod_on(v != 0);  return false;
         case ConfigId::Count: break;

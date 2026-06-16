@@ -71,6 +71,10 @@ public:
 
   void process(float& out0, float& out1);
 
+  // graincloud: the Play pad gates the cloud. Deck sets this from its _is_playing state; process()
+  // emits silence (and clears the "generating" flag) when not playing.
+  void set_playing(bool p) { _playing = p; }
+
 protected:
   void set_mode(const Vox::Mode);
 
@@ -113,6 +117,7 @@ private:
   Buffer* _buffer;
   std::array<Vox, kVoxCount> _voxs;
   GfCloud* _gf = nullptr; // process() sums this GrainflowLib cloud instead of the Vox
+  bool _playing = false;  // Play-pad gate (set by Deck::play/stop); cloud is silent when false
 
   std::function<void(const uint8_t)> _on_vox_stop;
 
