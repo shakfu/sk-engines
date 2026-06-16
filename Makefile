@@ -86,15 +86,18 @@ ENGINE_SOURCES = src/engine/reso/reso_engine.cpp \
 	$(RESO_TP)/rings/resources.cc \
 	$(RESO_TP)/stmlib/dsp/units.cc $(RESO_TP)/stmlib/utils/random.cc $(RESO_TP)/stmlib/dsp/atan.cc
 else ifeq ($(ENGINE), graincloud)
+# graincloud is a self-contained variant of the granular engine (a copy under src/engine/graincloud/)
+# with its grain DSP replaced by a GrainflowLib cloud (gf_cloud.*). Its vendored GrainflowLib lives in
+# src/engine/graincloud/thirdparty/grainflow/.
 C_DEFS += -DSPK_ENGINE_GRAINCLOUD
-# GrainflowLib's gfSyn pulls M_PI via <cmath>, which strict -std=c++17 does not expose on arm-none-eabi.
+# gfSyn pulls M_PI via <cmath>, which strict -std=c++17 does not expose on arm-none-eabi.
 C_DEFS += -DM_PI=3.14159265358979323846
-# graincloud's DSP is a de-STL'd port of GrainflowLib (header-only, no heap on the audio path), vendored
-# under src/engine/graincloud/thirdparty/grainflow/. GRAINCLOUD_INC scopes that include to this build
-# (referenced from C_INCLUDES below; empty for other engines). The engine itself is one .cpp.
+# Granular + the GrainflowLib templates overflow the 186 KB execution SRAM at -O2; build at -Os to fit
+# (as reso/reverb do). The M7 @ 480 MHz has ample compute headroom.
+OPT = -Os
 GRAINCLOUD_TP  = src/engine/graincloud/thirdparty
 GRAINCLOUD_INC = -I$(GRAINCLOUD_TP)
-ENGINE_SOURCES = src/engine/graincloud/graincloud_engine.cpp
+ENGINE_SOURCES = $(wildcard src/engine/graincloud/*.cpp)
 # gen~ engines (ENGINE=gen_<name>) are appended below by scripts/gen_engine.py, one marker-delimited
 # `else ifeq` block per export. They use the genlib-isolation bridge from gen-dsp + the shared
 # src/engine/gen/ family (GenEngine<W> + the arena-bound genlib runtime). See `make gen-engines`.

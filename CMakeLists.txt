@@ -83,15 +83,16 @@ elseif(ENGINE STREQUAL reso)
     # Rings (~30 KB of code+tables) overflows the 186 KB execution SRAM at -O2; build reso at -Os to fit.
     set(APP_OPT -Os)
 elseif(ENGINE STREQUAL graincloud)
+    # graincloud = a self-contained variant of the granular engine (copy under src/engine/graincloud/)
+    # with its grain DSP replaced by a GrainflowLib cloud (gf_cloud.*).
     set(ENGINE_DEFINE SPK_ENGINE_GRAINCLOUD)
-    # graincloud's DSP is a de-STL'd port of GrainflowLib (header-only, no heap on the audio path),
-    # vendored under src/engine/graincloud/thirdparty/grainflow/. Self-contained; one engine .cpp.
     set(GRAINCLOUD_TP ${CMAKE_CURRENT_SOURCE_DIR}/src/engine/graincloud/thirdparty)
-    set(ENGINE_SOURCES src/engine/graincloud/graincloud_engine.cpp)
+    file(GLOB ENGINE_SOURCES CONFIGURE_DEPENDS src/engine/graincloud/*.cpp)
     set(ENGINE_INCLUDES ${GRAINCLOUD_TP})
-    # gfSyn pulls M_PI via <cmath>, which strict -std=c++17 does not expose on arm-none-eabi.
+    # M_PI for gfSyn under strict -std=c++17 on arm-none-eabi.
     set(ENGINE_DEFINES M_PI=3.14159265358979323846)
-    # Fits SRAM_EXEC at -O2 (~87%), so no -Os override needed.
+    # Granular + GrainflowLib templates overflow the 186 KB execution SRAM at -O2; build at -Os.
+    set(APP_OPT -Os)
 elseif(ENGINE STREQUAL tape)
     set(ENGINE_DEFINE SPK_ENGINE_TAPE)
     # Engine wrapper (tape_engine.cpp); its SD streaming service lives in src/hw/ (stream_deck.cpp,

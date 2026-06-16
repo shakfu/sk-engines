@@ -9,6 +9,10 @@ dist/
 .*_cache
 
 thirdparty/
+# ...but engine-vendored DSP libs ARE part of the firmware and must be tracked (reso's Rings,
+# graincloud's GrainflowLib). Re-include the directory AND its contents (git needs both).
+!src/engine/*/thirdparty/
+!src/engine/*/thirdparty/**
 uv.lock
 
 # Byte-compiled / optimized / DLL files

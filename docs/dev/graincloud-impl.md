@@ -1,80 +1,36 @@
 # graincloud - implementation notes
 
-Developer notes for the `graincloud` engine (user-facing doc: [`docs/engines/graincloud.md`](../engines/graincloud.md)). It is a polyphonic grain cloud (idea-doc #11) built on a de-STL'd port of **GrainflowLib**.
+Developer notes for the `graincloud` engine (user doc: [`docs/engines/graincloud.md`](../engines/graincloud.md)).
 
-## Architecture
+## Architecture: a granular variant, not a standalone engine
 
-PIMPL, exactly like `reso`: `GraincloudEngine` (header, no GrainflowLib types) forwards to `Impl`, which is placement-new'd into the injected SDRAM arena at `init()`. All GrainflowLib template types are confined to `graincloud_engine.cpp` so the composition root (`engine_select.h` -> `app.cpp`) never sees them.
+`graincloud` is **the granular engine compiled with `SPK_GRAIN_GF`**, which swaps granular's grain DSP (`Generator`/`Vox`/`Window`) for a GrainflowLib cloud. It defines `SPK_ENGINE_GRANULAR` (so the platform treats it exactly as granular - recording, SD storage, dual-deck, crossfade, FX, UI all inherited unchanged) while `SPK_ENGINE_STR` is `"graincloud"`. This replaced an earlier *standalone* graincloud engine that reimplemented all that plumbing from scratch and kept hitting platform-integration bugs (record gesture, storage crash, crossfade traps); inheriting granular's proven plumbing removed that entire class of problems.
 
-Per deck (`Impl::Deck`, two of them):
-- a `RecBuffer` - a self-contained float-stereo record buffer in the arena (~20 s) with a cubic read;
-- a `gf_grain_collection` (placement-new'd in the arena) owning a fixed array of `kMaxGrains` (16) `gf_grain`s, also arena-allocated and placement-constructed;
-- per-stream grain-clock / traversal phasor state, knob caches, and a per-grain equal-power pan table.
+The single seam: `Deck::process_out()` calls `_generator.process(bus[0], bus[1])` once per sample. Under `SPK_GRAIN_GF`, `Generator::process()` (generator.cpp) sums a `GfCloud` instead of the `Vox` array; `Generator` keeps its whole interface/state so `Deck`/`Drifter`/`granular_engine` compile and drive it unchanged.
 
-A single `IoScratch` (the GrainflowLib `gf_io_config` plus its input/output sample arrays) is shared by both decks since they are processed sequentially.
+## GfCloud (`src/engine/granular/gf_cloud.{h,cpp}`)
 
-## The GrainflowLib port (`thirdparty/grainflow/`)
+The GrainflowLib cloud core, reading granular's `Buffer`:
+- **Per-block/per-sample bridge.** Granular is per-sample; GrainflowLib is per-block (96). `GfCloud::process(out0,out1)` serves one sample, recomputing a 96-sample stereo block at each boundary (`compute_block`).
+- **Buffer-reader seam.** `gf_i_buffer_reader<Buffer,float>` callbacks read granular's `Buffer` via `read_linear` (one channel each), report `rec_size()` as the buffer length, and use a Hann LUT for the envelope. A non-finite-position guard prevents `(int)NaN` OOB reads.
+- **Memory.** Grain scratch (grain array + io_config arrays) are members of two **static** `GfCloud` instances in regular RAM (zero-initialized BSS, ctors run at startup when RAM is ready) - acquired per deck via `gf_cloud_acquire(ref)`. Only the audio `Buffer` is SDRAM. No arena threading (Generator::init has no arena), no SDRAM-static-ctor hazard, no platform-boundary breach.
+- **Whole TU guarded** by `#ifdef SPK_GRAIN_GF`: it lives in the granular source wildcard, so for plain `ENGINE=granular` it compiles to an empty TU (no GrainflowLib include, granular unaffected).
 
-GrainflowLib is the *inner per-grain kernel of a Max/PD patch*, not a stereo cloud: `gf_grain::process()` consumes audio-rate `grain_clock`, `traversal_phasor`, `fm`, `am` signals and writes **eight separate per-grain output arrays**; it never sums or pans. The port therefore vendors only the kernel and rebuilds the surrounding patch glue in the engine.
+The de-STL'd GrainflowLib itself is vendored under `src/engine/graincloud/thirdparty/grainflow/` (the de-STL changes - heap/throw/RTTI removed - are marked `// sk:` in those headers).
 
-**Dropped** (replaced in-engine): `gfGenericBufferReader.h` (AudioFile/`unique_ptr`/`vector`), `gfRecord.h` (vector recording), `gfPanner.h` (vector panner), `gfFilters.h`.
+## Knob -> cloud param mapping
 
-**De-STL edits** (all marked `// sk:` in the vendored headers):
-- `gfGrainCollection.h` - `std::unique_ptr<gf_grain[]>` -> raw pointer into caller storage via `set_storage()`; `resize()` no longer `new[]`s (it clamps to the storage capacity and re-inits in place); destructor frees nothing; all `grains_.get()[i]` -> `grains_[i]`.
-- `gfGrain.h` - the `std::unique_ptr<phasor>` vibrato member -> an inline `phasor` value (the phasor is a flat struct, so the heap allocation was gratuitous); `make_unique` removed; the destructor's six `delete`s on **non-owned** buffer pointers removed (a latent double-free upstream); the `throw("invalid type")` in `param_set` -> a no-op (`-fno-exceptions`).
-- `gfParam.h` - unused `<map>` dropped; the two string reflection helpers marked `static inline` (unused; elided).
+`Generator::process` (under the flag) reads granular's stored params and calls `GfCloud::set_params`:
+- start (POS) -> cloud centre; size (SIZE) -> grain duration; shape (ENV) -> density; smoothed increment (Speed) -> transpose; spread (Drift) -> position spray.
 
-Result: no heap, no exceptions, no RTTI on the audio path. It compiles under the firmware's `-fno-exceptions -fno-rtti -std=c++17` and fits SRAM_EXEC at ~87% (no `-Os` needed).
+`GfCloud` derives overlap = `round(onset(density) * duration)` clamped to `[2, kMaxGrains]` (min 2 avoids a single-grain tremolo), sets the grain-clock period to the duration, and normalizes the mixdown gain by the active grain count.
 
-## The buffer-reader seam
+## Build
 
-`gf_i_buffer_reader<RecBuffer, float>` is filled with free-function callbacks (`cb_*` in the .cpp). `T` is `RecBuffer`, so each grain's `buffer_ref_` points at the deck's record buffer. `sample_buffer` does the scattered cubic read; `sample_envelope` is the built-in Hann; `update_buffer_info` reports the recorded length (returns false when empty -> grains stay silent); the param/rate/window/delay buffer callbacks return false so grains use their own base/random/offset values.
-
-## The patch glue (per block, per deck)
-
-1. If recording, write the live input into `RecBuffer`.
-2. Generate ONE grain-clock phasor whose **period is the grain duration** (`f_clock = 1/duration`), and a constant traversal value = the POS knob (the cloud centre; spray comes from the `delay` random param). `fm`/`am` are zero (pitch is the `transpose` param, not audio-rate fm). `auto_overlap` evenly phase-staggers the active grains off this one clock.
-3. `collection.process(io)`.
-4. Sum the per-grain mono outputs through the per-grain equal-power pan into stereo, scale by `1.4/sqrt(kMaxGrains)`.
-5. The engine then applies per-deck dry/wet and the A/B crossfade, and soft-clips.
-
-## Knob -> GrainflowLib param mapping
-
-`apply_params()` pushes the knob caches into the gf param model (target 0 = all grains):
-- PITCH -> `transpose.base` (+/-24 semis) + V/Oct; MOD_AMT -> `transpose.random` (pitch spray) and the engine-side pan spread.
-- SIZE -> `delay.random` (ms; scatters each grain's birth position back from the playhead).
-- ENV -> grain **duration** (8 ms .. 1.5 s) -> grain-clock period (`f_clock = 1/duration`); `space = 0`.
-- MODFREQ -> **density** = onset rate (1 .. 80 grains/sec).
-- Aux -> `direction.base` / `glisson.base` (fwd / reverse / random / glisson).
-
-**Decoupling duration from density.** In GrainflowLib a grain's lifetime is its grain-clock period (`duration = (1-space)/f_clock`), so duration and density are naturally coupled. We decouple them: the grain-clock period IS the duration (ENV), and the onset rate (MODFREQ) is achieved by deriving the **overlap** = number of simultaneously-live grains, `active = round(onset_hz * duration)`, applied via `set_active_grains` (`update_overlap()`, called whenever ENV or density changes). With one shared clock + `auto_overlap` staggering the active grains by `1/active`, onsets land every `duration/active` s, so onset rate = `active/duration = onset_hz` exactly - until `active` hits `kMaxGrains`, beyond which the onset rate saturates (the overlap cap). The mixdown gain is normalized by `active` so overlap doesn't change loudness. Pans are per-grain *random* (not index-ordered) so a small active set still spreads across the field.
-
-## File map
-
-```
-src/engine/graincloud/
-  graincloud_engine.h          # IEngine, PIMPL handle
-  graincloud_engine.cpp        # RecBuffer, buffer-reader callbacks, Cloud glue, Impl, forwarders
-  thirdparty/grainflow/        # vendored, de-STL'd GrainflowLib (headers only)
-host/
-  test_graincloud.cpp          # engine test (IEngine surface: params, record, storage, clear, MIDI)
-  test_graincloud_kernel.cpp   # kernel smoke test (de-STL kernel + seam + phasor glue, finite output)
-  bench_graincloud.cpp         # the #11 scattered-read feasibility benchmark
-```
-
-## The SDRAM scattered-read benchmark (the #11 gate)
-
-`make -C host bench-graincloud`. N grains each do 96 cubic reads/block at independent random positions over a 16 MB buffer; cost scales linearly (~0.79 us/grain/block cubic on the host). At 16 grains/deck (32 total) the projected device CPU is comfortable. **Caveat:** a desktop cannot reproduce the H7 external-SDRAM random-access penalty - the host number is a CPU lower bound and a *scaling* signal only. Confirm on-device with `METER=1` before raising `kMaxGrains`.
-
-## Resolved bugs
-
-- **Instant full-scale noise on hardware (host was fine).** The SDRAM arena (`DSY_SDRAM_BSS`) is **not** zero-initialized by startup; the host arena is. GrainflowLib skips `sample_buffer` (so never writes `grain_output`) when the source buffer is empty/absent - true for every grain at boot - so the mixdown summed uninitialized SDRAM garbage. Fix: `memset` the `IoScratch` to 0 in `setup()` (like granular/shuttle memset their arena allocations), plus a non-finite guard on the final output (NaN/inf -> 0) so no garbage can reach the codec. A poisoned-arena regression test (`test_graincloud.cpp` "poisoned-arena ... silence") fills the arena with a finite-float byte pattern before `init()` and asserts boot silence; it fails without the memset.
+`ENGINE=graincloud` -> granular source wildcard + grainflow include, `-DSPK_ENGINE_GRANULAR -DSPK_GRAIN_GF -DM_PI=...`, **`-Os`** (granular + GrainflowLib templates overflow the 186 KB execution SRAM at `-O2`; fits at ~97% at `-Os`). Wired in `Makefile`, `CMakeLists.txt`, `Makefile.cmake`. The GrainflowLib DSP is host-tested standalone by `host/test_graincloud_kernel.cpp`; plain granular's host test (`test-granular`) covers the inherited plumbing.
 
 ## Risks / watch-items
 
-- **Any new arena allocation must be zeroed (or fully written before read).** SDRAM is garbage at boot. This bit the io scratch once; it will bite again.
-
-- **On-device SDRAM cost is unconfirmed.** The dominant risk for any scatter-read cloud. If a high-density `METER=1` run shows the block overrunning, lower `kMaxGrains` or `kStreams`, or switch the reader to linear interpolation (~40% cheaper).
-- **`SigType=float`** (not GrainflowLib's default `double`) halves the io scratch and is ample for audio.
-- **Recording is self-contained**, not the granular `Buffer`: a deliberate choice to avoid dragging `daisysp.h`/`common.h` into a clean engine and coupling two engines (matches `shuttle`/`tape`/`radio`). The trade is no overdub/cut/skip-write-head machinery - irrelevant for a read-mostly cloud source.
-- **Transport sync** is advertised (`CapTransport`) but density currently free-runs from the knob; locking density to a tempo division is a TODO.
+- **On-device scattered-read cost unconfirmed** (no hardware profile yet). If high-density patches glitch, lower `kMaxGrains` in `gf_cloud.h` or run `METER=1`.
+- **kMaxGrains=8/deck** is conservative for CPU; the per-sample `exp2f` in GrainflowLib's `increment` (fm is always 0 here) is the next optimization if more grains are wanted.
+- **SDRAM is not zero-initialized**; the granular `Buffer` is memset by granular's own init, and GfCloud's scratch is regular zeroed BSS - so the uninitialized-memory class of bug does not apply here.

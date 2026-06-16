@@ -40,8 +40,8 @@ LIB_SRC     = $(CORE_SRC) $(DSP_SRC) $(TRANSPORT_SRC) $(ENGINE_SRC) $(DAISYSP_SR
 DELAY_SRC   = $(ROOT)/src/engine/delay/delay_engine.cpp
 EDRUMS_SRC  = $(ROOT)/src/engine/edrums/edrums_engine.cpp
 RESO_SRC    = $(ROOT)/src/engine/reso/reso_engine.cpp
-# graincloud engine (self-contained; the de-STL'd GrainflowLib it uses is header-only under $(GRAINCLOUD_TP)).
-GRAINCLOUD_SRC = $(ROOT)/src/engine/graincloud/graincloud_engine.cpp
+# graincloud is the granular engine built with SPK_GRAIN_GF (gf_cloud.cpp swaps the grain DSP); there is
+# no separate engine .cpp. Its GrainflowLib DSP is exercised on the host by test_graincloud_kernel.
 # The reverb engine's adapter; its Faust kernels are checked-in headers (engine/reverb/faust_kernel_*.h,
 # portable C++) pulled by the .cpp, so no extra sources are needed.
 REVERB_SRC  = $(ROOT)/src/engine/reverb/reverb_engine.cpp
@@ -70,12 +70,11 @@ TEST_CHORUS  = $(BUILD)/test_chorus
 TEST_DFILTER = $(BUILD)/test_dfilter
 TEST_VOICE   = $(BUILD)/test_voice
 TEST_DELAY   = $(BUILD)/test_delay
-TEST_GRAINCLOUD        = $(BUILD)/test_graincloud
 TEST_GRAINCLOUD_KERNEL = $(BUILD)/test_graincloud_kernel
 BENCH_REVERB     = $(BUILD)/bench_reverb
 BENCH_GRAINCLOUD = $(BUILD)/bench_graincloud
 
-.PHONY: all clean run test test-granular test-edrums test-reso test-graincloud test-graincloud-kernel test-reverb test-delay test-tape test-stream test-shuttle test-radio test-chorus test-dfilter test-voice bench-reverb bench-graincloud
+.PHONY: all clean run test test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-tape test-stream test-shuttle test-radio test-chorus test-dfilter test-voice bench-reverb bench-graincloud
 all: $(TARGET)
 
 $(TARGET): $(SRC) | $(BUILD)
@@ -89,10 +88,6 @@ $(TEST_EDRUMS): test_edrums_slots.cpp $(LIB_SRC) $(EDRUMS_SRC) | $(BUILD)
 
 $(TEST_RESO): test_reso.cpp $(LIB_SRC) $(RESO_SRC) $(RINGS_SRC) | $(BUILD)
 	$(CXX) $(CXXFLAGS) test_reso.cpp $(LIB_SRC) $(RESO_SRC) $(RINGS_SRC) -o $@
-
-# graincloud engine test (links the engine + LIB_SRC for DisplayModel/LEDRing/transport).
-$(TEST_GRAINCLOUD): test_graincloud.cpp $(LIB_SRC) $(GRAINCLOUD_SRC) $(ROOT)/src/engine/graincloud/graincloud_engine.h | $(BUILD)
-	$(CXX) $(CXXFLAGS) test_graincloud.cpp $(LIB_SRC) $(GRAINCLOUD_SRC) -o $@
 
 # graincloud kernel smoke test (the de-STL'd GrainflowLib only; no engine/LIB deps).
 $(TEST_GRAINCLOUD_KERNEL): test_graincloud_kernel.cpp $(wildcard $(GRAINCLOUD_TP)/grainflow/*.h) | $(BUILD)
@@ -160,7 +155,7 @@ run: $(TARGET)
 
 # `test` runs both engine harnesses. Both inject the transport via EngineContext (granular drives the
 # real platform Transport; edrums uses a small stub ITransport) - the post-transport-decoupling way.
-test: test-granular test-edrums test-reso test-graincloud test-graincloud-kernel test-reverb test-delay test-tape test-stream test-shuttle test-radio test-chorus test-dfilter test-voice
+test: test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-tape test-stream test-shuttle test-radio test-chorus test-dfilter test-voice
 
 test-granular: $(TEST)
 	./$(TEST)
@@ -170,9 +165,6 @@ test-edrums: $(TEST_EDRUMS)
 
 test-reso: $(TEST_RESO)
 	./$(TEST_RESO)
-
-test-graincloud: $(TEST_GRAINCLOUD)
-	./$(TEST_GRAINCLOUD)
 
 test-graincloud-kernel: $(TEST_GRAINCLOUD_KERNEL)
 	./$(TEST_GRAINCLOUD_KERNEL)
