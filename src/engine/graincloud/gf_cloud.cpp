@@ -112,6 +112,7 @@ void GfCloud::init(Buffer* buf, float sample_rate) {
     _col.stream_set(Grainflow::gf_stream_set_type::automatic_streams, 1);
     _col.set_buffer(Grainflow::gf_buffers::buffer, _buf, 0);
     _idx = kBlock; // force a recompute on first process()
+    _scan_phase = 0.0; _gc_ph = 0.0; // playhead + grain clock start at a known position
 }
 
 void GfCloud::compute_block() {
@@ -188,6 +189,12 @@ void GfCloud::compute_block() {
         _blk_l[i] = l * gain;
         _blk_r[i] = r * gain;
     }
+}
+
+float GfCloud::playhead() const {
+    float p = _center + static_cast<float>(_scan_phase);
+    p -= std::floor(p);
+    return p;
 }
 
 void GfCloud::process(float& out0, float& out1) {

@@ -45,6 +45,9 @@ public:
     // Per-sample: returns the next cloud sample (recomputes a block at each 96-sample boundary).
     void process(float& out0, float& out1);
 
+    // Current playhead position in the buffer, 0..1 (for the ring display).
+    float playhead() const;
+
 private:
     using Grain      = Grainflow::gf_grain<Buffer, kBlock, float>;
     using Collection = Grainflow::gf_grain_collection<Buffer, kBlock, float>;

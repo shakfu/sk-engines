@@ -398,11 +398,8 @@ RingGeometry GraincloudEngine::render_ring(LEDRing& ring, const DeckRef::Ref ref
         ring.set_segment(seg_start, seg_start + size);
         ring.set_point_hex_color(0xffffff); // kWhite
         if (deck.is_generating()) {
-            for (auto i = 0; i < Generator::kVoxCount; i++) {
-                if (deck.envelope_at(i) > 0) {
-                    ring.add_point(deck.norm_playhead_at(i), deck.envelope_at(i));
-                }
-            }
+            // The cloud's playhead (the Vox are bypassed, so use the GrainflowLib scan position).
+            ring.add_point(gf_cloud_acquire(static_cast<int>(_safe_ref(ref_in)))->playhead(), 1.f);
         }
         RingGeometry geo;
         geo.playing = true;

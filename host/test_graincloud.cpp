@@ -99,6 +99,39 @@ int main() {
     check(rms_zero < rms_hi * 0.1f, "empty buffer is (near) silent");
     check(rms_hi > rms_lo * 2.0f,   "output level tracks buffer content (cloud READS the buffer)");
 
+    // --- Playhead-motion check: first half +0.4, second half -0.4; POS=0. A forward-moving playhead ->
+    //     output mean swings positive (early) then negative (late). Stuck playhead -> stays positive. ---
+    {
+        GraincloudEngine e2; e2.init(ctx);
+        const size_t N = 48000;                          // 1 s sample -> playhead sweeps in ~500 blocks
+        for (auto d : { DeckRef::A, DeckRef::B }) {       // fill+play BOTH so the crossfader can't hide it
+            e2.set_param(ParamId::Mix,  d, 1.0f);
+            e2.set_param(ParamId::Pos,  d, 0.0f);         // start playhead at the very beginning
+            e2.set_param(ParamId::Size, d, 0.4f);         // mid grain size
+            e2.set_param(ParamId::Env,  d, 0.0f);         // no spray (clean playhead)
+            e2.set_mod_speed(d, 0.6f, false);
+            auto* raw = reinterpret_cast<Buffer::Frame*>(e2.audio_data(d));
+            for (size_t i = 0; i < N; i++) { float v = i < N/2 ? 0.4f : -0.4f; raw[i].l = v; raw[i].r = v; }
+            e2.audio_apply_loaded(d, N);
+            e2.on_play_pad(d, false);
+        }
+
+        float il[host::kBlock] = {0}, ir[host::kBlock] = {0}, ol[host::kBlock], orr[host::kBlock];
+        const float* in[2] = { il, ir }; float* out[2] = { ol, orr };
+        double early = 0, late = 0; int ne = 0, nl = 0;
+        for (int b = 0; b < 480; b++) {                  // ~< one full sweep (midpoint ~block 250)
+            e2.process(in, out, host::kBlock);
+            for (size_t i = 0; i < host::kBlock; i++) {
+                if (b >= 20  && b < 120) { early += ol[i]; ne++; }   // playhead in first half (+)
+                if (b >= 330 && b < 430) { late  += ol[i]; nl++; }   // playhead in second half (-)
+            }
+        }
+        early = ne ? early/ne : 0; late = nl ? late/nl : 0;
+        std::printf("  playhead: early_mean=%+.4f late_mean=%+.4f\n", early, late);
+        check(early > 0.01f,  "playhead reads the FIRST half early (positive)");
+        check(late  < -0.01f, "playhead has ADVANCED to the second half later (negative) -> it moves");
+    }
+
     if (g_failures == 0) { std::printf("OK: cloud reads the buffer\n"); return 0; }
     std::printf("FAILED: %d - the cloud is NOT tracking the buffer (read bug, not SD-load)\n", g_failures);
     return 1;
