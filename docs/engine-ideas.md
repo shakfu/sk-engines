@@ -1,6 +1,8 @@
 # Engine ideas
 
-A scratchpad of candidate engines for the Spotykach platform. Each entry is a hypothesis: a DSP idea mapped onto the fixed hardware (dual deck, 7 knobs per deck, pads, transport, CV/gate, MIDI, SD) through the `IEngine` contract. Nothing here is committed; the point is to rank fit and cost before anyone writes a `*_engine.cpp`.
+A scratchpad of candidate engines for the Spotykach platform. Each entry is a hypothesis: a DSP idea mapped onto the fixed hardware (dual deck, 7 knobs per deck, pads, transport, CV/gate, MIDI, SD) through the `IEngine` contract. The point is to rank fit and cost before anyone writes a `*_engine.cpp`.
+
+**Status (2026-06):** several of these have since shipped, and a few shipped *differently* from the hypothesis here — those notes are kept because how the guess fared is the useful part. The shipped engines (with full, current docs) are in [`docs/engines/README.md`](engines/README.md); this file no longer tracks their details, only their origin as ideas. Shipped from this list: **#1 Resonator/Pluck** (`reso`), **#5 Shimmer reverb** (`reverb`, diverged — see below), **#7 Tape echo** (folded into `delay`'s Tape character), **#11 Grain cloud** (`graincloud`), **#12 Radio**. Engines that shipped without ever being ideas here: `tape`, `shuttle`, `gigaverb`, `chorus`, `dfilter`, `voice`, `passthrough`.
 
 Companion reading: `docs/engines/README.md` (the contract + the shared knob vocabulary), `docs/architecture.md` (platform/engine seam, memory model). Many of the DSP building blocks referenced below already exist as offline C++ in the sibling project [nanodsp](https://github.com/shakfu/nanodsp) (signalsmith-dsp, DaisySP, STK, madronalib, fxdsp, vafilters) — that catalogue is the main idea source. The caveat throughout: nanodsp is offline float32 Python over large buffers; this platform is hard-real-time on a 480 MHz Cortex-M7 with a 96-sample block and no heap on the audio path. An idea being "in nanodsp" proves the algorithm, not that it fits the budget. The feasibility notes call out where that gap bites.
 
@@ -28,28 +30,36 @@ The bare-metal budget (see [Feasibility](#feasibility-the-shared-constraints)) r
 
 | # | Engine | One-liner | Native 2-voice? | Transport | Primary DSP source | Cost |
 |---|---|---|---|---|---|---|
-| 1 | **Resonator / Pluck** | dual Karplus-Strong voice; reel/slice/drift switch applies continuous / plucked / scattered excitation | yes (2 voices, 4-6 via focus) | per-mode (strum/drift) | DaisySP `String`/`Pluck`, STK `Plucked`/modal | low |
+| 1 | **Resonator / Pluck** *(shipped: `reso`)* | dual resonator/pluck voice; reel/slice/drift switch applies continuous / plucked / scattered excitation | yes (2 voices) | per-mode (strum/drift) | shipped on MI **Rings**, not hand-rolled K-S | low |
 | 2 | **Ladder synth** | dual VA voice: band-limited osc + Moog ladder + env, sequenced | yes (2 voices) | yes (seq) | vafilters / DaisySP `MoogLadder`, PolyBLEP | low-med |
 | 3 | **West-coast** | complex osc: wavefold + lowpass-gate, FM between the two decks | yes (2 osc) | optional | DaisySP `Oscillator`, fxdsp wavefold, DaisySP `Lpg` | low |
 | 4 | **Vocoder** | deck A carrier x deck B modulator, channel-bank or formant | inherent (A/B roles) | no | nanodsp `vocoder`/`formant_filter` over [signalsmith](https://github.com/shakfu/nanodsp/tree/main/thirdparty/signalsmith) biquads | medium |
-| 5 | **Shimmer reverb** | FDN reverb with pitch-shifted feedback; dual = two spaces / send | yes (2 sends) | optional (gate) | [madronalib](https://github.com/shakfu/nanodsp/tree/main/thirdparty/madronalib) FDN | medium |
+| 5 | **Shimmer reverb** *(shipped: `reverb`, diverged)* | shipped as 3 Faust algos (Dattorro plate / Zita hall / Greyhole), mode-switch select; the shimmer-feedback idea landed in `delay` instead | per-route | optional (gate) | shipped on Faust demos, not madronalib FDN | medium |
 | 6 | **Frequency shifter** | single-sideband shift / barber-pole, ring-mod, tempo-LFO sweep | yes (2 shifters) | optional (LFO) | [fxdsp](https://github.com/shakfu/nanodsp/tree/main/thirdparty/fxdsp) `FreqShifter`, `RingModulator` | low |
-| 7 | **Tape echo** | wow/flutter + saturation + bitcrush over a synced delay | yes (2 lines) | yes (sync) | nanodsp `tape_echo`/`lo_fi` over [DaisySP](https://github.com/shakfu/nanodsp/tree/main/thirdparty/DaisySP) delay | low-med |
-| 8 | **Drone bank** | additive/modal oscillator bank, slow evolving pad | yes (2 banks) | optional (LFO) | STK modal, madronalib generators | low-med |
+| 7 | **Tape echo** *(shipped: in `delay`)* | wow/flutter + saturation over a synced delay — landed as `delay`'s **Tape** character (Clean/Tape/Shimmer mode switch), not a standalone engine | yes (2 lines) | yes (sync) | nanodsp `tape_echo`/`lo_fi` over [DaisySP](https://github.com/shakfu/nanodsp/tree/main/thirdparty/DaisySP) delay | low-med |
+| 8 | **Drone bank** *(partial: `voice`)* | additive/modal oscillator bank, slow evolving pad; the `voice` generated-Faust demo (osc → filter drone) covers the simplest case | yes (2 banks) | optional (LFO) | STK modal, madronalib generators | low-med |
 | 9 | **Euclidean delay** | multi-tap delay whose taps sit on a Euclidean grid | yes (2 lines) | yes (subscribe) | `dsp/cpattern` + delay line | low |
 | 10 | **Spectral freeze** | STFT freeze/blur of the live input, pad = capture | yes (2 freezes) | no | [signalsmith](https://github.com/shakfu/nanodsp/tree/main/thirdparty/signalsmith) STFT | high |
-| 11 | **Grain cloud** | polyphonic grain cloud (per-grain pitch/pan/position), the granular the looper *isn't* | yes (2 clouds) | optional | GrainflowLib | med-high |
+| 11 | **Grain cloud** *(shipped: `graincloud`)* | polyphonic grain cloud (per-grain pitch/pan/position), the granular the looper *isn't* | yes (2 clouds) | optional | shipped on a de-STL'd GrainflowLib port | med-high |
 | 12 | **Radio** *(shipped)* | dual virtual RadioMusic: two SD radios, free-running playhead, raw 16-bit stations | yes (2 radios) | no | SD streaming + raw codec | low |
 
 "Cost" is rough per-sample CPU + memory + integration effort, low to high. Tiers below group them.
 
-> **Shipped:** #12 **Radio** is implemented (`ENGINE=radio`) - it reuses the tape engine's `SPK_USE_STREAM` > streaming stack and adds a headerless raw-16-bit codec, a directory scan, and the free-running virtual > playhead. See [`docs/engines/radio.md`](engines/radio.md).
+> **Shipped from this list:**
+> - **#1 Resonator/Pluck** → `ENGINE=reso`, but built on Mutable Instruments **Rings** (modal / sympathetic / plucked / FM) rather than a hand-rolled Karplus-Strong loop. The reel/slice/drift → excitation-mode mapping below held up. See [`docs/engines/reso.md`](engines/reso.md).
+> - **#5 Shimmer reverb** → `ENGINE=reverb`, **diverged**: shipped as three all-Faust algorithms (Dattorro plate / Zita hall / Greyhole) selected live by the mode switch, *not* the madronalib FDN-with-pitched-feedback hypothesised here. The pitched-feedback "shimmer" idea instead became `delay`'s **Shimmer** character. A separate `gigaverb` (gen~) reverb also shipped. See [`docs/engines/reverb.md`](engines/reverb.md), [`docs/engines/gigaverb.md`](engines/gigaverb.md).
+> - **#7 Tape echo** → folded into `ENGINE=delay` as its **Tape** character (wow/flutter + saturation), one of the Clean/Tape/Shimmer mode-switch positions — not a standalone engine. See [`docs/engines/delay.md`](engines/delay.md).
+> - **#12 Radio** → `ENGINE=radio`, reusing the tape engine's `SPK_USE_STREAM` streaming stack plus a headerless raw-16-bit codec (now also `.wav`), a directory scan, and the free-running virtual playhead. See [`docs/engines/radio.md`](engines/radio.md).
+>
+> **Shipped without being ideas here:** `tape` (SD-streaming record/playback + tape FX), `shuttle` (RAM bipolar/reverse varispeed), `chorus` / `dfilter` / `voice` (the generated-Faust-engine demos), `passthrough` (the minimal reference engine). All documented in [`docs/engines/README.md`](engines/README.md).
 
 ---
 
 ## Tier A — cheap, high-fit, build these first
 
 ### 1. Resonator / Pluck (string-model voice, three modes)
+
+> **Shipped as `ENGINE=reso`** — see [`docs/engines/reso.md`](engines/reso.md). The design below is the original hypothesis; what shipped differs in its DSP core. Rather than the hand-rolled Karplus-Strong loop described here, `reso` wraps Mutable Instruments **Rings** (one `rings::Part` per deck), which provides modal / sympathetic-string / plucked-string / FM voices via the `Aux` model-select. The reel/slice/drift → excitation-mode mapping (continuous-input / triggered-pluck / scattered-scatter) is exactly as designed. The rest of this entry is retained as a record of the reasoning.
 
 **Concept.** One pitched physical-model voice per deck, built on a single shared kernel — a delay-line + one-pole-damping loop (Karplus-Strong / digital waveguide). The same kernel covers a *fed* resonant body and a *plucked* string; only how the loop is excited and read differs. So rather than two engines, this is **one engine whose three voicing modes are chosen by the reel/slice/drift switch** — the 3-position L/C/R mode selector that sits idle on every non-granular engine (edrums and `delay` already repurpose it). The switch picks the *excitation behaviour*; the existing `Aux` model-select (string / mallet / bell / bar / membrane) picks the *material*, orthogonally. Two axes over one cheap kernel — a richer instrument than either source idea alone, for the same DSP.
 
@@ -177,6 +187,8 @@ The three modes are not a metaphor for the switch's labels — they *are* those 
 
 ### 7. Tape echo / lo-fi
 
+> **Shipped — folded into `ENGINE=delay`** as its **Tape** character (wow/flutter read-pointer modulation + soft saturation in the feedback loop), one position of the Clean/Tape/Shimmer mode switch; the `delay` doc's wanted "lo-fi mode" and "ping-pong / cross-feedback" both landed there too. Not a standalone engine. See [`docs/engines/delay.md`](engines/delay.md). The hypothesis below predicted exactly this evolution of `delay`.
+
 **Concept.** A delay engine like the existing `delay`, but the wet path is run through a **tape model**: wow/flutter pitch modulation, soft saturation, bandwidth limiting, and optional bitcrush — the Space-Echo / lo-fi-dub character the clean delay deliberately omits. Two synced lines (A->L, B->R) with cross-feedback for ping-pong.
 
 **Why it fits.** Direct evolution of `delay` (which already borrows SDRAM, tempo-syncs, and has a pitch shifter on the wet tap). The new parts are cheap modulators and a saturator on a signal that already exists. The `delay` doc itself lists "ping-pong / cross-feedback" and "lo-fi mode" as wanted.
@@ -212,6 +224,8 @@ The three modes are not a metaphor for the switch's labels — they *are* those 
 
 ### 5. Shimmer reverb (FDN)
 
+> **Shipped as `ENGINE=reverb`, but diverged** — see [`docs/engines/reverb.md`](engines/reverb.md). What shipped is *a* reverb, but not this design: three all-Faust algorithms (Dattorro plate / Zita-rev1 hall / Greyhole), selected live by the Reel/Slice/Drift mode switch, rather than the madronalib 8x8 Hadamard FDN with a pitch-shifter in the loop proposed here. The shimmer (pitched-feedback) idea itself migrated to `delay`'s **Shimmer** character (+12 in the feedback path). A second reverb, `gigaverb` (gen~ method), also shipped. The FDN-shimmer below remains *unbuilt* as described — kept as a candidate if a dedicated shimmer engine is ever wanted.
+
 **Concept.** A feedback-delay-network reverb with a **pitch shifter inside the feedback loop**, so the tail blooms upward an octave (the Eno/shimmer sound). Dual deck = either two independent spaces (A small/plate, B cathedral) summed, or A = reverb send and B = its modulation/freeze.
 
 **Why it fits.** A lush "always-on" texture engine that processes the live input. An optional gated mode (`CapTransport`) syncs the gate length to tempo for rhythmic-reverb / gated-verb effects.
@@ -234,6 +248,8 @@ The three modes are not a metaphor for the switch's labels — they *are* those 
 **Capabilities.** `CapDualDeck | CapTransport | CapOwnDisplay | CapAux`. **Cost: medium.** Memory-bound more than CPU-bound; the pitch-shift-in-loop is the one fiddly part.
 
 ### 8. Drone bank (additive / modal)
+
+> **Partially realized by `ENGINE=voice`** — the generated-Faust `voice` demo is a single drone oscillator → resonant filter chain (osc on deck A, filter on deck B), which covers the simplest slice of this idea but not the detuned-partial / modal-bank stack with per-deck LFO drift described below. The full additive/modal drone bank is still unbuilt. See [`docs/engines/voice.md`](engines/voice.md).
 
 **Concept.** Each deck is a bank of detuned partials — an additive oscillator stack or a set of high-Q modal resonators — forming a slowly evolving drone/pad. Per-deck LFOs (the existing modulation infrastructure + `process_cv` outputs) drift the partials. Two decks = two stacked chords; the crossfader morphs between them.
 
@@ -258,6 +274,8 @@ The three modes are not a metaphor for the switch's labels — they *are* those 
 ---
 
 ### 11. Grain cloud (GrainflowLib)
+
+> **Shipped as `ENGINE=graincloud`** - see [`docs/engines/graincloud.md`](engines/graincloud.md) and the impl notes [`docs/dev/graincloud-impl.md`](dev/graincloud-impl.md). Built largely as designed below: a de-STL'd port of GrainflowLib (heap/throw/RTTI removed, fixed arena storage), fed the in-house SDRAM record buffer through the `gf_i_buffer_reader` seam, with the Max-patch glue (per-stream grain-clock + traversal phasors, stereo pan mixdown) rebuilt in the engine. The mandated scattered-read benchmark passed (CPU) and it fits SRAM_EXEC at ~87%; the on-device SDRAM random-access cost still needs a `METER` confirmation. The "extend the in-house Vox/Window" alternative below was not taken.
 
 **Concept.** A *second* granular engine — but a genuinely different model from the existing one. The shipping `granular` engine, despite its name, is a **dual tape-loop scanner**: even its cloud-like Drift mode runs a single voice with up to six overlapping windows that **share one pitch, one start position, one speed** (the "spray" is start-position jitter only). It cannot do per-grain pitch, per-grain pan, or dense polyphony. A grain-cloud engine fills exactly that gap: dozens of independent grains, each with its own pitch/transpose, buffer position, pan, duration, direction, and per-grain randomization — a synthesizer-style grain cloud rather than a looper. Two decks = two clouds (or one cloud + its modulator), morphed by the crossfader.
 
@@ -324,14 +342,18 @@ A practical implication: prototype the DSP in nanodsp (offline, fast to iterate,
 
 ## Suggested order
 
-1. **Resonator / Pluck (#1)** — lowest cost, immediately expressive, reuses the `Aux` model-select seam *and* the idle reel/slice/drift mode switch. Best proof that the platform hosts a pitched physical-model voice. Build the **Slice** (pluck/strum) mode first as the headline; **Reel** (sympathetic body) and **Drift** (scatter/modal) then reuse the same loop kernel for almost nothing — three voicing modes over one cheap DSP core.
+The original order is kept for context; strike-throughs mark what shipped.
 
-2. **West-coast (#3)** or **Frequency shifter (#6)** — both cheap and distinctive; #3 if you want a synth, #6 if you want an input effect.
+1. ~~**Resonator / Pluck (#1)**~~ — **shipped** as `reso` (on MI Rings). The proof that the platform hosts a pitched physical-model voice held up.
 
-3. **Tape echo (#7)** — forks the working `delay` engine, so high value per effort.
+2. **West-coast (#3)** or **Frequency shifter (#6)** — both cheap and distinctive and **still unbuilt**; #3 if you want a synth, #6 if you want an input effect. The strongest remaining Tier-A candidates.
 
-4. **Ladder synth (#2)** — the most complete standalone instrument once the sequencer UI is in.
+3. ~~**Tape echo (#7)**~~ — **shipped**, folded into `delay`'s Tape character rather than as its own engine.
 
-5. **Spectral freeze (#10)** — only after the cheap wins land, as a deliberate research milestone.
+4. **Ladder synth (#2)** — the most complete standalone instrument once the sequencer UI is in; **still unbuilt**, now the headline Tier-B target.
+
+5. **Spectral freeze (#10)** — only after the cheap wins land, as a deliberate research milestone. Still the research milestone.
+
+Also already landed off this list: a reverb (`reverb` + `gigaverb`, though not the #5 FDN-shimmer design) and `radio` (#12).
 
 These are hypotheses to shoot down, not a roadmap. The open question for each is the same: does it play well within the two-deck / seven-knob / shared-clock grammar, or is it fighting it? The ones that fit (resonator, west-coast, vocoder's two-role split) are worth more than algorithmically fancier ideas that don't.

@@ -72,7 +72,7 @@ The `ParamId` names are granular-flavored (the platform's vocabulary), but a non
 ## Building and flashing a variant
 
 ```text
-make -j8 ENGINE=granular      # default; also: delay | edrums | reso | tape | shuttle | reverb | gigaverb | radio | chorus | dfilter | voice | passthrough
+make -j8 ENGINE=granular      # default; also: delay | edrums | reso | graincloud | tape | shuttle | reverb | gigaverb | radio | chorus | dfilter | voice | passthrough
 make ENGINE=edrums program-dfu
 make engine-edrums            # one-shot: clean + build + flash (device in DFU mode)
 make check-boundary           # platform (hw/ui/memory/transport) must not include engine/granular/
@@ -88,6 +88,7 @@ The **Built via** column links to the development method ([`../engine-types/`](.
 | Stereo delay | `delay` | tempo-synced delay; Clean/Tape/Shimmer characters (mode switch) + Stereo/DoubleMono/Ping-pong topologies (route switch); tone, modulation LFO, Play-pad freeze | [native C++](../engine-types/cpp.md) | [delay.md](delay.md) |
 | Edrums | `edrums` | dual Euclidean drum machine (synthesized) | [native C++](../engine-types/cpp.md) | [edrums.md](edrums.md) |
 | Reso | `reso` | dual resonator / pluck voice (Mutable Instruments Rings DSP) | [native C++](../engine-types/cpp.md) | [reso.md](reso.md) |
+| Grain cloud | `graincloud` | dual polyphonic grain cloud (per-grain pitch/pan/position) over a recorded buffer; de-STL'd GrainflowLib port | [native C++](../engine-types/cpp.md) | [graincloud.md](graincloud.md) |
 | Tape | `tape` | dual streaming SD record/playback decks (no in-memory length cap) + tape FX (wow/flutter, hysteresis) | [native C++](../engine-types/cpp.md) + [Faust](../engine-types/faust.md) | [tape.md](tape.md) |
 | Shuttle | `shuttle` | buffer-based bipolar/reverse varispeed tape (four in-RAM tracks; capstan-speed PITCH, per-track loop window) | [native C++](../engine-types/cpp.md) | [shuttle.md](shuttle.md) |
 | Reverb | `reverb` | route-aware stereo reverb, three all-Faust algorithms (Dattorro plate / Zita hall / Greyhole), Reel/Slice/Drift switch selects; DoubleMono = two mono plates (heavy hall/greyhole are stereo-only) | [Faust](../engine-types/faust.md) | [reverb.md](reverb.md) |

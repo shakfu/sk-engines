@@ -32,7 +32,7 @@ CMAKE_FLAGS += -DLOFI_INT16=1
 endif
 
 .PHONY: all build configure clean check-boundary program-dfu program-boot \
-        engine-granular engine-passthrough engine-delay engine-edrums engine-reso engine-tape \
+        engine-granular engine-passthrough engine-delay engine-edrums engine-reso engine-graincloud engine-tape \
         engine-reverb engine-shuttle engine-radio engine-gigaverb \
         faust-gen gen-engines test-scripts test-scripts-deps
 
@@ -80,6 +80,8 @@ engine-edrums:
 	$(MAKE) -f $(THIS) ENGINE=edrums build program-dfu
 engine-reso:
 	$(MAKE) -f $(THIS) ENGINE=reso build program-dfu
+engine-graincloud:
+	$(MAKE) -f $(THIS) ENGINE=graincloud build program-dfu
 engine-tape:
 	$(MAKE) -f $(THIS) ENGINE=tape build program-dfu
 engine-reverb:

@@ -85,6 +85,16 @@ ENGINE_SOURCES = src/engine/reso/reso_engine.cpp \
 	$(RESO_TP)/rings/dsp/resonator.cc $(RESO_TP)/rings/dsp/fm_voice.cc \
 	$(RESO_TP)/rings/resources.cc \
 	$(RESO_TP)/stmlib/dsp/units.cc $(RESO_TP)/stmlib/utils/random.cc $(RESO_TP)/stmlib/dsp/atan.cc
+else ifeq ($(ENGINE), graincloud)
+C_DEFS += -DSPK_ENGINE_GRAINCLOUD
+# GrainflowLib's gfSyn pulls M_PI via <cmath>, which strict -std=c++17 does not expose on arm-none-eabi.
+C_DEFS += -DM_PI=3.14159265358979323846
+# graincloud's DSP is a de-STL'd port of GrainflowLib (header-only, no heap on the audio path), vendored
+# under src/engine/graincloud/thirdparty/grainflow/. GRAINCLOUD_INC scopes that include to this build
+# (referenced from C_INCLUDES below; empty for other engines). The engine itself is one .cpp.
+GRAINCLOUD_TP  = src/engine/graincloud/thirdparty
+GRAINCLOUD_INC = -I$(GRAINCLOUD_TP)
+ENGINE_SOURCES = src/engine/graincloud/graincloud_engine.cpp
 # gen~ engines (ENGINE=gen_<name>) are appended below by scripts/gen_engine.py, one marker-delimited
 # `else ifeq` block per export. They use the genlib-isolation bridge from gen-dsp + the shared
 # src/engine/gen/ family (GenEngine<W> + the arena-bound genlib runtime). See `make gen-engines`.
@@ -123,7 +133,7 @@ C_DEFS += -DSPK_ENGINE_VOICE
 ENGINE_SOURCES =
 # <<< faust:voice <<<
 else
-$(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', 'edrums', 'reso', 'tape', 'reverb', 'shuttle', 'radio', 'chorus', 'dfilter', or 'voice')
+$(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', 'edrums', 'reso', 'graincloud', 'tape', 'reverb', 'shuttle', 'radio', 'chorus', 'dfilter', or 'voice')
 endif
 
 # Opt-in (make ... METER=1): enable the on-device CPU load meter (app.cpp's CpuLoadMeter). It writes
@@ -161,7 +171,7 @@ APP_TYPE = BOOT_SRAM
 LDSCRIPT = alt_sram.lds
 BOOT_BIN = bootloader-spotykach-v2.bin
 
-C_INCLUDES = -Isrc/ -Ilib/ $(RESO_INC) $(GEN_INC)
+C_INCLUDES = -Isrc/ -Ilib/ $(RESO_INC) $(GRAINCLOUD_INC) $(GEN_INC)
 # NOTE: there used to be `C_USR_FLAGS = -ffast-math -funroll-loops` here, but the core Makefile reads
 # C_USER_FLAGS (with the E), so it was dead - those flags never reached the compiler and the shipping
 # firmware was built without them. Removed to stop it reading as active. The device meets its CPU/SRAM
@@ -238,7 +248,7 @@ all: check-boundary
 
 # One-shot variant flash: clean -> build -> flash over DFU. Put the device in DFU mode first
 # (hold Reset ~3s until the bottom pad LEDs breathe white), then `make granular` / `make passthrough`.
-.PHONY: engine-granular engine-passthrough engine-delay engine-edrums engine-reso engine-tape engine-shuttle engine-reverb engine-radio engine-chorus engine-dfilter engine-voice engine-gigaverb
+.PHONY: engine-granular engine-passthrough engine-delay engine-edrums engine-reso engine-graincloud engine-tape engine-shuttle engine-reverb engine-radio engine-chorus engine-dfilter engine-voice engine-gigaverb
 engine-granular:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=granular
@@ -263,6 +273,11 @@ engine-reso:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=reso
 	$(MAKE) ENGINE=reso program-dfu
+
+engine-graincloud:
+	$(MAKE) clean
+	$(MAKE) -j8 ENGINE=graincloud
+	$(MAKE) ENGINE=graincloud program-dfu
 
 engine-tape:
 	$(MAKE) clean

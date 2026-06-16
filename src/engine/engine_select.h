@@ -22,6 +22,9 @@
 #elif defined(SPK_ENGINE_RESO)
   #include "engine/reso/reso_engine.h"
   namespace spotykach { using ActiveEngine = ResoEngine; }
+#elif defined(SPK_ENGINE_GRAINCLOUD)
+  #include "engine/graincloud/graincloud_engine.h"
+  namespace spotykach { using ActiveEngine = GraincloudEngine; }
 #elif defined(SPK_ENGINE_TAPE)
   #include "engine/tape/tape_engine.h"
   namespace spotykach { using ActiveEngine = TapeEngine; }
@@ -56,5 +59,5 @@
   namespace spotykach { using ActiveEngine = VoiceEngine; }
 // <<< faust:voice <<<
 #else
-  #error "No engine selected: build with ENGINE=granular (default), passthrough, delay, edrums, reso, tape, reverb, shuttle, radio, or chorus"
+  #error "No engine selected: build with ENGINE=granular (default), passthrough, delay, edrums, reso, graincloud, tape, reverb, shuttle, radio, or chorus"
 #endif

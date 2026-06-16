@@ -82,6 +82,16 @@ elseif(ENGINE STREQUAL reso)
     set(ENGINE_DEFINES M_PI=3.14159265358979323846)
     # Rings (~30 KB of code+tables) overflows the 186 KB execution SRAM at -O2; build reso at -Os to fit.
     set(APP_OPT -Os)
+elseif(ENGINE STREQUAL graincloud)
+    set(ENGINE_DEFINE SPK_ENGINE_GRAINCLOUD)
+    # graincloud's DSP is a de-STL'd port of GrainflowLib (header-only, no heap on the audio path),
+    # vendored under src/engine/graincloud/thirdparty/grainflow/. Self-contained; one engine .cpp.
+    set(GRAINCLOUD_TP ${CMAKE_CURRENT_SOURCE_DIR}/src/engine/graincloud/thirdparty)
+    set(ENGINE_SOURCES src/engine/graincloud/graincloud_engine.cpp)
+    set(ENGINE_INCLUDES ${GRAINCLOUD_TP})
+    # gfSyn pulls M_PI via <cmath>, which strict -std=c++17 does not expose on arm-none-eabi.
+    set(ENGINE_DEFINES M_PI=3.14159265358979323846)
+    # Fits SRAM_EXEC at -O2 (~87%), so no -Os override needed.
 elseif(ENGINE STREQUAL tape)
     set(ENGINE_DEFINE SPK_ENGINE_TAPE)
     # Engine wrapper (tape_engine.cpp); its SD streaming service lives in src/hw/ (stream_deck.cpp,
@@ -147,7 +157,7 @@ elseif(ENGINE STREQUAL voice)
     set(ENGINE_SOURCES)
 # <<< faust:voice <<<
 else()
-    message(FATAL_ERROR "Unknown ENGINE '${ENGINE}' - use granular, passthrough, delay, edrums, reso, tape, reverb, shuttle, radio, or gigaverb")
+    message(FATAL_ERROR "Unknown ENGINE '${ENGINE}' - use granular, passthrough, delay, edrums, reso, graincloud, tape, reverb, shuttle, radio, or gigaverb")
 endif()
 
 # Source list = the Makefile's CPP_SOURCES, with the wildcard dirs expanded the same way.

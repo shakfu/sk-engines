@@ -1,0 +1,38 @@
+{
+  "engine": "graincloud",
+  "title": "Grain cloud - polyphonic grain cloud (GrainflowLib)",
+  "subtitle": "two clouds scattered over a recorded buffer",
+
+  "knobs": {
+    "Pitch": "grain transpose (+V/Oct, MIDI); Alt = select loop slot (SD)",
+    "Position": "cloud centre position in the buffer",
+    "Size": "position spray (spread of grain start points)",
+    "Envelope": "grain duration / window",
+    "Mix (SOS)": "dry/wet",
+    "Cycle": "grain density (grains/sec)",
+    "Glow": "pitch + pan spray (per-grain randomization)"
+  },
+
+  "pads": {
+    "Play": "Alt+Play: record live input into this deck (toggle)",
+    "Reverse": "Alt+Rev: record live input into this deck (toggle)",
+    "Grit": "-",
+    "Flux": "-",
+    "Seq": "-"
+  },
+
+  "ring": "cloud level meter + position dot",
+  "crossfade": "morph between the two clouds (A/B)",
+
+  "switches": {
+    "Mode (L/C/R)": "grain direction: forward / reverse / random",
+    "Routing (L/C/R)": "-",
+    "CV target (U/C/D)": "-",
+    "Out trims A/B": "output trims"
+  },
+
+  "transport": { "Tap": "tap tempo (density sync)", "Spot": "-" },
+  "cv":   { "Size/Pos A/B": "-", "Mix A/B": "-", "V/Oct A/B": "grain transpose (1V/oct)", "Crossfade CV": "A/B cloud morph" },
+  "gates": { "Gate in A/B": "-", "Gate out A/B": "-" },
+  "mod_midi": { "Mod CV out A/B": "-" }
+}

@@ -8,6 +8,8 @@ CXX      ?= clang++
 ROOT      = ..
 # reso's vendored Rings/stmlib DSP, colocated under the engine and trimmed to the used closure.
 RESO_TP   = $(ROOT)/src/engine/reso/thirdparty
+# graincloud's vendored, de-STL'd GrainflowLib (header-only) - the grain-cloud kernel.
+GRAINCLOUD_TP = $(ROOT)/src/engine/graincloud/thirdparty
 BUILD     = build
 TARGET    = $(BUILD)/host_spotykach
 
@@ -17,7 +19,7 @@ DAISYSP   = $(ROOT)/lib/DaisySP/Source
 # must be on the include path. src/transport/ headers (transport.h) likewise pull siblings
 # (synclock.h/tempo.h) by bare name, so that dir is on the path too for TUs that include the transport.
 DAISYSP_INC = $(addprefix -I,$(wildcard $(DAISYSP)/*/))
-INCLUDES  = -Ishim -I$(ROOT)/src -I$(ROOT)/src/transport -I$(RESO_TP) -I. -I$(DAISYSP) $(DAISYSP_INC)
+INCLUDES  = -Ishim -I$(ROOT)/src -I$(ROOT)/src/transport -I$(RESO_TP) -I$(GRAINCLOUD_TP) -I. -I$(DAISYSP) $(DAISYSP_INC)
 # -DTEST selects stmlib's portable C paths (the ARM ssat/usat asm is gated behind #ifndef TEST), so
 # the Rings DSP (under $(RESO_TP)) compiles on the desktop. Unused elsewhere in this repo.
 CXXFLAGS  = -std=c++17 -O2 -DTEST -Wall -Wno-unused-variable -Wno-unused-but-set-variable $(INCLUDES)
@@ -38,6 +40,8 @@ LIB_SRC     = $(CORE_SRC) $(DSP_SRC) $(TRANSPORT_SRC) $(ENGINE_SRC) $(DAISYSP_SR
 DELAY_SRC   = $(ROOT)/src/engine/delay/delay_engine.cpp
 EDRUMS_SRC  = $(ROOT)/src/engine/edrums/edrums_engine.cpp
 RESO_SRC    = $(ROOT)/src/engine/reso/reso_engine.cpp
+# graincloud engine (self-contained; the de-STL'd GrainflowLib it uses is header-only under $(GRAINCLOUD_TP)).
+GRAINCLOUD_SRC = $(ROOT)/src/engine/graincloud/graincloud_engine.cpp
 # The reverb engine's adapter; its Faust kernels are checked-in headers (engine/reverb/faust_kernel_*.h,
 # portable C++) pulled by the .cpp, so no extra sources are needed.
 REVERB_SRC  = $(ROOT)/src/engine/reverb/reverb_engine.cpp
@@ -66,9 +70,12 @@ TEST_CHORUS  = $(BUILD)/test_chorus
 TEST_DFILTER = $(BUILD)/test_dfilter
 TEST_VOICE   = $(BUILD)/test_voice
 TEST_DELAY   = $(BUILD)/test_delay
+TEST_GRAINCLOUD        = $(BUILD)/test_graincloud
+TEST_GRAINCLOUD_KERNEL = $(BUILD)/test_graincloud_kernel
 BENCH_REVERB     = $(BUILD)/bench_reverb
+BENCH_GRAINCLOUD = $(BUILD)/bench_graincloud
 
-.PHONY: all clean run test test-granular test-edrums test-reso test-reverb test-delay test-tape test-stream test-shuttle test-radio test-chorus test-dfilter test-voice bench-reverb
+.PHONY: all clean run test test-granular test-edrums test-reso test-graincloud test-graincloud-kernel test-reverb test-delay test-tape test-stream test-shuttle test-radio test-chorus test-dfilter test-voice bench-reverb bench-graincloud
 all: $(TARGET)
 
 $(TARGET): $(SRC) | $(BUILD)
@@ -82,6 +89,18 @@ $(TEST_EDRUMS): test_edrums_slots.cpp $(LIB_SRC) $(EDRUMS_SRC) | $(BUILD)
 
 $(TEST_RESO): test_reso.cpp $(LIB_SRC) $(RESO_SRC) $(RINGS_SRC) | $(BUILD)
 	$(CXX) $(CXXFLAGS) test_reso.cpp $(LIB_SRC) $(RESO_SRC) $(RINGS_SRC) -o $@
+
+# graincloud engine test (links the engine + LIB_SRC for DisplayModel/LEDRing/transport).
+$(TEST_GRAINCLOUD): test_graincloud.cpp $(LIB_SRC) $(GRAINCLOUD_SRC) $(ROOT)/src/engine/graincloud/graincloud_engine.h | $(BUILD)
+	$(CXX) $(CXXFLAGS) test_graincloud.cpp $(LIB_SRC) $(GRAINCLOUD_SRC) -o $@
+
+# graincloud kernel smoke test (the de-STL'd GrainflowLib only; no engine/LIB deps).
+$(TEST_GRAINCLOUD_KERNEL): test_graincloud_kernel.cpp $(wildcard $(GRAINCLOUD_TP)/grainflow/*.h) | $(BUILD)
+	$(CXX) $(CXXFLAGS) test_graincloud_kernel.cpp -o $@
+
+# graincloud scattered-read benchmark (self-contained; the #11 feasibility gate).
+$(BENCH_GRAINCLOUD): bench_graincloud.cpp | $(BUILD)
+	$(CXX) $(CXXFLAGS) bench_graincloud.cpp -o $@
 
 # The generated Faust kernels are headers (not in $(*_SRC)), so list them explicitly as prerequisites
 # - else `make faust-gen` followed by `make test-*` would relink against a stale binary.
@@ -141,7 +160,7 @@ run: $(TARGET)
 
 # `test` runs both engine harnesses. Both inject the transport via EngineContext (granular drives the
 # real platform Transport; edrums uses a small stub ITransport) - the post-transport-decoupling way.
-test: test-granular test-edrums test-reso test-reverb test-delay test-tape test-stream test-shuttle test-radio test-chorus test-dfilter test-voice
+test: test-granular test-edrums test-reso test-graincloud test-graincloud-kernel test-reverb test-delay test-tape test-stream test-shuttle test-radio test-chorus test-dfilter test-voice
 
 test-granular: $(TEST)
 	./$(TEST)
@@ -151,6 +170,15 @@ test-edrums: $(TEST_EDRUMS)
 
 test-reso: $(TEST_RESO)
 	./$(TEST_RESO)
+
+test-graincloud: $(TEST_GRAINCLOUD)
+	./$(TEST_GRAINCLOUD)
+
+test-graincloud-kernel: $(TEST_GRAINCLOUD_KERNEL)
+	./$(TEST_GRAINCLOUD_KERNEL)
+
+bench-graincloud: $(BENCH_GRAINCLOUD)
+	./$(BENCH_GRAINCLOUD)
 
 test-reverb: $(TEST_REVERB)
 	./$(TEST_REVERB)
