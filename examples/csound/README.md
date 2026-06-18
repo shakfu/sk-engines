@@ -19,9 +19,10 @@ The centre mode LED is cyan for an SD patch, white for the built-in. MIDI NoteOn
 
 - `0.csd` — clean two-saw "fifth" chord (drone, knob-controlled; MIDI adds plucks over the top).
 - `1.csd` — fat detuned super-saw with a sub-octave (drone; obviously different, for testing live switching).
-- `2.csd` — **MIDI-driven**: the keyboard plays the main super-saw voice, no drone. Silent until you
-  play. NoteOn-only means each note is a fixed ~0.6 s stab (polyphonic; chords work), not a
-  hold-while-pressed pad.
+- `2.csd` — **MIDI-driven, polyphonic**: the keyboard plays the main voice, no drone. Silent until you
+  play. NoteOn-only means each note is a fixed ~0.6 s stab (chords work), not a hold-while-pressed pad.
+  Voices accumulate into a global bus that an always-on instrument `tanh`-limits, so polyphony can't
+  hard-clip `0dbfs` (the standard Csound pattern — a per-voice `outs` would sum to distortion).
 
 ## Writing your own
 
