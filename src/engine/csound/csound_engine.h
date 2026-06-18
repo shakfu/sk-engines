@@ -41,10 +41,16 @@ public:
     // TODO: pads (on_play_pad -> schedule/stop instruments); per-knob ring markers.
 
 private:
+    // Create a Csound instance, apply the host-IO options, compile `text` (a CSD document) and start.
+    // Leaves _cs valid + _ksmps set on success; destroys the instance and returns false on failure
+    // (so a caller can retry with a different orchestra). See init().
+    bool try_compile(const char* text, float block_size);
+
     CSOUND* _cs        = nullptr;   // null => compile/create failed; process() outputs silence
     float   _sr        = 48000.f;
     int     _ksmps     = 0;         // == the platform block size (set via --ksmps in init)
     float   _level     = 0.f;       // output peak meter (written in process(), read in render())
+    bool    _patch_loaded = false;  // true => running an SD /csound/patch.csd; false => built-in
 
     // Cached 0..1 knob values for param() pickup readback, one slot per mapped (ParamId, deck).
     static constexpr int kSlots = 8;     // small fixed map; grow as the control vocabulary grows

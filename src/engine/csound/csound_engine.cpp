@@ -5,8 +5,10 @@
 // BOOT_QSPI build; not part of the SRAM engine bundle. See csound_engine.h / docs/dev/csound.md.
 
 #include "engine/csound/csound_engine.h"
+#include "engine/csound/csound_patch.h"   // select_orchestra(): SD /csound/patch.csd, built-in fallback
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #include "csound.h"   // provided by the QSPI build's -I.../Daisy/include/csound
@@ -18,9 +20,11 @@ namespace spotykach {
 void csound_heap_arm() noexcept;
 
 // ---------------------------------------------------------------------------------------------
-// Orchestra. Compiled in for now; later this can be loaded from SD via ctx.stream, or selected
-// from a set of .csd files (the Aux capability). The control channels it reads with chnget are the
-// engine's param vocabulary - keep them in sync with channel_for() below.
+// Built-in fallback orchestra. The engine prefers an SD patch (/csound/patch.csd via select_orchestra
+// in csound_patch.h) and uses this when there is no card/file, the file isn't a CSD, or it fails to
+// compile - so a card-less unit always makes sound. The control channels it reads with chnget are the
+// engine's param vocabulary - keep them in sync with channel_for() below; an SD patch is free to name
+// the same channels (speedA/mixA/sizeA/envA + B) to be driven by the same knobs.
 //
 // Instruments are triggered with schedule() IN the orchestra, NOT a score `i` event (a score event
 // did not fire on-target). Oscillators are table-less (vco2) to dodge the ftgen-at-init silence.
@@ -66,17 +70,14 @@ static const char* channel_for(ParamId id, DeckRef::Ref d, int& slot)
     }
 }
 
-void CsoundEngine::init(const EngineContext& ctx)
-{
-    _sr = ctx.sample_rate;
+// Scratch buffer size for an SD-loaded orchestra. A CSD patch is a few KB; 64 KB is generous head-
+// room. It is malloc'd from the (now armed) SDRAM pool, used only during compile, then freed.
+static constexpr int kPatchMax = 64 * 1024;
 
-    // Route Csound's allocations (MBs at create/compile) to the SDRAM bump pool in csound_alloc.cpp:
-    // the platform's default heap stays in SRAM (global ctors malloc before _hw.Init() powers up the
-    // FMC, so a heap in SDRAM would fault there). Arm AFTER _hw.Init() (we're past it) and before
-    // csoundCreate. ctx.arena is unused - Csound's heap comes from this pool.
-    csound_heap_arm();
+bool CsoundEngine::try_compile(const char* text, float block_size)
+{
     _cs = csoundCreate(nullptr, nullptr);
-    if (!_cs) return;
+    if (!_cs) return false;
 
     csoundSetHostAudioIO(_cs);                 // host owns I/O; we feed spin / drain spout
     csoundSetOption(_cs, "-n");                 // no Csound-managed audio device
@@ -86,16 +87,43 @@ void CsoundEngine::init(const EngineContext& ctx)
     // The QSPI build should use a block of >=128 (256 is proven): at ksmps=32 Csound's per-cycle
     // overhead overruns the CPU.
     char opt[24];
-    std::snprintf(opt, sizeof(opt), "--ksmps=%d", static_cast<int>(ctx.block_size));
+    std::snprintf(opt, sizeof(opt), "--ksmps=%d", static_cast<int>(block_size));
     csoundSetOption(_cs, opt);
 
-    // TODO: load the orchestra from SD (ctx.stream) instead of the compiled-in string.
-    if (csoundCompileCSD(_cs, kOrchestra, 1, 0) != 0) {
-        _cs = nullptr;                         // compile failed -> stay silent (see process())
-        return;
+    if (csoundCompileCSD(_cs, text, 1, 0) != 0) {
+        csoundDestroy(_cs);                    // free the partial instance (the pool reclaims it now)
+        _cs = nullptr;                         // failed -> caller may retry, else process() is silent
+        return false;
     }
     csoundStart(_cs);
     _ksmps = csoundGetKsmps(_cs);              // == block size; guards the process() copy
+    return true;
+}
+
+void CsoundEngine::init(const EngineContext& ctx)
+{
+    _sr = ctx.sample_rate;
+
+    // Route Csound's allocations (MBs at create/compile) to the SDRAM pool in csound_alloc.cpp: the
+    // platform's default heap stays in SRAM (global ctors malloc before _hw.Init() powers up the FMC,
+    // so a heap in SDRAM would fault there). Arm AFTER _hw.Init() (we're past it) and before
+    // csoundCreate. ctx.arena is unused - Csound's heap comes from this pool.
+    csound_heap_arm();
+
+    // Orchestra source: an SD patch (/csound/patch.csd) if present + valid, else the built-in
+    // kOrchestra. The scratch is carved from the armed SDRAM pool and freed right after compile -
+    // csoundCompileCSD parses the text in-call and does not retain it, and free() reclaims now (#2).
+    char* buf = static_cast<char*>(std::malloc(kPatchMax));
+    bool  from_sd = false;
+    const char* orc = select_orchestra(ctx.stream, buf, buf ? kPatchMax : 0, kOrchestra, &from_sd);
+
+    bool ok = try_compile(orc, ctx.block_size);
+    if (!ok && from_sd) {                      // a bad SD patch must not cost audio: use the built-in
+        from_sd = false;
+        ok = try_compile(kOrchestra, ctx.block_size);
+    }
+    if (buf) std::free(buf);
+    _patch_loaded = ok && from_sd;             // _cs is null when !ok -> process() outputs silence
 }
 
 void CsoundEngine::prepare()
@@ -187,7 +215,9 @@ void CsoundEngine::render(DisplayModel& m)
         m.ring[i].set_updated();
     }
 
-    m.mode_center = { 0xffffff, 0.5f };             // stereo route
+    // Centre mode LED doubles as a patch-source tell: cyan = running an SD /csound/patch.csd,
+    // white = the compiled-in built-in orchestra.
+    m.mode_center = { _patch_loaded ? 0x00c0ffu : 0xffffffu, 0.5f };
 }
 
 } // namespace spotykach
