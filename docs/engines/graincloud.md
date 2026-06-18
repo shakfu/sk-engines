@@ -11,7 +11,9 @@ A polyphonic grain **cloud** (engine #11 in [`docs/engine-ideas.md`](../engine-i
 **Exactly like the granular engine** - same record, save/load, pad and transport gestures. If you know granular, you know graincloud. The only difference is the sound: instead of granular's tape-loop scanning, the recorded buffer is granulated into a continuous cloud (it plays whenever a deck has audio; there is no separate "play").
 
 - **Record** the live input: hold **Alt + Play** (or **Alt + Rev**) on a deck (Play LED turns red); press again to stop.
+
 - **Save / load** to the SD card: **TAP-hold + Play** to enter slot-select, turn **PITCH** to choose a slot, then **Alt + Play** to save / **Alt + Rev** (or plain Play) to load. (Granular's storage UX.)
+
 - **Crossfader** blends deck A vs B; record into the deck you're listening to.
 
 ## Controls

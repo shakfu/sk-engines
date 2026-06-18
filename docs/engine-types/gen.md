@@ -59,6 +59,7 @@ The generator resolves each control name to a `ParamId` (shared with Faust; modi
   - `manifest.json` - the front-end-agnostic IR (I/O counts, params with min/max/default, buffers).
 
   - `<name>.json` - the **hand-authored manifest** (`knobs` map + the `export` path); the one file you write.
+
   - `<name>_engine.h` - the per-engine glue (traits struct + `ParamId` map), **generated from the manifest** (or a positional default to bootstrap); re-running the generator preserves it unless `--force-glue`.
 
 - `scripts/gen_engine.py` - the host-side code generator (driver around gen-dsp).

@@ -3,7 +3,7 @@
 // EngineContext, init()s the engine, drives process() from the audio callback and set_param() from
 // the Pod's two knobs. This is the minimal proof that CsoundEngine works behind the contract.
 //
-// Build (from csound-poc/):  make            (Makefile targets the harness)
+// Build (from pod/):  make            (Makefile targets the harness)
 // Flash:                     while ! make program-dfu; do sleep 0.2; done   (then tap RESET)
 
 #include "daisy_seed.h"
@@ -11,6 +11,12 @@
 
 using namespace daisy;
 using namespace daisy::seed;
+
+// CsoundEngine::init() calls csound_heap_arm() to arm the spotykach build's dual SDRAM pool
+// (csound_alloc.cpp, linked there via --wrap). This Pod build does NOT use that machinery - it puts
+// Csound's heap straight in SDRAM via the Csound-port QSPI linker script (newlib malloc). So provide
+// a no-op definition here to satisfy the symbol; Csound just allocates from the linker-script heap.
+namespace spotykach { void csound_heap_arm() noexcept {} }
 
 static const int kBlock = 256;   // Csound-friendly block; becomes ksmps inside the engine
 

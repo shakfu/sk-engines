@@ -1,0 +1,175 @@
+# GENERATED from controls-template.d2 by scripts/gen_controls_diagram.py.
+# Edit the JSON spec (csound.json), not this file; then re-run / `make diagrams`.
+
+direction: up
+
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    pad: 40
+  }
+}
+
+title: |md
+  # Csound - a full Csound 7 synth; the patch (.csd) defines the sound
+  _SD patch bank (Alt+PITCH live-switches) + MIDI_
+| {
+  near: top-center
+  style.font-size: 26
+}
+
+classes: {
+  knob:   { style: { fill: "#ebf4ff"; stroke: "#90cdf4"; stroke-width: 2 } }
+  pad:    { style: { fill: "#fffaf0"; stroke: "#fbd38d"; stroke-width: 2 } }
+  shared: { style: { fill: "#faf5ff"; stroke: "#d6bcfa"; stroke-width: 2 } }
+  io:     { style: { fill: "#f0fff4"; stroke: "#9ae6b4"; stroke-width: 2 } }
+}
+
+panel: Front panel {
+  grid-columns: 3
+  grid-gap: 60
+  style.stroke: "#cbd5e0"
+
+  # ----------------------------------------------------------------- DECK A
+  deckA: Deck A {
+    style.stroke: "#90cdf4"
+
+    knobsA: Knobs (7) {
+      class: knob
+      shape: sql_table
+      Pitch: "chan speedA (built-in: pitch); Alt = PATCH select"
+      Position: "-"
+      Size: "chan sizeA (built-in: brightness)"
+      Envelope: "chan envA"
+      "Mix (SOS)": "chan mixA (built-in: level); Alt = chan fbA"
+      Cycle: "chan modspA"
+      Glow: "chan modampA"
+    }
+
+    padsA: Pads (5) {
+      class: pad
+      shape: sql_table
+      Play: "-"
+      Reverse: "-"
+      Grit: "-"
+      Flux: "-"
+      Seq: "-"
+    }
+
+    ringA: "LED Ring A (32px)" {
+      class: knob
+      shape: circle
+      label: "Ring A\noutput level meter; patch-select dots (Alt held)"
+    }
+  }
+
+  # --------------------------------------------------------------- SHARED
+  center: Shared / Transport {
+    style.stroke: "#d6bcfa"
+
+    xfade: Crossfade {
+      class: shared
+      shape: sql_table
+      Crossfade: "-"
+    }
+
+    switches: Switches (74HC165) {
+      class: shared
+      shape: sql_table
+      "Mode (L/C/R)": "-"
+      "Routing (L/C/R)": "-"
+      "CV target (U/C/D)": "-"
+      "Out trims A/B": "output trims"
+    }
+
+    transport: Transport {
+      class: shared
+      shape: sql_table
+      Tap: "-"
+      Alt:  "modifier (held)"
+      Spot: "-"
+    }
+
+    clockled: "Clock LED" {
+      class: shared
+      shape: circle
+      label: "Clock\n[ src color ]"
+    }
+  }
+
+  # ----------------------------------------------------------------- DECK B
+  deckB: Deck B {
+    style.stroke: "#90cdf4"
+
+    knobsB: Knobs (7) {
+      class: knob
+      shape: sql_table
+      Pitch: "chan speedA (built-in: pitch); Alt = PATCH select"
+      Position: "-"
+      Size: "chan sizeA (built-in: brightness)"
+      Envelope: "chan envA"
+      "Mix (SOS)": "chan mixA (built-in: level); Alt = chan fbA"
+      Cycle: "chan modspA"
+      Glow: "chan modampA"
+    }
+
+    padsB: Pads (5) {
+      class: pad
+      shape: sql_table
+      Play: "-"
+      Reverse: "-"
+      Grit: "-"
+      Flux: "-"
+      Seq: "-"
+    }
+
+    ringB: "LED Ring B (32px)" {
+      class: knob
+      shape: circle
+      label: "Ring B\noutput level meter; patch-select dots (Alt held)"
+    }
+  }
+}
+
+# ---------------------------------------------------------------------- I/O
+io: I/O jacks (fixed) {
+  grid-columns: 4
+  grid-gap: 40
+  style.stroke: "#9ae6b4"
+
+  audio: Audio {
+    class: io
+    shape: sql_table
+    "In L/R":        "codec 48k"
+    "Out A / Out B": "mono + trims"
+    "Stereo out":    "TRS"
+  }
+
+  cv: CV in (7) {
+    class: io
+    shape: sql_table
+    "Size/Pos A/B": "-"
+    "Mix A/B": "-"
+    "V/Oct A/B": "-"
+    "Crossfade CV": "-"
+  }
+
+  gates: Clock / Gate {
+    class: io
+    shape: sql_table
+    "Clock in (TRS 4PPQN)": "sync"
+    "Gate in A/B": "-"
+    "Gate out A/B": "-"
+  }
+
+  modmidi: Mod CV / MIDI {
+    class: io
+    shape: sql_table
+    "Mod CV out A/B": "-"
+    "MIDI in/out": "NoteOn -> patch's MidiNote instr (ch A/B)"
+  }
+}
+
+panel -> io: {
+  style: { stroke: "#cbd5e0"; stroke-dash: 4 }
+}

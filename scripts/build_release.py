@@ -46,16 +46,32 @@ from pathlib import Path
 # Curated "mature" engine set: the engines stable enough to publish prebuilt. Others stay
 # buildable but unlisted. Override per-invocation with args or the RELEASE_ENGINES env var.
 DEFAULT_ENGINES = [
+    "csound",
     "delay",
+    "dfilter",
     "edrums",
+    "graincloud",
     "radio",
     "reso",
     "reverb",
     "shuttle",
     "tape",
+    "voice",
 ]
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+# Engines that aren't a plain `ENGINE=<name>` build need extra make flags (the same ones their
+# `make engine-<name>` one-shot target wraps). csound is a QSPI app: its ~2 MB of Csound code can't
+# fit the 186 KB SRAM_EXEC budget, so it executes in place from QSPI flash (BOOT_QSPI + the QSPI
+# linker script) and links against a pre-built libcsound.a (scripts/fetch_csound.sh).
+ENGINE_MAKE_FLAGS = {
+    "csound": ["APP_TYPE=BOOT_QSPI", "LDSCRIPT=alt_qspi.lds"],
+}
+# Files that must already exist for an engine to build (clear error vs a cryptic link failure).
+ENGINE_PREREQUISITES = {
+    "csound": [("thirdparty/csound/Daisy/lib/libcsound.a", "run scripts/fetch_csound.sh first")],
+}
 
 # Filename prefix for the distributed artifacts (sk-<engine>-<version>.bin). Note this is the
 # short product abbreviation and is intentionally distinct from the in-binary banner, which uses
@@ -124,9 +140,13 @@ def build_engine(engine: str, version: str, jobs: int, out_dir: Path, emit_hex: 
     when emit_hex is set, for users flashing via ST-Link / STM32CubeProgrammer.
     """
     print(f"==> building {engine}")
+    for rel, fix in ENGINE_PREREQUISITES.get(engine, []):
+        if not (REPO_ROOT / rel).exists():
+            raise SystemExit(f"ERROR: {engine} needs {rel} - {fix}")
     run_make("clean")
-    # SPK_VERSION makes the in-binary banner match the artifact name exactly.
-    run_make(f"-j{jobs}", f"ENGINE={engine}", f"SPK_VERSION={version}")
+    # SPK_VERSION makes the in-binary banner match the artifact name exactly. Some engines (csound)
+    # add build flags via ENGINE_MAKE_FLAGS - the same ones `make engine-<name>` wraps.
+    run_make(f"-j{jobs}", f"ENGINE={engine}", f"SPK_VERSION={version}", *ENGINE_MAKE_FLAGS.get(engine, []))
 
     base = f"{ARTIFACT_PREFIX}-{engine}-{version}"
     bin_path = out_dir / f"{base}.bin"

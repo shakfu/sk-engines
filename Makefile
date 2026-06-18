@@ -137,9 +137,10 @@ ENGINE_SOURCES =
 # <<< faust:voice <<<
 else ifeq ($(ENGINE), csound)
 # Csound is a QSPI-ONLY target: it links libcsound.a (~2 MB code) which can't fit the 186 KB
-# SRAM_EXEC budget, so it must run from QSPI. Build it BOOT_QSPI with the SDRAM-heap linker script:
-#   make ENGINE=csound APP_TYPE=BOOT_QSPI LDSCRIPT=alt_qspi_csound.lds BUILD_DIR=build-csound
-# (engine_select.h maps SPK_ENGINE_CSOUND -> CsoundEngine; see docs/dev/csound-impl.md.)
+# SRAM_EXEC budget, so it must run from QSPI. Build it BOOT_QSPI with the QSPI linker script:
+#   make ENGINE=csound APP_TYPE=BOOT_QSPI LDSCRIPT=alt_qspi.lds   (or just: make engine-csound)
+# Prereq: libcsound.a (scripts/fetch_csound.sh). engine_select.h maps SPK_ENGINE_CSOUND ->
+# CsoundEngine; see docs/dev/csound-impl.md.
 C_DEFS += -DSPK_ENGINE_CSOUND
 # Enable the platform SD streaming service so ctx.stream is injected (app.cpp): the engine reads
 # /csound/<n>.csd patches off the card via ctx.stream->exists/read_text. Without this, ctx.stream is
@@ -148,7 +149,7 @@ C_DEFS += -DSPK_ENGINE_CSOUND
 C_DEFS += -DSPK_USE_STREAM
 CSOUND_BASE = thirdparty/csound/Daisy
 CSOUND_INC  = -I$(CSOUND_BASE)/include/csound
-ENGINE_SOURCES = src/engine/csound/csound_engine.cpp src/engine/csound/csound_alloc.cpp csound-poc/spotykach_qspi_vtor.cpp
+ENGINE_SOURCES = src/engine/csound/csound_engine.cpp src/engine/csound/csound_alloc.cpp src/engine/csound/spotykach_qspi_vtor.cpp
 LIBS    += $(CSOUND_BASE)/lib/libcsound.a
 LDFLAGS += -u _printf_float
 # Route Csound's C-malloc family to the SDRAM bump pool (csound_alloc.cpp); the platform heap stays in SRAM.

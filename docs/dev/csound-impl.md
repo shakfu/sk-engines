@@ -1,7 +1,6 @@
 # Dev notes — Csound as an sk-engines engine (`ENGINE=csound`)
 
-> Developer / implementation notes. The **user-facing** guide (build & flash, controls, loading and
-> writing patches, limitations) is [`docs/engines/csound.md`](../engines/csound.md).
+> Developer / implementation notes. The **user-facing** guide (build & flash, controls, loading and > writing patches, limitations) is [`docs/engines/csound.md`](../engines/csound.md).
 
 Running [Csound](https://csound.com) 7 as a synthesis engine on Daisy hardware. Csound is a runtime audio compiler/interpreter: an orchestra (`.csd` / `.orc` text) is compiled at runtime and performed. This engine wraps it behind the real sk-engines `IEngine` contract.
 
@@ -61,7 +60,7 @@ Two heaps, deliberately:
 
 - `alt_qspi.lds` = `alt_sram.lds` with code + `.data` load-address moved `SRAM_EXEC → QSPIFLASH`. The abandoned `alt_qspi_csound.lds` (heap-in-SDRAM via the linker) is gone — it caused the ctor crash above.
 
-- `csound-poc/spotykach_qspi_vtor.cpp` — an `init_priority(101)` global ctor that sets `SCB->VTOR = 0x90040000`. Needed because the startup skips `SystemInit` under `BOOT_APP` and the bootloader may not point the vector table at the QSPI app; without it SysTick + audio DMA are dead.
+- `src/engine/csound/spotykach_qspi_vtor.cpp` — an `init_priority(101)` global ctor that sets `SCB->VTOR = 0x90040000`. Needed because the startup skips `SystemInit` under `BOOT_APP` and the bootloader may not point the vector table at the QSPI app; without it SysTick + audio DMA are dead.
 
 **Bootloader fact (verified):** the spotykach `v2` bootloader **runs QSPI apps** — proved by building `radio` as `BOOT_QSPI` and booting it on the board. Both `BOOT_SRAM` and `BOOT_QSPI` apps flash to the same `0x90040000` via the same Daisy DFU; the bootloader decides copy-to-SRAM vs run-in-place from the app's vectors. So no bootloader change is needed to run Csound on the spotykach.
 
@@ -89,7 +88,7 @@ make -j && make install
 
 installing `libcsound.a` (single precision, bare-metal) + headers to `thirdparty/csound/Daisy/{lib,include}` — where the `ENGINE=csound` Makefile branch points `-I` / link.
 
-The **Pod** dev target (`csound-poc/`, bare `DaisySeed`, no front panel) predates the spotykach build; keep it for quick iteration. It reuses the same `Daisy/{libDaisy,DaisySP}` symlinks.
+The **Pod** dev target (`pod/`, bare `DaisySeed`, no front panel) predates the spotykach build; keep it for quick iteration. It reuses the same `Daisy/{libDaisy,DaisySP}` symlinks.
 
 ---
 
@@ -100,7 +99,9 @@ There is **no console** in the QSPI build (see the Gotchas), so bring-up has bee
 **QSPI execute-in-place changes the workflow** — it is not the usual "probe flashes and runs":
 
 - **Attach, don't flash.** The ST-Link internal-flash loader can't place a `BOOT_QSPI` XIP image. Keep the DFU flow (`make engine-csound` / `program-csound`) to put the image at `0x90040000`, then **attach to the running target** and load symbols from `build/spotykach.elf`. The QSPI controller must already be in memory-mapped mode for the probe to read/step that code — the Daisy bootloader does this at boot, so attach **after** boot (or teach OpenOCD to init QSPI).
+
 - **Hardware breakpoints only.** Software breakpoints patch a `BKPT` into the instruction, but QSPI code is memory-mapped read-only flash the debugger can't write through. You are limited to the Cortex-M7 FPB comparators (~6-8) — enough, but you can't place them freely.
+
 - **Bootloader / `VTOR`.** The probe sees the app only after the bootloader hands off; the `spotykach_qspi_vtor.cpp` inject and the v2 bootloader don't interfere with a debug session.
 
 **Highest-leverage uses here:** halt on the fault handler and read `CFSR`/`HFSR`/`BFAR` to pin a crash in seconds (the SDRAM-heap-vs-ctor bug was exactly this shape); break after `csoundStart` to inspect the return codes that are otherwise invisible; and inspect ftable/instr state for the silent-`ftgen` mystery.
@@ -186,12 +187,16 @@ Ordered by leverage. **#1, #2, #3, and #5 are done** (SD patches, the free-capab
   + the built-in fallback orchestra + the `channel_for` param map). Compiles only for `ENGINE=csound`.
 
 - `src/engine/csound/csound_patch.h` — the patch bank: `patch_path`/`scan_patches`/`aux_to_index`/`read_orchestra` (numbered `/csound/<n>.csd` slots, the Alt+PITCH quantizer, read+validate with built-in fallback; header-only, host-tested via `host/test_csound_patch.cpp`).
+
 - `src/engine/csound/csound_reload.h` — `ReloadGate`, the lock-free (seq_cst) handoff of the live Csound instance between the audio ISR and the main loop for live patch switching (header-only, host-tested via `host/test_csound_reload.cpp`).
+
 - `src/engine/csound/csound_midi.h` — MIDI note→Hz, the CS_INSTR_EVENT p-field builder, and the lock-free SPSC note ring (main loop → audio ISR) (header-only, host-tested via `host/test_csound_midi.cpp`).
+
 - `src/engine/csound/csound_alloc.cpp` — the `--wrap` shim: the 12 MB `.sdram_bss` pool array, the arm-after-`_hw.Init()` gate, and the malloc-family routing (pool when armed, SRAM fallback otherwise).
+
 - `src/engine/csound/csound_pool.h` — `CsoundPool`, the free-capable coalescing allocator the shim drives (header-only, host-tested via `host/test_csound_alloc.cpp`).
 
-- `csound-poc/spotykach_qspi_vtor.cpp` — the `SCB->VTOR` inject (global ctor).
+- `src/engine/csound/spotykach_qspi_vtor.cpp` — the `SCB->VTOR` inject (global ctor).
 
 - `alt_qspi.lds` — QSPI-execution linker script (code in QSPI, heaps as above).
 
@@ -199,8 +204,10 @@ Ordered by leverage. **#1, #2, #3, and #5 are done** (SD patches, the free-capab
 
 - `src/engine/engine_select.h` — `SPK_ENGINE_CSOUND → CsoundEngine` (gated).
 
-- `csound-poc/` — the Pod dev target (`harness.cpp`, `Makefile`) for quick iteration.
+- `pod/` — the Pod dev target (`harness.cpp`, `Makefile`) for quick iteration.
 
 - `thirdparty/csound/` — Csound 7 + the official `Daisy/` port (gitignored; fetched/built by `scripts/fetch_csound.sh`).
+
 - `scripts/fetch_csound.sh` — download Csound's release source (pinned tag `7.0.0-beta.16`, git fallback) + wire the `lib/{libDaisy,DaisySP}` symlinks + cross-build `libcsound.a` into `thirdparty/csound/Daisy/`.
+
 - `examples/csound/` — reference orchestras (`0.csd` drone+pluck, `1.csd` fat bass, `2.csd` polyphonic MIDI lead) + a README; copy into a `csound/` folder on the SD card.

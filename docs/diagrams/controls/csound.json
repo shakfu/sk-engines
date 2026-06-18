@@ -1,0 +1,56 @@
+{
+  "engine": "csound",
+  "title": "Csound - a full Csound 7 synth; the patch (.csd) defines the sound",
+  "subtitle": "SD patch bank (Alt+PITCH live-switches) + MIDI",
+
+  "knobs": {
+    "Pitch": "chan speedA (built-in: pitch); Alt = PATCH select",
+    "Position": "-",
+    "Size": "chan sizeA (built-in: brightness)",
+    "Envelope": "chan envA",
+    "Mix (SOS)": "chan mixA (built-in: level); Alt = chan fbA",
+    "Cycle": "chan modspA",
+    "Glow": "chan modampA"
+  },
+
+  "pads": {
+    "Play": "-",
+    "Reverse": "-",
+    "Grit": "-",
+    "Flux": "-",
+    "Seq": "-"
+  },
+
+  "ring": "output level meter; patch-select dots (Alt held)",
+
+  "crossfade": "-",
+
+  "switches": {
+    "Mode (L/C/R)": "-",
+    "Routing (L/C/R)": "-",
+    "CV target (U/C/D)": "-",
+    "Out trims A/B": "output trims"
+  },
+
+  "transport": {
+    "Tap": "-",
+    "Spot": "-"
+  },
+
+  "cv": {
+    "Size/Pos A/B": "-",
+    "Mix A/B": "-",
+    "V/Oct A/B": "-",
+    "Crossfade CV": "-"
+  },
+
+  "gates": {
+    "Gate in A/B": "-",
+    "Gate out A/B": "-"
+  },
+
+  "mod_midi": {
+    "Mod CV out A/B": "-",
+    "MIDI in/out": "NoteOn -> patch's MidiNote instr (ch A/B)"
+  }
+}
