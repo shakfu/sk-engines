@@ -7,6 +7,8 @@
 #include "engine/csound/csound_engine.h"
 #include "engine/csound/csound_patch.h"   // select_orchestra(): SD /csound/patch.csd, built-in fallback
 
+#include "config.h"                        // Config::dynamic() midi_channel_a/b for the channel->deck map
+
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -48,6 +50,19 @@ instr 1
   outs   asig * kamp, asig * kamp
 endin
 
+; MIDI-playable voice. The engine schedules this by name on a NoteOn (csound_midi.h kMidiInstrName):
+;   p4 = frequency (Hz), p5 = deck (0/1). No NoteOff is delivered, so the note self-terminates over its
+;   fixed duration p3 - an exponentially-decaying pluck. SIZE still colours the tone (shared cutoff).
+instr MidiNote
+  ifreq  = p4
+  ksize  chnget "sizeA"
+  kcut   = 1500 + ksize * 6000
+  aenv   expon 1, p3, 0.001       ; finite exp decay over p3 -> self-terminating pluck
+  asig   vco2 0.5, ifreq          ; table-less, like instr 1
+  asig   tone asig, kcut
+  outs   asig * aenv, asig * aenv
+endin
+
 schedule(1, 0, 100000)
 </CsInstruments>
 <CsScore>
@@ -76,6 +91,7 @@ static constexpr int kPatchMax = 64 * 1024;
 
 bool CsoundEngine::try_compile(const char* text, float block_size)
 {
+    _midi_instr = 0;                           // reset; set below only if this compile succeeds
     _cs = csoundCreate(nullptr, nullptr);
     if (!_cs) return false;
 
@@ -97,6 +113,11 @@ bool CsoundEngine::try_compile(const char* text, float block_size)
     }
     csoundStart(_cs);
     _ksmps = csoundGetKsmps(_cs);              // == block size; guards the process() copy
+
+    // Cache the MIDI-playable instrument number (named kMidiInstrName). -1 if the orchestra doesn't
+    // define it -> MIDI notes are dropped (handle_midi_note becomes a no-op).
+    const int n = csoundGetInstrNumber(_cs, kMidiInstrName);
+    _midi_instr = (n > 0) ? n : 0;
     return true;
 }
 
@@ -150,6 +171,19 @@ void CsoundEngine::process(const float* const* in, float** out, size_t size)
         spin[i * 2 + 1] = ir ? static_cast<MYFLT>(ir[i]) : 0;
     }
 
+    // Drain pending MIDI notes HERE (audio ISR), so every csoundEvent + the instrument allocation it
+    // triggers happens on the same thread as csoundPerformKsmps - never racing the main loop on the
+    // SDRAM pool. async=0 is correct since we are already the performance thread. The notes start at
+    // p2=0, i.e. this k-cycle. (handle_midi_note, on the main loop, only enqueues.)
+    MidiNoteEvent ev;
+    while (_midi_instr > 0 && _notes.pop(ev)) {
+        float pf[kMidiNoteFields];
+        csound_note_pfields(pf, _midi_instr, kMidiNoteDur, ev.note, ev.deck);
+        MYFLT params[kMidiNoteFields];
+        for (int k = 0; k < kMidiNoteFields; k++) params[k] = static_cast<MYFLT>(pf[k]);
+        csoundEvent(_cs, CS_INSTR_EVENT, params, kMidiNoteFields, 0 /*sync: we are the perf thread*/);
+    }
+
     csoundPerformKsmps(_cs);                    // one k-cycle: consumes spin, fills spout
 
     float peak = 0.f;
@@ -191,6 +225,24 @@ float CsoundEngine::param(ParamId id, DeckRef::Ref d) const
     int slot = -1;
     channel_for(id, d, slot);
     return (slot >= 0 && slot < kSlots) ? _cache[slot] : 0.f;
+}
+
+DeckRef::Ref CsoundEngine::handle_midi_note(uint8_t channel, uint8_t note)
+{
+    // No instance or no MidiNote instrument -> not playable; tell the UI not to flash.
+    if (!_cs || _midi_instr <= 0) return DeckRef::Count;
+
+    // Channel -> deck, matching the platform's configured MIDI channels (same as the other engines).
+    const Config& c = Config::dynamic();
+    DeckRef::Ref ref = DeckRef::Count;
+    if      (channel == c.midi_channel_a()) ref = DeckRef::A;
+    else if (channel == c.midi_channel_b()) ref = DeckRef::B;
+    if (ref == DeckRef::Count) return DeckRef::Count;
+
+    // Main loop: only enqueue. The audio ISR drains and schedules (see process()). A full ring drops
+    // the note, but we still return the deck so the gate-in flashes (the NoteOn was received).
+    _notes.push({ note, static_cast<uint8_t>(ref == DeckRef::A ? 0 : 1) });
+    return ref;
 }
 
 void CsoundEngine::render(DisplayModel& m)

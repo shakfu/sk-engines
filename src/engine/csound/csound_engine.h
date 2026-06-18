@@ -3,6 +3,7 @@
 #pragma once
 
 #include "engine/iengine.h"
+#include "engine/csound/csound_midi.h"   // MIDI note->event mapping + the lock-free pending-note ring
 
 // SKETCH (2026-06): CsoundEngine wraps a Csound 7 instance behind IEngine. It builds ONLY in the
 // QSPI firmware target - code in QSPI flash, heap in SDRAM (the Csound port's custom linker script),
@@ -35,6 +36,12 @@ public:
     void         set_param(ParamId id, DeckRef::Ref d, float v) override;
     float        param(ParamId id, DeckRef::Ref d) const override;
 
+    // MIDI NoteOn -> a Csound note event. Resolves channel->deck (Config midi channels), enqueues the
+    // note on the lock-free ring (drained in process()), and returns the deck for the UI gate flash.
+    // No-op (returns DeckRef::Count) if the orchestra has no MidiNote instrument. NoteOn only - the
+    // platform delivers no NoteOff/velocity, so notes are finite (see csound_midi.h).
+    DeckRef::Ref handle_midi_note(uint8_t channel, uint8_t note) override;
+
     // --- panel feedback -------------------------------------------------------------------------
     // Both rings show the output level (peak meter); the Play indicators show running state.
     void render(DisplayModel& m) override;
@@ -51,6 +58,8 @@ private:
     int     _ksmps     = 0;         // == the platform block size (set via --ksmps in init)
     float   _level     = 0.f;       // output peak meter (written in process(), read in render())
     bool    _patch_loaded = false;  // true => running an SD /csound/patch.csd; false => built-in
+    int     _midi_instr = 0;        // Csound instr number of "MidiNote" (0 => none; MIDI notes dropped)
+    NoteQueue<32> _notes;           // pending MIDI notes: main loop pushes, process() (ISR) drains
 
     // Cached 0..1 knob values for param() pickup readback, one slot per mapped (ParamId, deck).
     static constexpr int kSlots = 8;     // small fixed map; grow as the control vocabulary grows

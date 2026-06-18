@@ -77,10 +77,11 @@ TEST_DELAY   = $(BUILD)/test_delay
 TEST_GRAINCLOUD_KERNEL = $(BUILD)/test_graincloud_kernel
 TEST_CSOUND_ALLOC = $(BUILD)/test_csound_alloc
 TEST_CSOUND_PATCH = $(BUILD)/test_csound_patch
+TEST_CSOUND_MIDI  = $(BUILD)/test_csound_midi
 BENCH_REVERB     = $(BUILD)/bench_reverb
 BENCH_GRAINCLOUD = $(BUILD)/bench_graincloud
 
-.PHONY: all clean run test test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-tape test-stream test-shuttle test-radio test-chorus test-dfilter test-voice test-csound-alloc test-csound-patch bench-reverb bench-graincloud
+.PHONY: all clean run test test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-tape test-stream test-shuttle test-radio test-chorus test-dfilter test-voice test-csound-alloc test-csound-patch test-csound-midi bench-reverb bench-graincloud
 all: $(TARGET)
 
 $(TARGET): $(SRC) | $(BUILD)
@@ -108,6 +109,13 @@ $(TEST_CSOUND_PATCH): test_csound_patch.cpp $(ROOT)/src/engine/csound/csound_pat
 	$(CXX) $(CXXFLAGS) test_csound_patch.cpp -o $@
 test-csound-patch: $(TEST_CSOUND_PATCH)
 	./$(TEST_CSOUND_PATCH)
+
+# Csound MIDI plumbing (note->Hz, p-field builder, lock-free note ring). Header-only; -pthread for the
+# SPSC cross-thread test. No libcsound/Daisy deps.
+$(TEST_CSOUND_MIDI): test_csound_midi.cpp $(ROOT)/src/engine/csound/csound_midi.h | $(BUILD)
+	$(CXX) $(CXXFLAGS) -pthread test_csound_midi.cpp -o $@
+test-csound-midi: $(TEST_CSOUND_MIDI)
+	./$(TEST_CSOUND_MIDI)
 
 # graincloud kernel smoke test (the de-STL'd GrainflowLib only; no engine/LIB deps).
 $(TEST_GRAINCLOUD_KERNEL): test_graincloud_kernel.cpp $(wildcard $(GRAINCLOUD_TP)/grainflow/*.h) | $(BUILD)
@@ -182,7 +190,7 @@ run: $(TARGET)
 
 # `test` runs both engine harnesses. Both inject the transport via EngineContext (granular drives the
 # real platform Transport; edrums uses a small stub ITransport) - the post-transport-decoupling way.
-test: test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-tape test-stream test-shuttle test-radio test-chorus test-dfilter test-voice test-csound-alloc test-csound-patch
+test: test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-tape test-stream test-shuttle test-radio test-chorus test-dfilter test-voice test-csound-alloc test-csound-patch test-csound-midi
 
 test-granular: $(TEST)
 	./$(TEST)
