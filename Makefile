@@ -470,7 +470,8 @@ docs/media/%.svg: docs/diagrams/%.d2
 # Build distributable, version-stamped, checksummed engine binaries into dist/<version>/ for users
 # who want to download-and-flash rather than build (no ARM toolchain / cyfaust+gen-dsp venv needed).
 # scripts/build_release.py does a clean build of each engine in RELEASE_ENGINES, names the artifacts
-# sk-<engine>-<version>.bin (add WITH_HEX=1 for .hex too), and adds SHA256SUMS and FLASHING.md. The
+# sk-<engine>-<version>.bin (add WITH_HEX=1 for .hex too), and adds SHA256SUMS and RELEASE_NOTES.md
+# (the CHANGELOG section for the version + flashing instructions). The
 # script is stdlib-only, so plain python3 (no venv) suffices; override with REL_PY if needed.
 #   make dist                       # describe-derived version, curated engine set
 #   make dist VERSION=0.3.0         # explicit version (use the bare tag you will create)
@@ -492,7 +493,7 @@ gh-release:
 	@test -d dist/$(VERSION) || { echo "dist/$(VERSION) not found - run 'make dist VERSION=$(VERSION)' first"; exit 1; }
 	gh release create $(VERSION) dist/$(VERSION)/* \
 	  --title "sk-engines $(VERSION)" \
-	  --notes-file dist/$(VERSION)/FLASHING.md
+	  --notes-file dist/$(VERSION)/RELEASE_NOTES.md
 
 # Run the Python script test suites (scripts/test_*.py). These cover host-side utilities
 # like convert_tape_audio.py and need neither hardware nor a firmware build. pytest is part

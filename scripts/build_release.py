@@ -5,7 +5,8 @@ Each "engine" is a separate firmware variant of the same device, selected at bui
 time via ENGINE= and flashed over DFU. This script does a clean build of each engine
 in the release set, stamps the chosen version into the binary (so the artifact name
 and the banner baked inside it agree), and collects the results under dist/<version>/
-with SHA-256 checksums, the matching bootloader, and flashing notes. It lets users who
+with SHA-256 checksums and RELEASE_NOTES.md (the CHANGELOG section for this version
+followed by flashing instructions). It lets users who
 do not have the ARM toolchain (and the cyfaust/gen-dsp venv the Faust/gen~ engines need)
 download a ready-to-flash binary instead of building one.
 
@@ -166,7 +167,7 @@ def write_manifest(path: Path, version: str, dirty: str, git_sha: str, sizes: di
         "spotykach firmware release",
         f"version:    {version}{dirty}",
         f"git commit: {git_sha}",
-        "note:       these apps require the spotykach bootloader already installed (see FLASHING.md)",
+        "note:       these apps require the spotykach bootloader already installed (see RELEASE_NOTES.md)",
         "",
         f"{'engine':<14} {'bytes':>12}  binary",
     ]
@@ -182,24 +183,77 @@ def write_checksums(out_dir: Path) -> None:
     (out_dir / "SHA256SUMS").write_text("\n".join(lines) + "\n")
 
 
-def write_flashing(path: Path, version: str) -> None:
-    path.write_text(
-        f"""# Flashing an sk-engines firmware ({version})
+def changelog_section(version: str, changelog: Path | None = None) -> str | None:
+    """Return the CHANGELOG.md body under `## [<version>]`, trimmed of blank edges.
+
+    Falls back to `## [Unreleased]` when the version-named heading is absent or empty (e.g. a
+    describe-derived version with no matching heading). Returns None when neither is found.
+    (Ported from the former scripts/release_notes.py; `==` heading compare, so no regex pitfalls.)
+    """
+    changelog = changelog or (REPO_ROOT / "CHANGELOG.md")
+    if not changelog.exists():
+        return None
+    text = changelog.read_text()
+
+    def extract(name: str) -> str | None:
+        body: list[str] = []
+        in_section = False
+        for line in text.splitlines():
+            if line == f"## [{name}]":
+                in_section = True
+                continue
+            if in_section and line.startswith("## ["):
+                break
+            if in_section:
+                body.append(line)
+        return "\n".join(body) if in_section else None
+
+    section = extract(version)
+    if not (section and section.strip()):
+        section = extract("Unreleased")
+    if not (section and section.strip()):
+        return None
+    lines = section.splitlines()
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return "\n".join(lines)
+
+
+def flashing_section(version: str, engines: list[str]) -> str:
+    """The `## Flashing ...` section of the release notes (markdown)."""
+    # csound is the one QSPI app in the set (it executes from flash rather than being copied to SRAM),
+    # which adds two flashing wrinkles the generic steps don't cover.
+    csound_note = """
+### Note for the `csound` engine
+
+`sk-csound-*.bin` is a **QSPI app**: unlike the other engines it executes in place from QSPI flash
+(its Csound runtime is ~2 MB, too big for SRAM), so it is also a larger download and takes longer to
+flash. Same address and steps as above, with two caveats:
+
+- It needs a bootloader that **runs QSPI apps** (the spotykach bootloader does); a SRAM-only
+  bootloader cannot run it.
+- With `dfu-util`, the `:leave` step may print a harmless `Error 74` / "get_status" message at the
+  end - the write has already succeeded. Ignore it (the Web Programmer does not show this).
+""" if "csound" in engines else ""
+
+    return f"""## Flashing an sk-engines firmware ({version})
 
 Each `.bin` here is a complete firmware for one engine. Flash exactly one at a time.
 
-## Prerequisite
+### Prerequisite
 
 These app binaries are not standalone: they run under the spotykach bootloader, which must
 already be installed on the device. Installing the bootloader is a separate, device-level
 procedure not covered here.
 
-## Step 1: enter bootloader mode
+### Step 1: enter bootloader mode
 
 Both methods below need the device in its bootloader (DFU) mode first: hold Reset ~3s until
 the bottom pad LEDs breathe white.
 
-## Step 2, option A: Daisy Web Programmer (easiest)
+### Step 2, option A: Daisy Web Programmer (easiest)
 
 Needs a WebUSB browser - Chrome or Edge (Firefox and Safari will not work).
 
@@ -207,16 +261,30 @@ Needs a WebUSB browser - Chrome or Edge (Firefox and Safari will not work).
 2. On the "File Upload" tab, choose your engine binary ({ARTIFACT_PREFIX}-<engine>-{version}.bin).
 3. Click FLASH.
 
-## Step 2, option B: dfu-util (command line)
+### Step 2, option B: dfu-util (command line)
 
     dfu-util -a 0 -s {APP_ADDRESS}:leave -D {ARTIFACT_PREFIX}-<engine>-{version}.bin -d ,0483:{DFU_PID}
 
-## Verify
+### Verify
 
 - Confirm the download is intact:  `shasum -a 256 -c SHA256SUMS`
 - Confirm what a binary is:        `arm-none-eabi-strings <file>.bin | grep '^spotykach '`
   (prints e.g. `spotykach {version} engine=reverb`)
-"""
+{csound_note}"""
+
+
+def write_release_notes(path: Path, version: str, engines: list[str]) -> None:
+    """Write RELEASE_NOTES.md: the CHANGELOG section for this version, then the flashing guide."""
+    changelog = changelog_section(version)
+    if changelog is None:
+        sys.stderr.write(
+            f"warning: no CHANGELOG section for '{version}' or '[Unreleased]' - "
+            "release notes will note the changelog is missing\n"
+        )
+        changelog = "_No CHANGELOG entry for this release._"
+    path.write_text(
+        f"## Changes since the last Release\n\n{changelog}\n\n"
+        f"{flashing_section(version, engines)}\n"
     )
 
 
@@ -271,7 +339,7 @@ def main(argv: list[str]) -> int:
     sizes = {engine: build_engine(engine, version, args.jobs, out_dir, args.hex) for engine in engines}
 
     write_manifest(out_dir / "MANIFEST.txt", version, dirty, git_sha, sizes)
-    write_flashing(out_dir / "FLASHING.md", version)
+    write_release_notes(out_dir / "RELEASE_NOTES.md", version, engines)
     write_checksums(out_dir)
 
     print(f"\nDone. Artifacts in {out_dir.relative_to(REPO_ROOT)}/")

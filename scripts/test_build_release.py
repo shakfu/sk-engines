@@ -64,23 +64,86 @@ def test_write_manifest_contents(tmp_path):
     assert "sk-delay-0.3.0.bin" in text
 
 
-def test_write_flashing_has_address_and_version(tmp_path):
-    path = tmp_path / "FLASHING.md"
-    m.write_flashing(path, "0.3.0")
-    text = path.read_text()
+def test_flashing_section_has_address_and_version():
+    text = m.flashing_section("0.3.0", [])
     assert m.APP_ADDRESS in text          # QSPI app address
     assert f",0483:{m.DFU_PID}" in text
     assert m.WEB_PROGRAMMER_URL in text   # web flasher is the recommended path
     assert "sk-<engine>-0.3.0.bin" in text
 
 
-def test_write_flashing_has_no_bootloader_install_commands(tmp_path):
-    path = tmp_path / "FLASHING.md"
-    m.write_flashing(path, "0.3.0")
-    text = path.read_text()
+def test_flashing_section_no_bootloader_install_commands():
+    text = m.flashing_section("0.3.0", [])
     # The bootloader-install procedure was deliberately removed (unverified / bricking-adjacent).
     assert "0x08000000" not in text
     assert "bootloader-spotykach-v2.bin" not in text
+
+
+def test_flashing_section_csound_note_only_when_csound_present():
+    assert "Note for the `csound` engine" not in m.flashing_section("0.3.0", ["reverb"])
+    note = m.flashing_section("0.3.0", ["csound", "reverb"])
+    assert "Note for the `csound` engine" in note
+    assert "Error 74" in note             # the benign QSPI :leave message
+
+
+# --- CHANGELOG extraction (ported from the former release_notes.py) ----------------------------
+
+CHANGELOG_SAMPLE = """\
+# Changelog
+
+## [Unreleased]
+
+## [0.4.0]
+
+### Added
+
+- **Feature A.** did a thing.
+- **Feature B.** did another.
+
+## [0.3.2]
+
+### Added
+
+- old stuff
+"""
+
+
+def test_changelog_section_extracts_versioned_block(tmp_path):
+    cl = tmp_path / "CHANGELOG.md"
+    cl.write_text(CHANGELOG_SAMPLE)
+    sec = m.changelog_section("0.4.0", cl)
+    assert sec is not None
+    assert "Feature A" in sec and "Feature B" in sec
+    assert "old stuff" not in sec          # stops at the next `## [` heading
+    assert sec.startswith("### Added")     # leading blank lines trimmed
+    assert not sec.endswith("\n")          # trailing blank lines trimmed
+
+
+def test_changelog_section_falls_back_to_unreleased(tmp_path):
+    cl = tmp_path / "CHANGELOG.md"
+    cl.write_text("# C\n\n## [Unreleased]\n\n- pending\n\n## [0.1.0]\n\n- released\n")
+    # A version with no matching heading falls back to the Unreleased section.
+    assert m.changelog_section("9.9.9", cl) == "- pending"
+
+
+def test_changelog_section_missing_returns_none(tmp_path):
+    cl = tmp_path / "CHANGELOG.md"
+    cl.write_text("# C\n\n## [0.1.0]\n\n- released\n")     # no Unreleased, no 9.9.9
+    assert m.changelog_section("9.9.9", cl) is None
+    assert m.changelog_section("0.1.0", cl) == "- released"
+
+
+def test_write_release_notes_order_changelog_then_flashing(tmp_path):
+    # changelog_section reads the repo CHANGELOG, so assert structural invariants (not specific text):
+    # the changelog section comes first, then the flashing section, with the csound note included.
+    notes = tmp_path / "RELEASE_NOTES.md"
+    m.write_release_notes(notes, "0.4.0", ["csound"])
+    text = notes.read_text()
+    assert "## Changes since the last Release" in text
+    flashing = "## Flashing an sk-engines firmware (0.4.0)"
+    assert flashing in text
+    assert text.index("## Changes since the last Release") < text.index(flashing)
+    assert "Note for the `csound` engine" in text
 
 
 def test_parse_args_defaults():
