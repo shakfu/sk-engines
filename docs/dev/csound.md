@@ -4,7 +4,7 @@ Running [Csound](https://csound.com) 7 as a synthesis engine on Daisy hardware. 
 
 It is **not** an SRAM engine. Csound's linked code is ~2 MB — far over the 186 KB `SRAM_EXEC` budget — so it runs as a **`BOOT_QSPI`** app (code executes in place from QSPI flash). Everything else about the contract (params, display, pads) is the same as any other engine; only the memory/boot model differs.
 
-**Status (2026-06-18): working on real hardware.** Csound synthesizes on the **spotykach** board from QSPI, driven through `IEngine` — panel controls move the synth, the rings show an output level meter, the Play LEDs show running state. Also runs on a **Daisy Pod** (the quick-iterate board). The whole chain is proven: cross-compiled `libcsound.a`, QSPI execution, the dual-heap fix, audio, controls, panel.
+**Status (2026-06-18): working on real hardware, incl. SD patches + MIDI.** Csound synthesizes on the **spotykach** board from QSPI, driven through `IEngine` — panel controls move the synth, the rings show an output level meter, the Play LEDs show running state. **SD patch loading and live switching (#1/#5) and MIDI-in (#3) are verified on hardware**: an SD `/csound/<n>.csd` orchestra boots/auto-loads, the Alt+PITCH selector recompiles patches live, and MIDI NoteOn plays the patch's `MidiNote` instrument. Also runs on a **Daisy Pod** (the quick-iterate board). The whole chain is proven: cross-compiled `libcsound.a`, QSPI execution, the dual-heap fix, the free-capable SDRAM allocator, audio, controls, panel, SD, MIDI. (The remaining open item is #4, the QSPI-XIP CPU performance pass.)
 
 ---
 
@@ -21,7 +21,23 @@ Both expand to `ENGINE=csound APP_TYPE=BOOT_QSPI LDSCRIPT=alt_qspi.lds` + the co
 
 Prerequisite, once: build `libcsound.a` (see "Building libcsound.a" below). Recover the board anytime by flashing any normal engine.
 
-**Loading patches (optional).** Drop full CSD documents at `/csound/0.csd` .. `/csound/7.csd` on the SD card. The engine boots into the lowest-numbered one (or the built-in if the card has none) and presents the **built-in plus every present slot** as a bank: **hold Alt and turn PITCH** to scroll the selector (a dot per patch around the rings), **release** to compile the chosen one live (the centre mode LED turns cyan for an SD patch, white for the built-in). A patch should `chnget` the engine's control channels (`speedA`/`mixA`/`sizeA`/`envA`/`fbA`/`modspA`/`modampA`, and the `B` deck) to be driven by the panel knobs, and define `instr MidiNote` (p4 = freq Hz) to be keyboard-playable — see `kOrchestra` in `csound_engine.cpp` for the template. No card, no file, a non-CSD file, or one that fails to compile all fall back to the built-in, so the engine always makes sound. (Constraints: a full `<CsoundSynthesizer>` document, ≤ 64 KB, core opcodes only — no plugins or soundfile I/O; see Limitations.)
+**Loading patches (optional).** Drop full CSD documents at `/csound/0.csd` .. `/csound/7.csd` on the SD card. The engine boots into the lowest-numbered one (or the built-in if the card has none) and presents the **built-in plus every present slot** as a bank: **hold Alt and turn PITCH** to scroll the selector (a dot per patch around the rings), **release** to compile the chosen one live (the centre mode LED turns cyan for an SD patch, white for the built-in). A patch should `chnget` the engine's control channels (`speedA`/`mixA`/`sizeA`/`envA`/`fbA`/`modspA`/`modampA`, and the `B` deck) to be driven by the panel knobs, and define `instr MidiNote` (p4 = freq Hz) to be keyboard-playable — see `kOrchestra` in `csound_engine.cpp` for the template, or the official orchestras in `thirdparty/csound/Daisy/DaisyCsoundExamples/`. No card, no file, a non-CSD file, or one that fails to compile all fall back to the built-in, so the engine always makes sound.
+
+**CSD format (matters — Csound's CSD parser is line-oriented):** each section tag must be on its **own line** — `<CsScore>` and `</CsScore>` on separate lines, **not** `<CsScore></CsScore>` (a one-line empty section makes the parser miss the closing tag and the compile fails). Use the structure the Daisy examples use:
+
+```
+<CsoundSynthesizer>
+<CsOptions>
+</CsOptions>
+<CsInstruments>
+  ; sr/0dbfs/nchnls, your instr 1.. and instr MidiNote
+</CsInstruments>
+<CsScore>
+</CsScore>
+</CsoundSynthesizer>
+```
+
+The engine normalizes a leading UTF-8 BOM and CRLF line endings on read (a card file authored on Windows has both; a compiled-in string never does), so those won't trip the compile. Other constraints: ≤ 64 KB, core opcodes only — no plugins or soundfile I/O (see Limitations).
 
 ---
 
@@ -146,6 +162,12 @@ Ordered by leverage. **#1, #2, #3, and #5 are done** (SD patches, the free-capab
 ---
 
 ## Gotchas (each cost real debugging time)
+
+- **FatFs paths must be relative (no leading slash).** `patch_path` first built `"/csound/0.csd"`; `f_open`/`f_stat` missed it because libDaisy mounts the SD at a volume-prefixed path (`FatFSInterface::GetSDPath`), so a bare leading `/` resolves to the wrong volume. The radio/tape/shuttle engines all use relative paths (`radio/…`, `tapes/…`) for this reason. Fix = `"csound/%d.csd"`. Symptom was the Alt+PITCH selector showing only the built-in (the scan found no slots) even with the card populated.
+
+- **SD-file CSD vs a compiled-in string: BOM, CRLF, and section-tag formatting.** An SD patch that read fine and *looked* like a CSD (`strstr` found `<CsoundSynthesizer`) still failed `csoundCompileCSD`, where the byte-identical compiled-in `kOrchestra` compiled. Three differences a card file carries that a C string literal never does: a **UTF-8 BOM** (front-of-file bytes make the CSD parser miss the root tag), **CRLF** line endings (the line-oriented parser chokes on the stray `\r`), and a **one-line `<CsScore></CsScore>`** (the parser scans for a line that *is* `</CsScore>`, so an empty section collapsed onto one line is never closed). `read_orchestra` now starts the text at the `<CsoundSynthesizer` tag (strips a BOM/leading junk) and normalizes CRLF→LF; the section-tag formatting is a CSD-authoring rule (documented in "Loading patches", matching the Daisy examples). This was the long pole in bringing SD patches up on hardware — it presents as "valid CSD but compile fails", which the per-stage mode-LED instrumentation isolated.
+
+- **SD patch loading needs `SPK_USE_STREAM` in the Makefile csound branch.** `ctx.stream` (the SD service) is only constructed + injected by `app.cpp` under `SPK_USE_STREAM`. The csound branch originally omitted it, so `ctx.stream` was null: `scan_patches` found no slots, the bank was built-in-only, and patches never loaded (the Alt+PITCH selector still drew - it just had one entry). The host tests missed it because they inject a fake `IStreamDeck` directly, exercising the load *logic* but not the platform *wiring*. Fix = `C_DEFS += -DSPK_USE_STREAM` in the csound branch (adds ~2 MB of SDRAM rings; ~62 MB of the 64 MB used). Lesson: a feature that depends on an injected platform service needs an on-target wiring check, not just host-logic tests.
 
 - **The SDRAM-heap-vs-ctor crash.** A heap in SDRAM (`alt_qspi_csound.lds`) crashed at boot: global ctors `malloc` before `_hw.Init()` powers up the FMC. Fix = dual heap (platform SRAM + Csound's `--wrap`'d SDRAM pool armed after init). This is the central lesson; see "The heap" above.
 

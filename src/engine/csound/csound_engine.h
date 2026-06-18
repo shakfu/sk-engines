@@ -92,6 +92,11 @@ private:
     bool _reload_pending = false;         // commit a patch change on the next prepare()
     int  _reload_target  = 0;             // availability index to compile on the pending reload
 
+    // Boot auto-load of the first SD patch once the card mounts (~1 s after boot), independent of the
+    // Alt selector. One-shot; the throttle keeps the rescan off every main-loop iteration.
+    bool     _boot_loaded = false;
+    uint16_t _probe_div   = 0;
+
     // Cached 0..1 knob values for param() pickup readback + post-reload reseed, per (ParamId, deck).
     static constexpr int kSlots = 16;     // 8 per deck (Speed/Mix/Size/Env/Feedback/ModSpeed/ModAmp)
     float _cache[kSlots] = {0.f};

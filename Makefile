@@ -141,6 +141,11 @@ else ifeq ($(ENGINE), csound)
 #   make ENGINE=csound APP_TYPE=BOOT_QSPI LDSCRIPT=alt_qspi_csound.lds BUILD_DIR=build-csound
 # (engine_select.h maps SPK_ENGINE_CSOUND -> CsoundEngine; see docs/dev/csound.md.)
 C_DEFS += -DSPK_ENGINE_CSOUND
+# Enable the platform SD streaming service so ctx.stream is injected (app.cpp): the engine reads
+# /csound/<n>.csd patches off the card via ctx.stream->exists/read_text. Without this, ctx.stream is
+# null and only the built-in orchestra is ever available. Adds ~2 MB of SDRAM rings (12 MB csound
+# pool + 48 MB arena + ~2 MB rings = ~62 MB, within the 64 MB SDRAM).
+C_DEFS += -DSPK_USE_STREAM
 CSOUND_BASE = thirdparty/csound/Daisy
 CSOUND_INC  = -I$(CSOUND_BASE)/include/csound
 ENGINE_SOURCES = src/engine/csound/csound_engine.cpp src/engine/csound/csound_alloc.cpp csound-poc/spotykach_qspi_vtor.cpp

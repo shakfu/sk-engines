@@ -181,20 +181,23 @@ const char* CsoundEngine::orchestra_for(int avail_index, char* buf, bool* from_s
 
 void CsoundEngine::do_reload(int target)
 {
-    // 1) Take the live instance out of service (the ISR now sees null -> silence) and destroy it; the
-    //    SDRAM pool reclaims its megabytes (roadmap #2), so swapping doesn't leak.
-    if (CSOUND* old = static_cast<CSOUND*>(_gate.take())) csoundDestroy(old);
-
-    // 2) Build the new orchestra (SD slot or built-in), with the built-in as the compile-failure net.
+    // Build the NEW instance while the OLD one is still live (still playing): this avoids the audio
+    // gap AND avoids a csoundDestroy-then-csoundCreate sequence (which may not re-init cleanly on bare
+    // metal). Costs ~2 instances of pool memory briefly.
     char* buf = static_cast<char*>(std::malloc(kPatchMax));
     bool  from_sd = false;
     const char* orc = orchestra_for(target, buf, &from_sd);
     CSOUND* cs = build_instance(orc, _block);
     if (!cs && from_sd) { from_sd = false; target = 0; cs = build_instance(kOrchestra, _block); }
     if (buf) std::free(buf);
+    if (!cs) return;                                  // total failure -> keep the old instance running
 
-    // 3) Reseed the panel state and publish (or leave the gate null -> silence on a total failure).
-    if (cs) { reseed_channels(cs); publish_instance(cs); }
+    // Swap: pull the old instance out of the audio path, publish the new one, then destroy the old
+    // (the SDRAM pool reclaims it, roadmap #2). reseed first so the new instance has the knob state.
+    reseed_channels(cs);
+    CSOUND* old = static_cast<CSOUND*>(_gate.take());
+    publish_instance(cs);
+    if (old) csoundDestroy(old);
     _sel = target;
     _patch_loaded = from_sd;
 }
@@ -234,8 +237,24 @@ void CsoundEngine::init(const EngineContext& ctx)
 void CsoundEngine::prepare()
 {
     // Main-loop housekeeping (off the audio ISR). The heavy patch recompile lives here, gated against
-    // the ISR by ReloadGate. A rescan is requested when the selector opens (the card may have mounted
-    // late, or patches been added), and a reload is committed when Alt is released on a new choice.
+    // the ISR by ReloadGate.
+    //
+    // Boot auto-load: the SD card mounts ~1 s after power-up (Storage's state machine), after this
+    // engine's init() has already booted the built-in. So keep rescanning (throttled - rescan_bank is
+    // f_stat I/O) until a slot appears, then load the first SD patch once. After that the user drives
+    // patch choice with the Alt selector.
+    if (_stream && !_boot_loaded && (_probe_div++ & 0x1FF) == 0) {
+        rescan_bank();
+        if (_avail_n > 1) {                          // a slot appeared (built-in is index 0)
+            _boot_loaded = true;
+            _reload_target = 1;                      // the first present SD slot
+            _reload_pending = true;
+        }
+    }
+
+    // While the Alt selector is open, keep rescanning if the bank is still empty so slots appear as
+    // soon as the card mounts (radio's boot-retry pattern). Stops once any slot is found.
+    if (_aux_held && _avail_n <= 1) _rescan_pending = true;
     if (_rescan_pending) { _rescan_pending = false; rescan_bank(); }
     if (_reload_pending) { _reload_pending = false; do_reload(_reload_target); }
 }
@@ -374,7 +393,7 @@ void CsoundEngine::render(DisplayModel& m)
             }
             m.ring[i].set_updated();
         }
-        m.mode_center = { 0x00c0ffu, 0.6f };
+        m.mode_center = { 0x00c0ffu, 0.6f };            // selector hue
         return;
     }
 
@@ -392,8 +411,7 @@ void CsoundEngine::render(DisplayModel& m)
         }
         m.ring[i].set_updated();
     }
-
-    // Centre mode LED doubles as a patch-source tell: cyan = running an SD slot, white = built-in.
+    // Centre mode LED tells the patch source: cyan = an SD slot, white = the built-in.
     m.mode_center = { _patch_loaded ? 0x00c0ffu : 0xffffffu, 0.5f };
 }
 

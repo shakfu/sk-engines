@@ -5,9 +5,14 @@
 // Orchestra selection for the Csound engine (roadmap #1 + #5 in docs/dev/csound.md): load `.csd`
 // patches from the SD card, with a built-in fallback, and pick among a small bank via Alt+PITCH.
 //
-// Card layout: numbered slots at `/csound/0.csd` .. `/csound/7.csd` (full CSD documents, like the
-// built-in kOrchestra). The engine presents the built-in plus every present slot as a selectable
-// list; Alt+PITCH (CapAux) scrolls it and a release commits a live recompile.
+// Card layout: numbered slots in a `csound/` folder at the card root - `csound/0.csd` ..
+// `csound/7.csd` (full CSD documents, like the built-in kOrchestra). The engine presents the built-in
+// plus every present slot as a selectable list; Alt+PITCH (CapAux) scrolls it and a release commits
+// a live recompile.
+//
+// PATH FORM: FatFs paths here are RELATIVE (no leading slash), matching the radio/tape/shuttle engines
+// - libDaisy mounts the SD at a volume-prefixed path (FatFSInterface::GetSDPath), so a bare leading
+// "/" resolves to the wrong volume and f_open/f_stat miss. (This cost a hardware debug session.)
 //
 // This is the host-testable half (no libcsound): path building, the existence scan, the Aux->index
 // quantizer, and the read+validate. The engine (csound_engine.cpp, which links libcsound) calls
@@ -23,9 +28,10 @@ namespace spotykach {
 // Number of numbered patch slots probed on the card (/csound/0.csd .. /csound/<N-1>.csd).
 inline constexpr int kMaxPatchSlots = 8;
 
-// Build "/csound/<slot>.csd" into `out` (needs ~16 bytes). Returns `out`.
+// Build the relative path "csound/<slot>.csd" into `out` (needs ~16 bytes). Returns `out`. No leading
+// slash - see the PATH FORM note above.
 inline const char* patch_path(int slot, char* out, int outsz) {
-    std::snprintf(out, outsz, "/csound/%d.csd", slot);
+    std::snprintf(out, outsz, "csound/%d.csd", slot);
     return out;
 }
 
@@ -66,11 +72,24 @@ inline const char* read_orchestra(IStreamDeck* stream, const char* path, char* b
     if (!stream || !buf || max <= 1 || !path) return fallback;
 
     const int n = stream->read_text(path, buf, max);
-    if (n <= 0)               return fallback;   // missing / empty
-    if (!looks_like_csd(buf)) return fallback;   // present but not a CSD -> keep the built-in
+    if (n <= 0) return fallback;                          // missing / empty
+
+    // Start the document exactly at the root tag, skipping any leading bytes a card file may carry
+    // that a compiled-in string never does - a UTF-8 BOM (EF BB BF) or stray whitespace/newlines.
+    // csoundCompileCSD wants the text to BEGIN with <CsoundSynthesizer>; a BOM in front makes it fail
+    // to find the tag (while strstr still would), which presents as "valid CSD but compile failed".
+    char* tag = std::strstr(buf, "<CsoundSynthesizer");
+    if (!tag) return fallback;                            // present but not a CSD -> keep the built-in
+
+    // Normalize CRLF -> LF in place. A card file authored on Windows / many editors has \r\n line
+    // endings; the compiled-in orchestra (a C string literal) has \n. Csound's line-oriented CSD
+    // block parser chokes on the stray \r, which presents as "valid CSD text but compile failed".
+    char* w = tag;
+    for (const char* r = tag; *r; ++r) if (*r != '\r') *w++ = *r;
+    *w = '\0';
 
     if (from_sd) *from_sd = true;
-    return buf;
+    return tag;
 }
 
 } // namespace spotykach

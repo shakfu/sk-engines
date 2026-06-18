@@ -61,10 +61,11 @@ const char* kValidCsd =
     "instr MidiNote\n  out oscili(0.3, p4)\nendin\n</CsInstruments>\n</CsoundSynthesizer>\n";
 
 void test_patch_path() {
-    std::printf("patch_path builds /csound/<slot>.csd\n");
+    std::printf("patch_path builds relative csound/<slot>.csd (no leading slash)\n");
     char p[24];
-    check(std::strcmp(patch_path(0, p, sizeof(p)), "/csound/0.csd") == 0, "slot 0 path");
-    check(std::strcmp(patch_path(7, p, sizeof(p)), "/csound/7.csd") == 0, "slot 7 path");
+    check(std::strcmp(patch_path(0, p, sizeof(p)), "csound/0.csd") == 0, "slot 0 path (relative)");
+    check(std::strcmp(patch_path(7, p, sizeof(p)), "csound/7.csd") == 0, "slot 7 path (relative)");
+    check(p[0] != '/', "no leading slash (libDaisy mounts at a volume-prefixed path)");
 }
 
 void test_scan_patches() {
@@ -113,6 +114,17 @@ void test_read_orchestra() {
     from_sd = true;
     orc = read_orchestra(&s, patch_path(4, path, sizeof(path)), buf, sizeof(buf), kFallback, &from_sd);
     check(orc == kFallback && !from_sd, "a present non-CSD file falls back (don't kill audio)");
+
+    // A card file as an editor on Windows would save it: a UTF-8 BOM, leading whitespace, and CRLF
+    // line endings - none of which the compiled-in C-string orchestra has. read_orchestra must return
+    // text that STARTS at "<CsoundSynthesizer" (BOM/junk stripped) and contains no '\r' (CRLF->LF), so
+    // csoundCompileCSD sees exactly the clean document the built-in path compiles.
+    s.body[3] = "\xEF\xBB\xBF\r\n<CsoundSynthesizer>\r\n<CsInstruments>\r\n</CsInstruments>\r\n</CsoundSynthesizer>\r\n";
+    from_sd = false;
+    orc = read_orchestra(&s, patch_path(3, path, sizeof(path)), buf, sizeof(buf), kFallback, &from_sd);
+    check(from_sd, "a BOM+CRLF CSD is still recognized as an SD patch");
+    check(std::strncmp(orc, "<CsoundSynthesizer", 18) == 0, "returned text starts exactly at the root tag (BOM/junk stripped)");
+    check(std::strchr(orc, '\r') == nullptr, "all CR stripped (CRLF normalized to LF)");
 
     check(read_orchestra(&s, nullptr, buf, sizeof(buf), kFallback, &from_sd) == kFallback, "null path -> fallback");
     check(read_orchestra(nullptr, path, buf, sizeof(buf), kFallback, &from_sd) == kFallback, "null stream -> fallback");
