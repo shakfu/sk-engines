@@ -75,10 +75,14 @@ TEST_DFILTER = $(BUILD)/test_dfilter
 TEST_VOICE   = $(BUILD)/test_voice
 TEST_DELAY   = $(BUILD)/test_delay
 TEST_GRAINCLOUD_KERNEL = $(BUILD)/test_graincloud_kernel
+TEST_CSOUND_ALLOC = $(BUILD)/test_csound_alloc
+TEST_CSOUND_PATCH = $(BUILD)/test_csound_patch
+TEST_CSOUND_MIDI  = $(BUILD)/test_csound_midi
+TEST_CSOUND_RELOAD = $(BUILD)/test_csound_reload
 BENCH_REVERB     = $(BUILD)/bench_reverb
 BENCH_GRAINCLOUD = $(BUILD)/bench_graincloud
 
-.PHONY: all clean run test test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-tape test-stream test-shuttle test-radio test-chorus test-dfilter test-voice bench-reverb bench-graincloud
+.PHONY: all clean run test test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-tape test-stream test-shuttle test-radio test-chorus test-dfilter test-voice test-csound-alloc test-csound-patch test-csound-midi test-csound-reload bench-reverb bench-graincloud
 all: $(TARGET)
 
 $(TARGET): $(SRC) | $(BUILD)
@@ -92,6 +96,34 @@ $(TEST_EDRUMS): test_edrums_slots.cpp $(LIB_SRC) $(EDRUMS_SRC) | $(BUILD)
 
 $(TEST_RESO): test_reso.cpp $(LIB_SRC) $(RESO_SRC) $(RINGS_SRC) | $(BUILD)
 	$(CXX) $(CXXFLAGS) test_reso.cpp $(LIB_SRC) $(RESO_SRC) $(RINGS_SRC) -o $@
+
+# Csound SDRAM allocator (CsoundPool). Header-only, no libcsound/Daisy deps, so it compiles alone.
+$(TEST_CSOUND_ALLOC): test_csound_alloc.cpp $(ROOT)/src/engine/csound/csound_pool.h | $(BUILD)
+	$(CXX) $(CXXFLAGS) test_csound_alloc.cpp -o $@
+test-csound-alloc: $(TEST_CSOUND_ALLOC)
+	./$(TEST_CSOUND_ALLOC)
+
+# Csound orchestra selector (SD patch / built-in fallback). Header-only logic + a fake IStreamDeck,
+# no libcsound/Daisy deps, so it compiles alone.
+$(TEST_CSOUND_PATCH): test_csound_patch.cpp $(ROOT)/src/engine/csound/csound_patch.h \
+                      $(ROOT)/src/engine/istreamdeck.h | $(BUILD)
+	$(CXX) $(CXXFLAGS) test_csound_patch.cpp -o $@
+test-csound-patch: $(TEST_CSOUND_PATCH)
+	./$(TEST_CSOUND_PATCH)
+
+# Csound MIDI plumbing (note->Hz, p-field builder, lock-free note ring). Header-only; -pthread for the
+# SPSC cross-thread test. No libcsound/Daisy deps.
+$(TEST_CSOUND_MIDI): test_csound_midi.cpp $(ROOT)/src/engine/csound/csound_midi.h | $(BUILD)
+	$(CXX) $(CXXFLAGS) -pthread test_csound_midi.cpp -o $@
+test-csound-midi: $(TEST_CSOUND_MIDI)
+	./$(TEST_CSOUND_MIDI)
+
+# Csound live-patch-switch handoff (ReloadGate). Lock-free ISR/main-loop sequencing; -pthread for the
+# concurrent use-after-free detector. No libcsound/Daisy deps.
+$(TEST_CSOUND_RELOAD): test_csound_reload.cpp $(ROOT)/src/engine/csound/csound_reload.h | $(BUILD)
+	$(CXX) $(CXXFLAGS) -pthread test_csound_reload.cpp -o $@
+test-csound-reload: $(TEST_CSOUND_RELOAD)
+	./$(TEST_CSOUND_RELOAD)
 
 # graincloud kernel smoke test (the de-STL'd GrainflowLib only; no engine/LIB deps).
 $(TEST_GRAINCLOUD_KERNEL): test_graincloud_kernel.cpp $(wildcard $(GRAINCLOUD_TP)/grainflow/*.h) | $(BUILD)
@@ -166,7 +198,7 @@ run: $(TARGET)
 
 # `test` runs both engine harnesses. Both inject the transport via EngineContext (granular drives the
 # real platform Transport; edrums uses a small stub ITransport) - the post-transport-decoupling way.
-test: test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-tape test-stream test-shuttle test-radio test-chorus test-dfilter test-voice
+test: test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-tape test-stream test-shuttle test-radio test-chorus test-dfilter test-voice test-csound-alloc test-csound-patch test-csound-midi test-csound-reload
 
 test-granular: $(TEST)
 	./$(TEST)

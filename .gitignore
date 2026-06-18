@@ -3,6 +3,7 @@
 .direnv
 **/build
 build-cmake/
+build-*/
 dist/
 *.log
 *.mmon

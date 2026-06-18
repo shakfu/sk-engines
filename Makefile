@@ -135,8 +135,26 @@ C_DEFS += -DSPK_ENGINE_VOICE
 # shared FaustEngine<Traits> wrapper), so there is no engine .cpp.
 ENGINE_SOURCES =
 # <<< faust:voice <<<
+else ifeq ($(ENGINE), csound)
+# Csound is a QSPI-ONLY target: it links libcsound.a (~2 MB code) which can't fit the 186 KB
+# SRAM_EXEC budget, so it must run from QSPI. Build it BOOT_QSPI with the SDRAM-heap linker script:
+#   make ENGINE=csound APP_TYPE=BOOT_QSPI LDSCRIPT=alt_qspi_csound.lds BUILD_DIR=build-csound
+# (engine_select.h maps SPK_ENGINE_CSOUND -> CsoundEngine; see docs/dev/csound-impl.md.)
+C_DEFS += -DSPK_ENGINE_CSOUND
+# Enable the platform SD streaming service so ctx.stream is injected (app.cpp): the engine reads
+# /csound/<n>.csd patches off the card via ctx.stream->exists/read_text. Without this, ctx.stream is
+# null and only the built-in orchestra is ever available. Adds ~2 MB of SDRAM rings (12 MB csound
+# pool + 48 MB arena + ~2 MB rings = ~62 MB, within the 64 MB SDRAM).
+C_DEFS += -DSPK_USE_STREAM
+CSOUND_BASE = thirdparty/csound/Daisy
+CSOUND_INC  = -I$(CSOUND_BASE)/include/csound
+ENGINE_SOURCES = src/engine/csound/csound_engine.cpp src/engine/csound/csound_alloc.cpp csound-poc/spotykach_qspi_vtor.cpp
+LIBS    += $(CSOUND_BASE)/lib/libcsound.a
+LDFLAGS += -u _printf_float
+# Route Csound's C-malloc family to the SDRAM bump pool (csound_alloc.cpp); the platform heap stays in SRAM.
+LDFLAGS += -Wl,--wrap=malloc,--wrap=free,--wrap=calloc,--wrap=realloc
 else
-$(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', 'edrums', 'reso', 'graincloud', 'tape', 'reverb', 'shuttle', 'radio', 'chorus', 'dfilter', or 'voice')
+$(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', 'edrums', 'reso', 'graincloud', 'tape', 'reverb', 'shuttle', 'radio', 'chorus', 'dfilter', 'voice', or 'csound')
 endif
 
 # Opt-in (make ... METER=1): enable the on-device CPU load meter (app.cpp's CpuLoadMeter). It writes
@@ -174,7 +192,7 @@ APP_TYPE = BOOT_SRAM
 LDSCRIPT = alt_sram.lds
 BOOT_BIN = bootloader-spotykach-v2.bin
 
-C_INCLUDES = -Isrc/ -Ilib/ $(RESO_INC) $(GRAINCLOUD_INC) $(GEN_INC)
+C_INCLUDES = -Isrc/ -Ilib/ $(RESO_INC) $(GRAINCLOUD_INC) $(GEN_INC) $(CSOUND_INC)
 # NOTE: there used to be `C_USR_FLAGS = -ffast-math -funroll-loops` here, but the core Makefile reads
 # C_USER_FLAGS (with the E), so it was dead - those flags never reached the compiler and the shipping
 # firmware was built without them. Removed to stop it reading as active. The device meets its CPU/SRAM
@@ -251,7 +269,7 @@ all: check-boundary
 
 # One-shot variant flash: clean -> build -> flash over DFU. Put the device in DFU mode first
 # (hold Reset ~3s until the bottom pad LEDs breathe white), then `make granular` / `make passthrough`.
-.PHONY: engine-granular engine-passthrough engine-delay engine-edrums engine-reso engine-graincloud engine-tape engine-shuttle engine-reverb engine-radio engine-chorus engine-dfilter engine-voice engine-gigaverb
+.PHONY: engine-granular engine-passthrough engine-delay engine-edrums engine-reso engine-graincloud engine-tape engine-shuttle engine-reverb engine-radio engine-chorus engine-dfilter engine-voice engine-gigaverb engine-csound program-csound
 engine-granular:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=granular
@@ -296,6 +314,19 @@ engine-radio:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=radio
 	$(MAKE) ENGINE=radio program-dfu
+
+# Csound is QSPI-only (BOOT_QSPI + the SDRAM-pool linker script, links libcsound.a). Put the board
+# in DFU before the build finishes - program-dfu flashes once (no retry loop). The leading `-`
+# ignores the benign get_status error on the QSPI `:leave` (the flash itself succeeds).
+CSOUND_FLAGS = ENGINE=csound APP_TYPE=BOOT_QSPI LDSCRIPT=alt_qspi.lds
+engine-csound:
+	$(MAKE) clean
+	$(MAKE) -j8 $(CSOUND_FLAGS)
+	-$(MAKE) $(CSOUND_FLAGS) program-dfu
+
+# Re-flash the last csound build without rebuilding (board in DFU).
+program-csound:
+	-$(MAKE) $(CSOUND_FLAGS) program-dfu
 
 engine-chorus:
 	$(MAKE) clean

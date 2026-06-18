@@ -140,6 +140,13 @@ void AppImpl::Init()
 {
     auto sample_rate = 48000;
     auto block_size = 96;
+#if defined(SPK_ENGINE_CSOUND)
+    // Csound runs ksmps == the audio block, and its per-k-cycle overhead is fixed, so a larger block
+    // amortizes it - more CPU headroom for polyphony / dense MIDI (docs: >=128, 256 proven). The
+    // csound build is dedicated (QSPI-only), so this doesn't change any other engine. Trade: +~3.3 ms
+    // I/O latency (256 vs 96 frames at 48 kHz).
+    block_size = 256;
+#endif
     _hw.Init(sample_rate, block_size);
 
     // Hand the engine the SDRAM arena + clock; the engine sub-allocates whatever buffers it needs
