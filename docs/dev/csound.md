@@ -77,6 +77,22 @@ The **Pod** dev target (`csound-poc/`, bare `DaisySeed`, no front panel) predate
 
 ---
 
+## Debugging (SWD / ST-Link)
+
+There is **no console** in the QSPI build (see the Gotchas), so bring-up has been done with audio as the debug signal. A SWD probe (ST-Link V2/V3, or a J-Link) is a large upgrade for the failures that audio can't show — pre-`main` ctor crashes, hardfaults, ISR hangs, and `csound*` return codes — and it is the recommended tool for the perf pass (roadmap #4) and any allocator/patch-swap crashes. The Daisy Seed exposes **SWDIO/SWCLK** pads; ST-Link + OpenOCD + Cortex-Debug (VS Code) works.
+
+**QSPI execute-in-place changes the workflow** — it is not the usual "probe flashes and runs":
+
+- **Attach, don't flash.** The ST-Link internal-flash loader can't place a `BOOT_QSPI` XIP image. Keep the DFU flow (`make engine-csound` / `program-csound`) to put the image at `0x90040000`, then **attach to the running target** and load symbols from `build/spotykach.elf`. The QSPI controller must already be in memory-mapped mode for the probe to read/step that code — the Daisy bootloader does this at boot, so attach **after** boot (or teach OpenOCD to init QSPI).
+- **Hardware breakpoints only.** Software breakpoints patch a `BKPT` into the instruction, but QSPI code is memory-mapped read-only flash the debugger can't write through. You are limited to the Cortex-M7 FPB comparators (~6-8) — enough, but you can't place them freely.
+- **Bootloader / `VTOR`.** The probe sees the app only after the bootloader hands off; the `spotykach_qspi_vtor.cpp` inject and the v2 bootloader don't interfere with a debug session.
+
+**Highest-leverage uses here:** halt on the fault handler and read `CFSR`/`HFSR`/`BFAR` to pin a crash in seconds (the SDRAM-heap-vs-ctor bug was exactly this shape); break after `csoundStart` to inspect the return codes that are otherwise invisible; and inspect ftable/instr state for the silent-`ftgen` mystery.
+
+**Cheaper first step (no soldering):** the platform already has a USB-CDC path (the `METER=1` meter). Wiring that same serial as a log channel for the csound build gets you compile status + `printf` for the *non-crash* questions; the probe earns its keep specifically for failures **before serial is up** (ctors, ISRs, hardfaults). Alternatively, SWO/ITM `printf` over the trace pin gives a console through the probe.
+
+---
+
 ## Limitations & potential
 
 ### Opcodes — limited by *category*, not count
@@ -127,7 +143,7 @@ Ordered by leverage; the recommendation is to do **#4 and #2 first** — they're
 
 - **The SDRAM-heap-vs-ctor crash.** A heap in SDRAM (`alt_qspi_csound.lds`) crashed at boot: global ctors `malloc` before `_hw.Init()` powers up the FMC. Fix = dual heap (platform SRAM + Csound's `--wrap`'d SDRAM pool armed after init). This is the central lesson; see "The heap" above.
 
-- **Bootloader v5.4 (Pod) / v2 (spotykach), not v6.4.** v6.4 doesn't point VTOR at the QSPI app → dead interrupts. The `spotykach_qspi_vtor.cpp` inject makes the app bootloader-agnostic; v5.4/v2 work.
+- **Bootloader v5.4 (Pod) / v2 (spotykach), not v6.4.** v6.4 doesn't point VTOR at the QSPI app → dead interrupts. The `spotykach_qspi_vtor.cpp` inject makes the app bootloader-agnostic; v5.4/v2 work. v6.4 (not well tested)
 
 - **Bare `DaisySeed`, not `DaisyPod`** on the Pod — DaisyPod init left audio silent. (The spotykach build uses the platform's own `_hw` init, which is correct for that board.)
 
