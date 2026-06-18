@@ -264,7 +264,7 @@ all: check-boundary
 
 # One-shot variant flash: clean -> build -> flash over DFU. Put the device in DFU mode first
 # (hold Reset ~3s until the bottom pad LEDs breathe white), then `make granular` / `make passthrough`.
-.PHONY: engine-granular engine-passthrough engine-delay engine-edrums engine-reso engine-graincloud engine-tape engine-shuttle engine-reverb engine-radio engine-chorus engine-dfilter engine-voice engine-gigaverb
+.PHONY: engine-granular engine-passthrough engine-delay engine-edrums engine-reso engine-graincloud engine-tape engine-shuttle engine-reverb engine-radio engine-chorus engine-dfilter engine-voice engine-gigaverb engine-csound program-csound
 engine-granular:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=granular
@@ -309,6 +309,19 @@ engine-radio:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=radio
 	$(MAKE) ENGINE=radio program-dfu
+
+# Csound is QSPI-only (BOOT_QSPI + the SDRAM-pool linker script, links libcsound.a). Put the board
+# in DFU before the build finishes - program-dfu flashes once (no retry loop). The leading `-`
+# ignores the benign get_status error on the QSPI `:leave` (the flash itself succeeds).
+CSOUND_FLAGS = ENGINE=csound APP_TYPE=BOOT_QSPI LDSCRIPT=alt_qspi.lds
+engine-csound:
+	$(MAKE) clean
+	$(MAKE) -j8 $(CSOUND_FLAGS)
+	-$(MAKE) $(CSOUND_FLAGS) program-dfu
+
+# Re-flash the last csound build without rebuilding (board in DFU).
+program-csound:
+	-$(MAKE) $(CSOUND_FLAGS) program-dfu
 
 engine-chorus:
 	$(MAKE) clean

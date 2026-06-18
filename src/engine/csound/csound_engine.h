@@ -34,12 +34,17 @@ public:
     Capabilities capabilities() const override;
     void         set_param(ParamId id, DeckRef::Ref d, float v) override;
     float        param(ParamId id, DeckRef::Ref d) const override;
-    // TODO: pads (on_play_pad -> schedule/stop instruments), render(DisplayModel) once we want a UI.
+
+    // --- panel feedback -------------------------------------------------------------------------
+    // Both rings show the output level (peak meter); the Play indicators show running state.
+    void render(DisplayModel& m) override;
+    // TODO: pads (on_play_pad -> schedule/stop instruments); per-knob ring markers.
 
 private:
     CSOUND* _cs        = nullptr;   // null => compile/create failed; process() outputs silence
     float   _sr        = 48000.f;
     int     _ksmps     = 0;         // == the platform block size (set via --ksmps in init)
+    float   _level     = 0.f;       // output peak meter (written in process(), read in render())
 
     // Cached 0..1 knob values for param() pickup readback, one slot per mapped (ParamId, deck).
     static constexpr int kSlots = 8;     // small fixed map; grow as the control vocabulary grows

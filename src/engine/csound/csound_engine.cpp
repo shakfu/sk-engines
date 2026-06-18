@@ -124,10 +124,18 @@ void CsoundEngine::process(const float* const* in, float** out, size_t size)
 
     csoundPerformKsmps(_cs);                    // one k-cycle: consumes spin, fills spout
 
+    float peak = 0.f;
     for (size_t i = 0; i < n; i++) {            // interleaved spout -> de-interleaved out
-        out[0][i] = static_cast<float>(spout[i * 2]);
-        out[1][i] = static_cast<float>(spout[i * 2 + 1]);
+        const float l = static_cast<float>(spout[i * 2]);
+        const float r = static_cast<float>(spout[i * 2 + 1]);
+        out[0][i] = l;
+        out[1][i] = r;
+        const float a = (l < 0 ? -l : l), b = (r < 0 ? -r : r);
+        if (a > peak) peak = a;
+        if (b > peak) peak = b;
     }
+    // Peak meter for render(): fast attack, slow decay. Single-float write, read in the main loop.
+    _level = (peak > _level) ? peak : _level * 0.90f;
 }
 
 Capabilities CsoundEngine::capabilities() const
@@ -155,6 +163,31 @@ float CsoundEngine::param(ParamId id, DeckRef::Ref d) const
     int slot = -1;
     channel_for(id, d, slot);
     return (slot >= 0 && slot < kSlots) ? _cache[slot] : 0.f;
+}
+
+void CsoundEngine::render(DisplayModel& m)
+{
+    m.clear();
+
+    const bool  running = (_cs != nullptr);
+    float       lvl     = _level;
+    if (lvl > 1.f) lvl = 1.f;
+
+    // Output level meter on both rings: green base, amber past -4 dBish, red near clip.
+    const uint32_t col = (lvl > 0.85f) ? 0xff2000u : (lvl > 0.60f) ? 0xffa000u : 0x00ff00u;
+    for (int i = 0; i < 2; i++) {
+        m.play[i] = { running ? 0x00ff00u : 0x000000u, running ? 1.f : 0.f };
+
+        m.ring[i].set_hex_color(0x0a0a0a);          // faint full base ring
+        m.ring[i].set_segment(0.f, 0.999f);
+        if (running && lvl > 0.02f) {               // bright arc proportional to level
+            m.ring[i].set_hex_color(col);
+            m.ring[i].set_segment(0.f, lvl);
+        }
+        m.ring[i].set_updated();
+    }
+
+    m.mode_center = { 0xffffff, 0.5f };             // stereo route
 }
 
 } // namespace spotykach
