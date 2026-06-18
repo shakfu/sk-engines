@@ -1,7 +1,7 @@
 // Host test for the Csound SDRAM allocator (CsoundPool, src/engine/csound/csound_pool.h). The pool
 // is the one Csound component with no libcsound dependency, so it is exercised here off-target,
 // against a small backing buffer, to the project's test standard. It is roadmap #2 in
-// docs/dev/csound.md: a free-capable allocator that reclaims on free/realloc (the old bump pool did
+// docs/dev/csound-impl.md: a free-capable allocator that reclaims on free/realloc (the old bump pool did
 // not), which is what makes csoundReset + recompile patch-swapping sustainable.
 //
 // The hard properties this proves: 16-byte alignment, splitting, full coalescing on free (forward +

@@ -59,7 +59,7 @@
   namespace spotykach { using ActiveEngine = VoiceEngine; }
 // <<< faust:voice <<<
 #elif defined(SPK_ENGINE_CSOUND)
-  // QSPI-only target (links libcsound.a, BOOT_QSPI) - NOT an SRAM engine. See docs/dev/csound.md.
+  // QSPI-only target (links libcsound.a, BOOT_QSPI) - NOT an SRAM engine. See docs/dev/csound-impl.md.
   #include "engine/csound/csound_engine.h"
   namespace spotykach { using ActiveEngine = CsoundEngine; }
 #else

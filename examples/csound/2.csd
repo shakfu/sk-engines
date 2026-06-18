@@ -19,6 +19,11 @@ nchnls = 2
 
 gaMix init 0
 
+; Cap simultaneous voices: each NoteOn spawns an instance (notes last ~0.6 s), so very fast playing
+; can pile up many at once and overrun the CPU. Beyond this many active voices, new notes are skipped
+; (a dropped note, not a glitch). Raise it if you have headroom, lower it if dense playing still chokes.
+maxalloc "MidiNote", 6
+
 instr MidiNote
   ifreq = p4
   ks chnget "sizeA"

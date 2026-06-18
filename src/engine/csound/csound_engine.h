@@ -11,7 +11,7 @@
 // QSPI firmware target - code in QSPI flash, heap in SDRAM (the Csound port's custom linker script),
 // stock Daisy v5.4 bootloader, linked against libcsound.a. It CANNOT link into the SRAM engine
 // bundle: ~2 MB of code vs the 186 KB SRAM_EXEC budget, and the spotykach board only boots SRAM.
-// See docs/dev/csound.md for the why and the build recipe.
+// See docs/dev/csound-impl.md for the why and the build recipe.
 //
 // The mapping onto IEngine is small and clean:
 //   init()      -> csoundCreate / SetHostAudioIO / options / CompileCSD / Start

@@ -139,7 +139,7 @@ else ifeq ($(ENGINE), csound)
 # Csound is a QSPI-ONLY target: it links libcsound.a (~2 MB code) which can't fit the 186 KB
 # SRAM_EXEC budget, so it must run from QSPI. Build it BOOT_QSPI with the SDRAM-heap linker script:
 #   make ENGINE=csound APP_TYPE=BOOT_QSPI LDSCRIPT=alt_qspi_csound.lds BUILD_DIR=build-csound
-# (engine_select.h maps SPK_ENGINE_CSOUND -> CsoundEngine; see docs/dev/csound.md.)
+# (engine_select.h maps SPK_ENGINE_CSOUND -> CsoundEngine; see docs/dev/csound-impl.md.)
 C_DEFS += -DSPK_ENGINE_CSOUND
 # Enable the platform SD streaming service so ctx.stream is injected (app.cpp): the engine reads
 # /csound/<n>.csd patches off the card via ctx.stream->exists/read_text. Without this, ctx.stream is

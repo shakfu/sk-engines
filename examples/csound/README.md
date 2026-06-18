@@ -22,7 +22,8 @@ The centre mode LED is cyan for an SD patch, white for the built-in. MIDI NoteOn
 - `2.csd` — **MIDI-driven, polyphonic**: the keyboard plays the main voice, no drone. Silent until you
   play. NoteOn-only means each note is a fixed ~0.6 s stab (chords work), not a hold-while-pressed pad.
   Voices accumulate into a global bus that an always-on instrument `tanh`-limits, so polyphony can't
-  hard-clip `0dbfs` (the standard Csound pattern — a per-voice `outs` would sum to distortion).
+  hard-clip `0dbfs` (the standard Csound pattern — a per-voice `outs` would sum to distortion). A
+  `maxalloc` caps simultaneous voices so very fast playing drops notes instead of overrunning the CPU.
 
 ## Writing your own
 
@@ -36,5 +37,5 @@ Format rules that matter (the on-device CSD parser is line-oriented):
 - Core opcodes only — no plugin opcodes, no soundfile I/O (`diskin`/`GEN01`); prefer table-less
   oscillators (`vco2`). A UTF-8 BOM and CRLF line endings are tolerated (the engine normalizes them).
 
-See `docs/dev/csound.md` and the official orchestras in
+See `docs/engines/csound.md` (user guide), `docs/dev/csound-impl.md` (internals), and the official orchestras in
 `thirdparty/csound/Daisy/DaisyCsoundExamples/` for more.

@@ -3,7 +3,7 @@
 #pragma once
 
 // Lock-free handoff of the Csound instance between the audio ISR and the main loop, for live patch
-// switching (roadmap #5 in docs/dev/csound.md). process() (the ISR) performs on the instance; a
+// switching (roadmap #5 in docs/dev/csound-impl.md). process() (the ISR) performs on the instance; a
 // patch change destroys it and compiles a new one from the main loop (in prepare()). Those must not
 // overlap: destroying the instance while the ISR is mid-csoundPerformKsmps is a use-after-free.
 //

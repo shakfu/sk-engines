@@ -12,7 +12,7 @@
 //
 // The pool is a free-capable allocator (CsoundPool, csound_pool.h), NOT a bump pool: free/realloc
 // reclaim memory and coalesce, so csoundReset + recompile (patch swapping, roadmap #1/#2 in
-// docs/dev/csound.md) returns its megabytes to the pool instead of leaking them. On pool exhaustion
+// docs/dev/csound-impl.md) returns its megabytes to the pool instead of leaking them. On pool exhaustion
 // we fall back to the real SRAM heap so a request never hard-fails; in_pool() then routes each
 // pointer's free/realloc back to whichever heap it came from.
 //

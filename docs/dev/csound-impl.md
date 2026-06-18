@@ -1,5 +1,8 @@
 # Dev notes — Csound as an sk-engines engine (`ENGINE=csound`)
 
+> Developer / implementation notes. The **user-facing** guide (build & flash, controls, loading and
+> writing patches, limitations) is [`docs/engines/csound.md`](../engines/csound.md).
+
 Running [Csound](https://csound.com) 7 as a synthesis engine on Daisy hardware. Csound is a runtime audio compiler/interpreter: an orchestra (`.csd` / `.orc` text) is compiled at runtime and performed. This engine wraps it behind the real sk-engines `IEngine` contract.
 
 It is **not** an SRAM engine. Csound's linked code is ~2 MB — far over the 186 KB `SRAM_EXEC` budget — so it runs as a **`BOOT_QSPI`** app (code executes in place from QSPI flash). Everything else about the contract (params, display, pads) is the same as any other engine; only the memory/boot model differs.
@@ -21,23 +24,7 @@ Both expand to `ENGINE=csound APP_TYPE=BOOT_QSPI LDSCRIPT=alt_qspi.lds` + the co
 
 Prerequisite, once: build `libcsound.a` (see "Building libcsound.a" below). Recover the board anytime by flashing any normal engine.
 
-**Loading patches (optional).** Drop full CSD documents at `/csound/0.csd` .. `/csound/7.csd` on the SD card — ready-to-copy examples live in `examples/csound/` (`0.csd`, `1.csd`, + a README). The engine boots into the lowest-numbered one (or the built-in if the card has none) and presents the **built-in plus every present slot** as a bank: **hold Alt and turn PITCH** to scroll the selector (a dot per patch around the rings), **release** to compile the chosen one live (the centre mode LED turns cyan for an SD patch, white for the built-in). A patch should `chnget` the engine's control channels (`speedA`/`mixA`/`sizeA`/`envA`/`fbA`/`modspA`/`modampA`, and the `B` deck) to be driven by the panel knobs, and define `instr MidiNote` (p4 = freq Hz) to be keyboard-playable — see `kOrchestra` in `csound_engine.cpp` for the template, or the official orchestras in `thirdparty/csound/Daisy/DaisyCsoundExamples/`. No card, no file, a non-CSD file, or one that fails to compile all fall back to the built-in, so the engine always makes sound.
-
-**CSD format (matters — Csound's CSD parser is line-oriented):** each section tag must be on its **own line** — `<CsScore>` and `</CsScore>` on separate lines, **not** `<CsScore></CsScore>` (a one-line empty section makes the parser miss the closing tag and the compile fails). Use the structure the Daisy examples use:
-
-```
-<CsoundSynthesizer>
-<CsOptions>
-</CsOptions>
-<CsInstruments>
-  ; sr/0dbfs/nchnls, your instr 1.. and instr MidiNote
-</CsInstruments>
-<CsScore>
-</CsScore>
-</CsoundSynthesizer>
-```
-
-The engine normalizes a leading UTF-8 BOM and CRLF line endings on read (a card file authored on Windows has both; a compiled-in string never does), so those won't trip the compile. Other constraints: ≤ 64 KB, core opcodes only — no plugins or soundfile I/O (see Limitations).
+**Loading patches**, the card layout (`csound/0.csd` … `7.csd`), the Alt+PITCH selector, and the CSD authoring rules (section tags on their own lines; BOM/CRLF are tolerated) are in the user guide, [`docs/engines/csound.md`](../engines/csound.md). The notes below are the implementation side.
 
 ---
 
@@ -82,20 +69,27 @@ Two heaps, deliberately:
 
 ## Building `libcsound.a`
 
-`thirdparty/csound/` is Csound 7 with the official `Daisy/` port (toolchain, `Custom.cmake`, examples, linker script, v5.4 bootloader). Needs `arm-none-eabi-gcc` + CMake:
+`thirdparty/csound/` is Csound 7 (the pinned tag `7.0.0-beta.16` of [`csound/csound`](https://github.com/csound/csound)) with the official `Daisy/` port (toolchain, `Custom.cmake`, examples, linker script, v5.4 bootloader). It is **gitignored** (~115 MB) — fetch + build it with one script:
 
 ```
-cd thirdparty/csound
-mkdir build && cd build
+scripts/fetch_csound.sh            # clone Csound + wire the symlinks + cross-build libcsound.a
+scripts/fetch_csound.sh --no-build # just fetch + link (build later)
+```
+
+By default it downloads the GitHub release **source tarball** for the pinned tag `7.0.0-beta.16` (known to build + work here; falls back to `git clone` for a non-GitHub repo or if curl/tar are missing). Needs `cmake`, the `arm-none-eabi` GCC toolchain, and either `curl`+`tar` or `git`. Override `CSOUND_REPO` / `CSOUND_REF` to bump the tag as newer betas are validated, or use `CSOUND_REF=develop` to track the moving branch. The build links the repo's vendored `lib/libDaisy` + `lib/DaisySP` via `Daisy/{libDaisy,DaisySP}` symlinks the script creates, so run `git submodule update --init` first if those are empty.
+
+Under the hood it runs the CMake recipe (also in `thirdparty/csound/Daisy/BUILD.md`):
+
+```
 cmake .. -DCMAKE_INSTALL_PREFIX=../Daisy \
          -DCUSTOM_CMAKE=../Daisy/Custom.cmake \
          -DCMAKE_TOOLCHAIN_FILE=../Daisy/crosscompile.cmake
 make -j && make install
 ```
 
-Installs `libcsound.a` (single precision, bare-metal) + headers to `thirdparty/csound/Daisy/{lib,include}`. `thirdparty/csound/` is gitignored (115 MB); rebuild from this recipe. The `ENGINE=csound` Makefile branch points `-I` / link at `thirdparty/csound/Daisy/{include,lib}`.
+installing `libcsound.a` (single precision, bare-metal) + headers to `thirdparty/csound/Daisy/{lib,include}` — where the `ENGINE=csound` Makefile branch points `-I` / link.
 
-The **Pod** dev target (`csound-poc/`, bare `DaisySeed`, no front panel) predates the spotykach build; keep it for quick iteration. It needs `thirdparty/csound/Daisy/{libDaisy,DaisySP}` symlinked to `lib/`.
+The **Pod** dev target (`csound-poc/`, bare `DaisySeed`, no front panel) predates the spotykach build; keep it for quick iteration. It reuses the same `Daisy/{libDaisy,DaisySP}` symlinks.
 
 ---
 
@@ -207,4 +201,6 @@ Ordered by leverage. **#1, #2, #3, and #5 are done** (SD patches, the free-capab
 
 - `csound-poc/` — the Pod dev target (`harness.cpp`, `Makefile`) for quick iteration.
 
-- `thirdparty/csound/` — Csound 7 + the official `Daisy/` port (gitignored; rebuild via the recipe).
+- `thirdparty/csound/` — Csound 7 + the official `Daisy/` port (gitignored; fetched/built by `scripts/fetch_csound.sh`).
+- `scripts/fetch_csound.sh` — download Csound's release source (pinned tag `7.0.0-beta.16`, git fallback) + wire the `lib/{libDaisy,DaisySP}` symlinks + cross-build `libcsound.a` into `thirdparty/csound/Daisy/`.
+- `examples/csound/` — reference orchestras (`0.csd` drone+pluck, `1.csd` fat bass, `2.csd` polyphonic MIDI lead) + a README; copy into a `csound/` folder on the SD card.

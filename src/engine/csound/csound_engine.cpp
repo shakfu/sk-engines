@@ -2,7 +2,7 @@
 // SPOTYKACH ///////////////////////////////////////////////
 //
 // SKETCH - QSPI-target only. Compiles against libcsound.a (csound.h on the include path) in the
-// BOOT_QSPI build; not part of the SRAM engine bundle. See csound_engine.h / docs/dev/csound.md.
+// BOOT_QSPI build; not part of the SRAM engine bundle. See csound_engine.h / docs/dev/csound-impl.md.
 
 #include "engine/csound/csound_engine.h"
 #include "engine/csound/csound_patch.h"   // patch_path / scan_patches / aux_to_index / read_orchestra

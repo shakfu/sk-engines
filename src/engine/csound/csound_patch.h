@@ -2,7 +2,7 @@
 // SPOTYKACH ///////////////////////////////////////////////
 #pragma once
 
-// Orchestra selection for the Csound engine (roadmap #1 + #5 in docs/dev/csound.md): load `.csd`
+// Orchestra selection for the Csound engine (roadmap #1 + #5 in docs/dev/csound-impl.md): load `.csd`
 // patches from the SD card, with a built-in fallback, and pick among a small bank via Alt+PITCH.
 //
 // Card layout: numbered slots in a `csound/` folder at the card root - `csound/0.csd` ..

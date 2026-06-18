@@ -2,7 +2,7 @@
 // SPOTYKACH ///////////////////////////////////////////////
 #pragma once
 
-// MIDI-note plumbing for the Csound engine (roadmap #3 in docs/dev/csound.md): turn a platform MIDI
+// MIDI-note plumbing for the Csound engine (roadmap #3 in docs/dev/csound-impl.md): turn a platform MIDI
 // NoteOn into a Csound instrument event so a patch is playable from a keyboard.
 //
 // Two design constraints come straight from the platform contract (src/ui/core.ui.midi.cpp):

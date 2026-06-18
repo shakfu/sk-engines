@@ -3,7 +3,7 @@
 #pragma once
 
 // A free-capable allocator over a fixed byte pool, for Csound's SDRAM heap (roadmap #2 in
-// docs/dev/csound.md). It replaces the original bump pool: a bump allocator never reclaims, so
+// docs/dev/csound-impl.md). It replaces the original bump pool: a bump allocator never reclaims, so
 // csoundReset + recompile (patch swapping) exhausts the 12 MB pool after a handful of swaps. This
 // allocator coalesces on free, so a reset's freed megabytes return to the pool and patch-swapping
 // is sustainable.
