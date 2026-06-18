@@ -1,28 +1,36 @@
-# Dev notes — Csound on Daisy (`csound-poc`)
+# Dev notes — Csound on Daisy (`csound-poc` + `CsoundEngine`)
 
-Notes for running [Csound](https://csound.com) 7 as a synthesis engine on Daisy hardware. This is an experimental track that lives **outside** the normal sk-engines SRAM firmware: Csound is far too large for the 186 KB `SRAM_EXEC` budget the spotykach engines link into, so it runs as a QSPI-flash app with its heap in SDRAM. Treat it as its own firmware target, not a drop-in `IEngine`.
+Notes for running [Csound](https://csound.com) 7 as a synthesis engine on Daisy hardware. This is an experimental track that lives **outside** the normal sk-engines SRAM firmware: Csound is far too large for the 186 KB `SRAM_EXEC` budget the spotykach engines link into, so it runs as a **QSPI-flash app** with its heap in SDRAM. The `IEngine` wrapper exists and works; what differs from the other engines is only the memory and boot model.
 
-Development is on a **Daisy Pod** (a scratch board), because Csound needs the stock Daisy QSPI bootloader and the spotykach hardware permanently carries the SRAM bootloader — the two cannot coexist on one board.
+Development is on a **Daisy Pod** (a scratch board): a clean board to flash freely, and the audio Pod knobs map straight to Csound control channels.
 
 ## Status
 
-- **Proof of life (done):** the official `DaisyCsoundGenerative` example plays on hardware; the whole chain — cross-compiled `libcsound.a`, QSPI/SDRAM layout, boot, and the audio path — is proven.
-- **Foundation app (done):** `csound-poc/` is our own app — a band-limited saw whose pitch and level are driven live by the Pod's two knobs, via Csound control channels. This is the base to grow from.
-- **Open:** richer orchestras (filter/envelope, MIDI note input), the Pod's buttons/encoder, and the eventual decision on how (or whether) to fold this into sk-engines as a first-class engine.
+- **Proof of life (done):** the official `DaisyCsoundGenerative` example plays on hardware — the whole chain (cross-compiled `libcsound.a`, QSPI/SDRAM layout, boot, audio path) is proven.
+- **Foundation + control (done):** an own orchestra (band-limited saw) with the Pod's two knobs driving pitch and level via Csound control channels.
+- **`CsoundEngine : IEngine` + thin harness (built; hardware test pending):** Csound wrapped behind the real sk-engines contract, driven by a small harness that stands in for the platform.
+- **Open:** confirm the harness on hardware; richer orchestras (filter/envelope, MIDI note in); SD-loaded orchestras; and the spotykach-hardware question below.
 
-## Why it is separate from the SRAM engines
+## Memory and boot model (why this is a separate target)
 
-The spotykach engines link their code into `SRAM_EXEC` (186 KB) and boot from the SRAM bootloader for speed. A minimal `libcsound.a` is hundreds of KB of code and Csound allocates heavily at compile and init, so it needs:
+Csound's linked code is ~2 MB and it allocates heavily at compile/init, so it cannot use the SRAM engines' model (code in 186 KB `SRAM_EXEC`, copied in by the SRAM bootloader). Instead it is a **`BOOT_QSPI`** app:
 
-- code in **QSPI flash** (8 MB) — `BOOT_QSPI`, not `BOOT_SRAM`;
-- a **heap in SDRAM** (64 MB) — provided by the Csound port's custom linker script;
-- the **stock Daisy bootloader** at `0x90040000`, not the spotykach SRAM bootloader.
+- code in **QSPI flash** (8 MB), executed in place;
+- heap in **SDRAM** (64 MB), via the Csound port's custom linker script;
+- flashed to QSPI at `0x90040000` through the Daisy bootloader's DFU.
 
-This is a different memory and boot model from every other engine, which is why it is a standalone build under `csound-poc/` rather than an entry in `engine_select.h`.
+A subtle but important point about the bootloader: **both** `BOOT_SRAM` and `BOOT_QSPI` apps are flashed to the *same* QSPI address (`0x90040000`) through the *same* Daisy bootloader DFU. The only difference is where the app is linked to run — `BOOT_SRAM` is copied QSPI→SRAM and run at `0x24000000`; `BOOT_QSPI` runs in place from QSPI. The stock Daisy bootloader does both, deciding from the app's vectors.
+
+This means running Csound on the **spotykach** board may not require changing its (fixed) bootloader at all — only building Csound as `BOOT_QSPI` and flashing it through the normal engine-flashing flow. Two things gate that, and neither is the `IEngine` interface:
+
+1. **Is `bootloader-spotykach-v2` the stock Daisy bootloader or SRAM-only?** If it was customized to only copy-to-SRAM, a QSPI app fails. Likely fine (the split is app-side), but unverified. A `BOOT_QSPI` Csound image flashed to the board (reversible — reflash any engine) settles it.
+2. **Hardware.** A spotykach build needs *its* codec/audio config and *its* controls/pads/display, not the Pod's. That's app work.
+
+So the separation is a build/memory model, not an `IEngine` limitation. The wrapper slots into a QSPI-capable target; the SRAM engine bundle is just a different target.
 
 ## Building `libcsound.a`
 
-The Csound 7 source under `thirdparty/csound/` ships an official `Daisy/` port (toolchain file, `Custom.cmake`, examples, the custom linker script, and the v5.4 bootloader). To cross-compile the static library (needs `arm-none-eabi-gcc` and CMake):
+The Csound 7 source under `thirdparty/csound/` ships an official `Daisy/` port (toolchain file, `Custom.cmake`, examples, custom linker script, v5.4 bootloader). To cross-compile the static library (needs `arm-none-eabi-gcc` and CMake):
 
 ```
 cd thirdparty/csound
@@ -33,62 +41,59 @@ cmake .. -DCMAKE_INSTALL_PREFIX=../Daisy \
 make -j && make install
 ```
 
-This installs `libcsound.a` (single precision, bare-metal, ~3.7 MB archive) and headers under `thirdparty/csound/Daisy/{lib,include}`. The build is single precision (`USE_DOUBLE=OFF`), bare metal (`BARE_METAL=ON`), with all desktop audio/MIDI backends off.
+Installs `libcsound.a` (single precision, bare-metal) and headers under `thirdparty/csound/Daisy/{lib,include}`.
 
-## Building and flashing the app
+## Building and flashing the harness
 
-The app build reuses the example's exact recipe — same custom linker script (heap in SDRAM), same v5.4 bootloader, same `BOOT_QSPI`. The Csound examples expect `libDaisy` and `DaisySP` next to them, so the repo copies are symlinked into place:
+The build reuses the example's recipe — same custom SDRAM-heap linker script, same v5.4 bootloader, same `BOOT_QSPI` — plus `-std=gnu++17` (the sk-engines contract uses `std::clamp`; libDaisy defaults to gnu++14) and `-I../src` for the contract headers. The Csound examples expect `libDaisy`/`DaisySP` next to them, so the repo copies are symlinked in:
 
 ```
 thirdparty/csound/Daisy/libDaisy -> lib/libDaisy
 thirdparty/csound/Daisy/DaisySP  -> lib/DaisySP
 ```
 
-Build the app from `csound-poc/`:
+Build and flash from `csound-poc/`:
 
 ```
-cd csound-poc
 make
+while ! make program-dfu; do sleep 0.2; done   # then tap RESET to catch the DFU window
 ```
 
-Flashing is a two-step DFU dance on the Pod. The bootloader is installed once into internal flash; the app is then written to QSPI through it.
+Wait for `File downloaded successfully`, Ctrl-C, reset. A trailing `Error during download get_status` is the benign `:leave` handshake after a successful write.
 
-- **Install the v5.4 bootloader** (one time, or to recover): enter the STM32 system bootloader (hold **BOOT**, tap **RESET**, release **BOOT**), then write it to internal flash:
+To (re)install the v5.4 bootloader on a board: enter STM32 system DFU (hold **BOOT**, tap **RESET**, release **BOOT**) and
 
-  ```
-  dfu-util -a 0 -s 0x08000000:leave \
-    -D ../thirdparty/csound/Daisy/DaisyCsoundExamples/dsy_bootloader_v5_4.bin -d ,0483:df11
-  ```
+```
+dfu-util -a 0 -s 0x08000000:leave \
+  -D ../thirdparty/csound/Daisy/DaisyCsoundExamples/dsy_bootloader_v5_4.bin -d ,0483:df11
+```
 
-- **Flash the app to QSPI**: tap **RESET** to enter the Daisy bootloader's DFU window, then catch it with a retry loop:
+## How Csound maps onto IEngine
 
-  ```
-  while ! make program-dfu; do sleep 0.2; done
-  ```
+`CsoundEngine : public IEngine` overrides only the three required lifecycle methods plus `set_param`/`param`/`capabilities` (everything else has no-op defaults):
 
-  Wait for `File downloaded successfully`, then Ctrl-C. A trailing `Error during download get_status` is benign — it is the `:leave` handshake after a successful write, and the device has already left DFU.
+- `init(ctx)` → `csoundCreate` / `SetHostAudioIO` / options (`--ksmps` from `ctx.block_size`) / `CompileCSD` / `Start`.
+- `process(in, out, n)` → de-interleave `in`→`spin`, `csoundPerformKsmps`, `spout`→de-interleave `out`. `ksmps == block`, so one k-cycle per block. Daisy's non-interleaving buffers (`const float* const*` / `float**`) match `IEngine::process` with no glue.
+- `set_param(id, deck, v)` → `csoundSetControlChannel(name, v)`; the orchestra reads it with `chnget`. The orchestra is the param vocabulary — swap the `.csd`, swap the synth, no C++ change.
 
-## Integration pattern
+The heap comes from the QSPI linker script (newlib `_sbrk` into SDRAM), so unlike the SRAM engines there is no bump-allocator dance and `ctx.arena` is left free.
 
-The app follows the official examples. The shape is small:
-
-- **Setup:** `csoundCreate(NULL, NULL)`, `csoundSetHostAudioIO`, options `-n` / `--ksmps=512` / `-dm0`, then `csoundCompileCSD(text, 1, 0)` and `csoundStart`.
-- **Audio:** the orchestra runs at `ksmps=512` while the audio block is 256, so the callback performs one k-cycle only when its running index into `spout` wraps (every other block), and de-interleaves `spout` into `out[0]`/`out[1]`. A large `ksmps` matters: at `ksmps=32` Csound's per-cycle overhead overruns the CPU.
-- **Control:** the Pod's two knobs (Seed pins `D21`, `D15`) are read in the main loop and pushed with `csoundSetControlChannel("knob1"/"knob2", value)`; the orchestra reads them with `chnget`.
+`csound-poc/harness.cpp` is the thin stand-in for the platform: it builds an `EngineContext`, `init()`s the engine, forwards the audio callback to `process()`, and drives `set_param(ParamId::Speed/Mix, DeckRef::A, knob)` from the Pod's two knobs.
 
 ## Gotchas
 
-These each cost real debugging time and are worth remembering.
+These each cost real debugging time.
 
-- **Bootloader v5.4, not v6.4.** v5.4 points the vector table at the QSPI app for us. v6.4 does not, so under v6.4 the app boots but every interrupt (SysTick, audio DMA) is dead — silent audio and a frozen main loop — unless the app sets `SCB->VTOR = 0x90040000` itself. Standardize on v5.4.
-- **Bare `DaisySeed`, not `DaisyPod`.** Initializing through the Pod board-support class left the audio output silent on this board; the examples use bare `DaisySeed` and so do we.
-- **Trigger instruments with `schedule(...)` in the orchestra, not a score `i` event.** A `<CsScore>` `i 1 0 -1` event did not fire and produced silence; `schedule(1, 0, 100000)` in the orchestra works.
-- **Prefer table-less oscillators.** `poscil` with an `ftgen` table was also silent (table not present at init?); `oscils` (init-rate) and `vco2` (k-rate) need no table and work. The `ftgen` question is still open.
-- **No console.** With no serial and the Seed LED not clearly visible on the Pod, the reliable debug signal is audio itself: synthesize a tone in C to test the boot/output path, and play a distinct pitch as a "compile failed" flag.
+- **Bootloader v5.4, not v6.4.** v5.4 points the vector table at the QSPI app; v6.4 does not, so under v6.4 every interrupt is dead (silent audio, frozen main loop) unless the app sets `SCB->VTOR = 0x90040000` itself. Standardize on v5.4.
+- **Bare `DaisySeed`, not `DaisyPod`.** Initializing through the Pod board-support class left audio silent on this board; the examples and our code use bare `DaisySeed`.
+- **Trigger instruments with `schedule(...)` in the orchestra, not a score `i` event.** A `<CsScore>` `i 1 0 -1` did not fire and produced silence; `schedule(1, 0, 100000)` works.
+- **Prefer table-less oscillators.** `poscil`+`ftgen` was silent too (table not present at init?); `oscils` (init-rate) and `vco2` (k-rate) need no table. The `ftgen` question is still open.
+- **Large `ksmps`.** At `ksmps=32` Csound's per-cycle overhead overruns the CPU (works briefly, then the audio ISR starves everything). Use a block of >=128 (256 proven).
+- **No console.** With no serial and the Seed LED not clearly visible on the Pod, the reliable debug signal is audio: synthesize a tone in C to test the boot/output path, and play a distinct pitch as a "compile failed" flag.
 
 ## Files
 
-- `csound-poc/app.cpp` — the app (DaisySeed init, buffered Csound callback, knobs to control channels).
-- `csound-poc/app.h` — the embedded orchestra (`csdText`).
-- `csound-poc/Makefile` — `BOOT_QSPI`, the custom SDRAM-heap linker script, v5.4 bootloader, links `libcsound.a`.
+- `src/engine/csound/csound_engine.{h,cpp}` — `CsoundEngine : IEngine`. Builds only in the QSPI target (needs `csound.h`/`libcsound.a`); not in `engine_select.h` / the SRAM bundle.
+- `csound-poc/harness.cpp` — thin QSPI harness driving `CsoundEngine` from the Pod knobs.
+- `csound-poc/Makefile` — `BOOT_QSPI`, custom SDRAM-heap linker script, v5.4 bootloader, `gnu++17`, links `libcsound.a` + the engine source.
 - `thirdparty/csound/` — Csound 7 with the official `Daisy/` port (toolchain, `Custom.cmake`, examples, linker script, bootloader).

@@ -58,6 +58,10 @@
   #include "engine/voice/voice_engine.h"
   namespace spotykach { using ActiveEngine = VoiceEngine; }
 // <<< faust:voice <<<
+#elif defined(SPK_ENGINE_CSOUND)
+  // QSPI-only target (links libcsound.a, BOOT_QSPI) - NOT an SRAM engine. See docs/dev/csound.md.
+  #include "engine/csound/csound_engine.h"
+  namespace spotykach { using ActiveEngine = CsoundEngine; }
 #else
   #error "No engine selected: build with ENGINE=granular (default), passthrough, delay, edrums, reso, graincloud, tape, reverb, shuttle, radio, or chorus"
 #endif
