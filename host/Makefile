@@ -78,10 +78,11 @@ TEST_GRAINCLOUD_KERNEL = $(BUILD)/test_graincloud_kernel
 TEST_CSOUND_ALLOC = $(BUILD)/test_csound_alloc
 TEST_CSOUND_PATCH = $(BUILD)/test_csound_patch
 TEST_CSOUND_MIDI  = $(BUILD)/test_csound_midi
+TEST_CSOUND_RELOAD = $(BUILD)/test_csound_reload
 BENCH_REVERB     = $(BUILD)/bench_reverb
 BENCH_GRAINCLOUD = $(BUILD)/bench_graincloud
 
-.PHONY: all clean run test test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-tape test-stream test-shuttle test-radio test-chorus test-dfilter test-voice test-csound-alloc test-csound-patch test-csound-midi bench-reverb bench-graincloud
+.PHONY: all clean run test test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-tape test-stream test-shuttle test-radio test-chorus test-dfilter test-voice test-csound-alloc test-csound-patch test-csound-midi test-csound-reload bench-reverb bench-graincloud
 all: $(TARGET)
 
 $(TARGET): $(SRC) | $(BUILD)
@@ -116,6 +117,13 @@ $(TEST_CSOUND_MIDI): test_csound_midi.cpp $(ROOT)/src/engine/csound/csound_midi.
 	$(CXX) $(CXXFLAGS) -pthread test_csound_midi.cpp -o $@
 test-csound-midi: $(TEST_CSOUND_MIDI)
 	./$(TEST_CSOUND_MIDI)
+
+# Csound live-patch-switch handoff (ReloadGate). Lock-free ISR/main-loop sequencing; -pthread for the
+# concurrent use-after-free detector. No libcsound/Daisy deps.
+$(TEST_CSOUND_RELOAD): test_csound_reload.cpp $(ROOT)/src/engine/csound/csound_reload.h | $(BUILD)
+	$(CXX) $(CXXFLAGS) -pthread test_csound_reload.cpp -o $@
+test-csound-reload: $(TEST_CSOUND_RELOAD)
+	./$(TEST_CSOUND_RELOAD)
 
 # graincloud kernel smoke test (the de-STL'd GrainflowLib only; no engine/LIB deps).
 $(TEST_GRAINCLOUD_KERNEL): test_graincloud_kernel.cpp $(wildcard $(GRAINCLOUD_TP)/grainflow/*.h) | $(BUILD)
@@ -190,7 +198,7 @@ run: $(TARGET)
 
 # `test` runs both engine harnesses. Both inject the transport via EngineContext (granular drives the
 # real platform Transport; edrums uses a small stub ITransport) - the post-transport-decoupling way.
-test: test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-tape test-stream test-shuttle test-radio test-chorus test-dfilter test-voice test-csound-alloc test-csound-patch test-csound-midi
+test: test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-tape test-stream test-shuttle test-radio test-chorus test-dfilter test-voice test-csound-alloc test-csound-patch test-csound-midi test-csound-reload
 
 test-granular: $(TEST)
 	./$(TEST)

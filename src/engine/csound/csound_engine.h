@@ -3,7 +3,9 @@
 #pragma once
 
 #include "engine/iengine.h"
-#include "engine/csound/csound_midi.h"   // MIDI note->event mapping + the lock-free pending-note ring
+#include "engine/csound/csound_midi.h"     // MIDI note->event mapping + the lock-free pending-note ring
+#include "engine/csound/csound_reload.h"   // ReloadGate: lock-free instance handoff for live patch swap
+#include "engine/csound/csound_patch.h"    // kMaxPatchSlots (bank size)
 
 // SKETCH (2026-06): CsoundEngine wraps a Csound 7 instance behind IEngine. It builds ONLY in the
 // QSPI firmware target - code in QSPI flash, heap in SDRAM (the Csound port's custom linker script),
@@ -15,6 +17,8 @@
 //   init()      -> csoundCreate / SetHostAudioIO / options / CompileCSD / Start
 //   process()   -> de-interleave in -> spin, csoundPerformKsmps, spout -> de-interleave out
 //   set_param() -> csoundSetControlChannel(name, value)   (orchestra reads it with chnget)
+//   handle_midi_note() -> a finite Csound note event (csound_midi.h)
+//   Alt+PITCH (CapAux) -> select a patch from the SD bank; release recompiles live (csound_reload.h)
 // The orchestra (the .csd) defines the synthesis AND the control vocabulary; the platform's knobs
 // drive whichever channels the orchestra names.
 
@@ -36,33 +40,60 @@ public:
     void         set_param(ParamId id, DeckRef::Ref d, float v) override;
     float        param(ParamId id, DeckRef::Ref d) const override;
 
-    // MIDI NoteOn -> a Csound note event. Resolves channel->deck (Config midi channels), enqueues the
-    // note on the lock-free ring (drained in process()), and returns the deck for the UI gate flash.
-    // No-op (returns DeckRef::Count) if the orchestra has no MidiNote instrument. NoteOn only - the
-    // platform delivers no NoteOff/velocity, so notes are finite (see csound_midi.h).
+    // MIDI NoteOn -> a Csound note event (channel->deck, note->Hz), enqueued on the lock-free ring and
+    // scheduled in process(). NoteOn only - no NoteOff/velocity, so notes are finite (csound_midi.h).
     DeckRef::Ref handle_midi_note(uint8_t channel, uint8_t note) override;
 
+    // Alt+PITCH (CapAux) held on deck A: the patch selector. set_param(Aux) previews; this drives the
+    // selector display + (on the held->release edge) commits a live recompile in prepare().
+    void set_aux_active(DeckRef::Ref d, bool active) override;
+
     // --- panel feedback -------------------------------------------------------------------------
-    // Both rings show the output level (peak meter); the Play indicators show running state.
+    // Rings show the output level meter (or, while Alt is held, the patch selector); Play LEDs show
+    // running state; the centre mode LED shows the patch source (cyan = SD, white = built-in).
     void render(DisplayModel& m) override;
-    // TODO: pads (on_play_pad -> schedule/stop instruments); per-knob ring markers.
 
 private:
-    // Create a Csound instance, apply the host-IO options, compile `text` (a CSD document) and start.
-    // Leaves _cs valid + _ksmps set on success; destroys the instance and returns false on failure
-    // (so a caller can retry with a different orchestra). See init().
-    bool try_compile(const char* text, float block_size);
+    // Create + configure + compile `text` (a CSD) + start; returns the new instance (caller publishes
+    // it via the gate) or nullptr on failure. Does NOT touch _gate/_ksmps/_midi_instr.
+    CSOUND* build_instance(const char* text, float block_size);
+    // Make `cs` the live instance: set _ksmps/_midi_instr, then publish to the gate (ordered so the
+    // ISR sees the new ksmps/instr together with the new pointer).
+    void    publish_instance(CSOUND* cs);
+    // Orchestra text for an availability index (built-in or an SD slot). SD reads go into `buf`.
+    const char* orchestra_for(int avail_index, char* buf, bool* from_sd);
+    // Re-probe /csound/<n>.csd existence and rebuild the [built-in, present slots...] selectable list.
+    void    rescan_bank();
+    // Gated destroy-old + build-new + publish, for availability index `target` (main loop only).
+    void    do_reload(int target);
+    // Replay cached knob values into a freshly built instance's control channels (post-reload pickup).
+    void    reseed_channels(CSOUND* cs);
 
-    CSOUND* _cs        = nullptr;   // null => compile/create failed; process() outputs silence
-    float   _sr        = 48000.f;
-    int     _ksmps     = 0;         // == the platform block size (set via --ksmps in init)
-    float   _level     = 0.f;       // output peak meter (written in process(), read in render())
-    bool    _patch_loaded = false;  // true => running an SD /csound/patch.csd; false => built-in
-    int     _midi_instr = 0;        // Csound instr number of "MidiNote" (0 => none; MIDI notes dropped)
-    NoteQueue<32> _notes;           // pending MIDI notes: main loop pushes, process() (ISR) drains
+    ReloadGate   _gate;                 // owns the live CSOUND* (handoff: main loop <-> audio ISR)
+    IStreamDeck* _stream = nullptr;     // SD service, kept for bank rescans / patch reloads
+    float        _block  = 256.f;       // platform block size (for --ksmps on a recompile)
+    float        _sr     = 48000.f;
+    int          _ksmps  = 0;           // == block size; guards the process() copy (see publish order)
+    int          _midi_instr = 0;       // Csound instr number of "MidiNote" (0 => MIDI notes dropped)
+    float        _level  = 0.f;         // output peak meter (written in process(), read in render())
+    bool         _patch_loaded = false; // true => running an SD slot; false => the built-in
 
-    // Cached 0..1 knob values for param() pickup readback, one slot per mapped (ParamId, deck).
-    static constexpr int kSlots = 8;     // small fixed map; grow as the control vocabulary grows
+    NoteQueue<32> _notes;               // pending MIDI notes: main loop pushes, process() (ISR) drains
+
+    // --- patch bank / Alt+PITCH selection -------------------------------------------------------
+    static constexpr int kMaxAvail = kMaxPatchSlots + 1;   // the built-in plus every present slot
+    bool _present[kMaxPatchSlots] = {false};
+    int  _avail_slot[kMaxAvail] = {-1};   // [0] = -1 (built-in); then the present slot numbers
+    int  _avail_n   = 1;                  // count of selectable orchestras (>= 1: the built-in)
+    int  _sel       = 0;                  // committed availability index (what's compiled)
+    int  _sel_preview = 0;                // Alt+PITCH preview index (shown while held)
+    bool _aux_held  = false;              // deck A Alt held -> draw the selector
+    bool _rescan_pending = false;         // refresh the bank on the next prepare() (set on Alt press)
+    bool _reload_pending = false;         // commit a patch change on the next prepare()
+    int  _reload_target  = 0;             // availability index to compile on the pending reload
+
+    // Cached 0..1 knob values for param() pickup readback + post-reload reseed, per (ParamId, deck).
+    static constexpr int kSlots = 16;     // 8 per deck (Speed/Mix/Size/Env/Feedback/ModSpeed/ModAmp)
     float _cache[kSlots] = {0.f};
 };
 
