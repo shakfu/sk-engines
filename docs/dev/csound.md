@@ -1,36 +1,89 @@
-# Dev notes — Csound on Daisy (`csound-poc` + `CsoundEngine`)
+# Dev notes — Csound as an sk-engines engine (`ENGINE=csound`)
 
-Notes for running [Csound](https://csound.com) 7 as a synthesis engine on Daisy hardware. This is an experimental track that lives **outside** the normal sk-engines SRAM firmware: Csound is far too large for the 186 KB `SRAM_EXEC` budget the spotykach engines link into, so it runs as a **QSPI-flash app** with its heap in SDRAM. The `IEngine` wrapper exists and works; what differs from the other engines is only the memory and boot model.
+Running [Csound](https://csound.com) 7 as a synthesis engine on Daisy hardware. Csound is a runtime
+audio compiler/interpreter: an orchestra (`.csd` / `.orc` text) is compiled at runtime and performed.
+This engine wraps it behind the real sk-engines `IEngine` contract.
 
-Development is on a **Daisy Pod** (a scratch board): a clean board to flash freely, and the audio Pod knobs map straight to Csound control channels.
+It is **not** an SRAM engine. Csound's linked code is ~2 MB — far over the 186 KB `SRAM_EXEC` budget —
+so it runs as a **`BOOT_QSPI`** app (code executes in place from QSPI flash). Everything else about the
+contract (params, display, pads) is the same as any other engine; only the memory/boot model differs.
 
-## Status
+**Status (2026-06-18): working on real hardware.** Csound synthesizes on the **spotykach** board from
+QSPI, driven through `IEngine` — panel controls move the synth, the rings show an output level meter,
+the Play LEDs show running state. Also runs on a **Daisy Pod** (the quick-iterate board). The whole
+chain is proven: cross-compiled `libcsound.a`, QSPI execution, the dual-heap fix, audio, controls, panel.
 
-- **Proof of life (done):** the official `DaisyCsoundGenerative` example plays on hardware — the whole chain (cross-compiled `libcsound.a`, QSPI/SDRAM layout, boot, audio path) is proven.
-- **Foundation + control (done):** an own orchestra (band-limited saw) with the Pod's two knobs driving pitch and level via Csound control channels.
-- **`CsoundEngine : IEngine` + thin harness (built; hardware test pending):** Csound wrapped behind the real sk-engines contract, driven by a small harness that stands in for the platform.
-- **Open:** confirm the harness on hardware; richer orchestras (filter/envelope, MIDI note in); SD-loaded orchestras; and the spotykach-hardware question below.
+---
 
-## Memory and boot model (why this is a separate target)
+## Quick start
 
-Csound's linked code is ~2 MB and it allocates heavily at compile/init, so it cannot use the SRAM engines' model (code in 186 KB `SRAM_EXEC`, copied in by the SRAM bootloader). Instead it is a **`BOOT_QSPI`** app:
+Build + flash the spotykach (board in DFU before the build finishes; one `dfu-util`, no retry loop):
 
-- code in **QSPI flash** (8 MB), executed in place;
-- heap in **SDRAM** (64 MB), via the Csound port's custom linker script;
-- flashed to QSPI at `0x90040000` through the Daisy bootloader's DFU.
+```
+make engine-csound      # clean + build the QSPI image + flash
+make program-csound      # re-flash the last build without rebuilding
+```
 
-A subtle but important point about the bootloader: **both** `BOOT_SRAM` and `BOOT_QSPI` apps are flashed to the *same* QSPI address (`0x90040000`) through the *same* Daisy bootloader DFU. The only difference is where the app is linked to run — `BOOT_SRAM` is copied QSPI→SRAM and run at `0x24000000`; `BOOT_QSPI` runs in place from QSPI. The stock Daisy bootloader does both, deciding from the app's vectors.
+Both expand to `ENGINE=csound APP_TYPE=BOOT_QSPI LDSCRIPT=alt_qspi.lds` + the core `program-dfu`
+(`dfu-util -a 0 -s 0x90040000:leave -D build/spotykach.bin -d ,0483:df11`). The leading `-` on the
+flash step swallows the benign `Error 74` (the `get_status` on the QSPI `:leave` — the write succeeds).
 
-This means running Csound on the **spotykach** board may not require changing its (fixed) bootloader at all — only building Csound as `BOOT_QSPI` and flashing it through the normal engine-flashing flow. Two things gate that, and neither is the `IEngine` interface:
+Prerequisite, once: build `libcsound.a` (see "Building libcsound.a" below). Recover the board anytime
+by flashing any normal engine.
 
-1. **Is `bootloader-spotykach-v2` the stock Daisy bootloader or SRAM-only?** If it was customized to only copy-to-SRAM, a QSPI app fails. Likely fine (the split is app-side), but unverified. A `BOOT_QSPI` Csound image flashed to the board (reversible — reflash any engine) settles it.
-2. **Hardware.** A spotykach build needs *its* codec/audio config and *its* controls/pads/display, not the Pod's. That's app work.
+---
 
-So the separation is a build/memory model, not an `IEngine` limitation. The wrapper slots into a QSPI-capable target; the SRAM engine bundle is just a different target.
+## How Csound maps onto IEngine
+
+`CsoundEngine : public IEngine` (`src/engine/csound/csound_engine.{h,cpp}`) overrides only what it uses;
+everything else keeps the no-op defaults.
+
+- `init(ctx)` → arm the SDRAM allocator (see below) → `csoundCreate` / `csoundSetHostAudioIO` /
+  options (`-n`, `--ksmps` from `ctx.block_size`, `-dm0`) / `csoundCompileCSD(text,1,0)` / `csoundStart`.
+- `process(in, out, n)` → de-interleave `in`→`spin`, `csoundPerformKsmps`, `spout`→de-interleave `out`,
+  and track an output peak for the meter. `ksmps == block`, so one k-cycle per block.
+- `set_param(id, deck, v)` → `csoundSetControlChannel(name, v)`; the orchestra reads it with `chnget`.
+  `channel_for()` maps `ParamId::Speed/Mix/Size/Env` (+ deck) → channel names (`speedA`, `mixA`, …).
+  **The orchestra is the param vocabulary** — swap the `.csd`, swap the synth, no C++ change.
+- `render(m)` → both rings show the output level meter; Play indicators show running state.
+
+The orchestra is currently a compiled-in string (`kOrchestra` in `csound_engine.cpp`): a `vco2` saw
+with knob1→pitch, knob2→level, knob3→cutoff, triggered by `schedule(1,0,100000)`.
+
+### The heap (the thing that took the longest)
+
+Two heaps, deliberately:
+- The **platform's** default heap stays in **SRAM** (`alt_qspi.lds`). It must — global constructors
+  `malloc` *before* `_hw.Init()` powers up the SDRAM controller, so a heap in SDRAM faults there.
+- **Csound's** heap is a 12 MB **SDRAM bump pool** (`src/engine/csound/csound_alloc.cpp`), reached by
+  linking `--wrap=malloc/free/calloc/realloc` and gating on a flag that `CsoundEngine::init()` arms
+  (`csound_heap_arm()`) *after* `_hw.Init()`. Csound's MBs at create/compile land in SDRAM; the
+  platform's allocations stay in SRAM. **The pool never frees** (bump allocator) — fine for one
+  patch, but see the roadmap for why patch-swapping needs a real allocator.
+
+---
+
+## Memory & boot model
+
+- Code in **QSPI flash** (`0x90040000`, 8 MB), executed in place. Data/bss in SRAM/DTCM; Csound heap
+  in the SDRAM pool; platform heap in SRAM.
+- `alt_qspi.lds` = `alt_sram.lds` with code + `.data` load-address moved `SRAM_EXEC → QSPIFLASH`. The
+  abandoned `alt_qspi_csound.lds` (heap-in-SDRAM via the linker) is gone — it caused the ctor crash above.
+- `csound-poc/spotykach_qspi_vtor.cpp` — an `init_priority(101)` global ctor that sets
+  `SCB->VTOR = 0x90040000`. Needed because the startup skips `SystemInit` under `BOOT_APP` and the
+  bootloader may not point the vector table at the QSPI app; without it SysTick + audio DMA are dead.
+
+**Bootloader fact (verified):** the spotykach `v2` bootloader **runs QSPI apps** — proved by building
+`radio` as `BOOT_QSPI` and booting it on the board. Both `BOOT_SRAM` and `BOOT_QSPI` apps flash to the
+same `0x90040000` via the same Daisy DFU; the bootloader decides copy-to-SRAM vs run-in-place from the
+app's vectors. So no bootloader change is needed to run Csound on the spotykach.
+
+---
 
 ## Building `libcsound.a`
 
-The Csound 7 source under `thirdparty/csound/` ships an official `Daisy/` port (toolchain file, `Custom.cmake`, examples, custom linker script, v5.4 bootloader). To cross-compile the static library (needs `arm-none-eabi-gcc` and CMake):
+`thirdparty/csound/` is Csound 7 with the official `Daisy/` port (toolchain, `Custom.cmake`, examples,
+linker script, v5.4 bootloader). Needs `arm-none-eabi-gcc` + CMake:
 
 ```
 cd thirdparty/csound
@@ -41,59 +94,105 @@ cmake .. -DCMAKE_INSTALL_PREFIX=../Daisy \
 make -j && make install
 ```
 
-Installs `libcsound.a` (single precision, bare-metal) and headers under `thirdparty/csound/Daisy/{lib,include}`.
+Installs `libcsound.a` (single precision, bare-metal) + headers to `thirdparty/csound/Daisy/{lib,include}`.
+`thirdparty/csound/` is gitignored (115 MB); rebuild from this recipe. The `ENGINE=csound` Makefile
+branch points `-I` / link at `thirdparty/csound/Daisy/{include,lib}`.
 
-## Building and flashing the harness
+The **Pod** dev target (`csound-poc/`, bare `DaisySeed`, no front panel) predates the spotykach build;
+keep it for quick iteration. It needs `thirdparty/csound/Daisy/{libDaisy,DaisySP}` symlinked to `lib/`.
 
-The build reuses the example's recipe — same custom SDRAM-heap linker script, same v5.4 bootloader, same `BOOT_QSPI` — plus `-std=gnu++17` (the sk-engines contract uses `std::clamp`; libDaisy defaults to gnu++14) and `-I../src` for the contract headers. The Csound examples expect `libDaisy`/`DaisySP` next to them, so the repo copies are symlinked in:
+---
 
-```
-thirdparty/csound/Daisy/libDaisy -> lib/libDaisy
-thirdparty/csound/Daisy/DaisySP  -> lib/DaisySP
-```
+## Limitations & potential
 
-Build and flash from `csound-poc/`:
+### Opcodes — limited by *category*, not count
 
-```
-make
-while ! make program-dfu; do sleep 0.2; done   # then tap RESET to catch the DFU window
-```
+What ships in our `libcsound.a` is the **entire statically-linked core** opcode library (oscillators,
+filters, envelopes, delays, reverbs, the `pvs` spectral/FFT family, granular, waveguide/physical models,
+… — well over a thousand opcodes). The exclusions are structural, from `Daisy/Custom.cmake` + bare metal:
 
-Wait for `File downloaded successfully`, Ctrl-C, reset. A trailing `Error during download get_status` is the benign `:leave` handshake after a successful write.
+- **No plugin / external opcodes.** Desktop Csound `dlopen`s opcode libraries at runtime; bare metal has
+  no dynamic loading, so only statically-compiled opcodes exist. (Biggest limit.)
+- **No soundfile I/O** (`USE_LIBSNDFILE=OFF`): `diskin`/`soundin`/`fout`, `GEN01` (sample-from-WAV) are
+  out. Table-generating GENs (GEN10 sine, etc.) work.
+- **OSC and deprecated opcodes disabled**; MIDI-/audio-*device* opcodes gone (the host feeds I/O).
+- Real ceilings: **CPU** (QSPI execute-in-place is slower than SRAM) and **memory** (the 12 MB pool).
 
-To (re)install the v5.4 bootloader on a board: enter STM32 system DFU (hold **BOOT**, tap **RESET**, release **BOOT**) and
+To get the definitive list of registered opcodes for *this* build: `csoundNewOpcodeList`.
 
-```
-dfu-util -a 0 -s 0x08000000:leave \
-  -D ../thirdparty/csound/Daisy/DaisyCsoundExamples/dsy_bootloader_v5_4.bin -d ,0483:df11
-```
+### vs desktop Csound
 
-## How Csound maps onto IEngine
+Same **language and core DSP**, minus the hosted-OS layer: single precision (`float`, not `double`);
+host does all I/O (`spin`/`spout` + control channels, no devices/disk); no filesystem, threads, plugins,
+utilities, or CLI; CPU/memory constrained. An orchestra built from core opcodes + compiled-in tables
+behaves *identically* within float precision and the CPU budget — it's real Csound, not a reduced dialect.
 
-`CsoundEngine : public IEngine` overrides only the three required lifecycle methods plus `set_param`/`param`/`capabilities` (everything else has no-op defaults):
+### Interpreter / patch-swapping — yes, with a caveat
 
-- `init(ctx)` → `csoundCreate` / `SetHostAudioIO` / options (`--ksmps` from `ctx.block_size`) / `CompileCSD` / `Start`.
-- `process(in, out, n)` → de-interleave `in`→`spin`, `csoundPerformKsmps`, `spout`→de-interleave `out`. `ksmps == block`, so one k-cycle per block. Daisy's non-interleaving buffers (`const float* const*` / `float**`) match `IEngine::process` with no glue.
-- `set_param(id, deck, v)` → `csoundSetControlChannel(name, v)`; the orchestra reads it with `chnget`. The orchestra is the param vocabulary — swap the `.csd`, swap the synth, no C++ change.
+Csound *is* a runtime interpreter: `csoundCompileOrc`/`csoundCompileCSD` compile orchestra text at
+runtime, and Csound supports **live recompilation** (add/replace instruments while playing). So we can
+compile a `.csd` from a string today, and from the **SD card** with a little wiring — a real patch player.
 
-The heap comes from the QSPI linker script (newlib `_sbrk` into SDRAM), so unlike the SRAM engines there is no bump-allocator dance and `ctx.arena` is left free.
+**Caveat:** Csound's heap is our bump pool (no free), so compiling a fresh patch allocates MBs and never
+reclaims — a handful of swaps before the 12 MB pool exhausts. Sustained patch-swapping needs a
+**free-capable SDRAM allocator** (roadmap #2). Not a wall, just the next dependency.
 
-`csound-poc/harness.cpp` is the thin stand-in for the platform: it builds an `EngineContext`, `init()`s the engine, forwards the audio callback to `process()`, and drives `set_param(ParamId::Speed/Mix, DeckRef::A, knob)` from the Pod's two knobs.
+---
 
-## Gotchas
+## Roadmap (next session)
 
-These each cost real debugging time.
+Ordered by leverage; the recommendation is to do **#4 and #2 first** — they're the two unknowns that
+decide whether the exciting version (an SD patch instrument played over MIDI, #1 + #3) is viable.
 
-- **Bootloader v5.4, not v6.4.** v5.4 points the vector table at the QSPI app; v6.4 does not, so under v6.4 every interrupt is dead (silent audio, frozen main loop) unless the app sets `SCB->VTOR = 0x90040000` itself. Standardize on v5.4.
-- **Bare `DaisySeed`, not `DaisyPod`.** Initializing through the Pod board-support class left audio silent on this board; the examples and our code use bare `DaisySeed`.
-- **Trigger instruments with `schedule(...)` in the orchestra, not a score `i` event.** A `<CsScore>` `i 1 0 -1` did not fire and produced silence; `schedule(1, 0, 100000)` works.
-- **Prefer table-less oscillators.** `poscil`+`ftgen` was silent too (table not present at init?); `oscils` (init-rate) and `vco2` (k-rate) need no table. The `ftgen` question is still open.
-- **Large `ksmps`.** At `ksmps=32` Csound's per-cycle overhead overruns the CPU (works briefly, then the audio ISR starves everything). Use a block of >=128 (256 proven).
-- **No console.** With no serial and the Seed LED not clearly visible on the Pod, the reliable debug signal is audio: synthesize a tone in C to test the boot/output path, and play a distinct pitch as a "compile failed" flag.
+1. **SD-loaded `.csd` patches.** Load orchestras from the card instead of the compiled-in `kOrchestra`
+   string. Wire `EngineContext::stream` (`IStreamDeck`) / FatFs to read the text, then
+   `csoundCompileCSD`/`csoundCompileOrc`. Turns it into a patch instrument. *(Depends on #2 to swap.)*
+   Code: orchestra is `kOrchestra` in `csound_engine.cpp`; `ctx.stream` is already in `EngineContext`.
+2. **Real SDRAM allocator.** Replace the bump in `src/engine/csound/csound_alloc.cpp` with a
+   free-capable allocator over the SDRAM pool (a free list, or drop in TLSF), so `csoundReset` +
+   recompile reclaims memory. This is what makes #1 + #3 sustainable. Keep the `--wrap` + arm-in-init
+   gating; only the pool internals change.
+3. **MIDI in.** Map `IEngine::handle_midi_note(channel, note)` (currently no-op default) → Csound events
+   (`csoundScoreEvent`/`schedule`) so patches are playable from a keyboard.
+4. **Performance pass (do early — it sizes everything).** Measure CPU headroom from QSPI XIP with
+   `make engine-csound METER=1` (the platform's CPU meter over USB serial). If a real orchestra glitches:
+   raise `ksmps`, simplify, or pin hot code to ITCM/SRAM (hard for a static lib — investigate the linker
+   moving Csound's hot `.text` into SRAM in the QSPI build, since SRAM_EXEC is free there).
+5. **Control / UI depth.** Expand `channel_for()` (more knobs/params); use `CapAux` (Alt+PITCH) for
+   **patch selection**; map pads → score events; show patch name/params in `render()` (level meter is in).
+6. **Opcode audit.** Dump `csoundNewOpcodeList`, document the available set, and optionally static-link
+   specific high-value plugin opcodes into the `Custom.cmake` build.
+
+---
+
+## Gotchas (each cost real debugging time)
+
+- **The SDRAM-heap-vs-ctor crash.** A heap in SDRAM (`alt_qspi_csound.lds`) crashed at boot: global
+  ctors `malloc` before `_hw.Init()` powers up the FMC. Fix = dual heap (platform SRAM + Csound's
+  `--wrap`'d SDRAM pool armed after init). This is the central lesson; see "The heap" above.
+- **Bootloader v5.4 (Pod) / v2 (spotykach), not v6.4.** v6.4 doesn't point VTOR at the QSPI app → dead
+  interrupts. The `spotykach_qspi_vtor.cpp` inject makes the app bootloader-agnostic; v5.4/v2 work.
+- **Bare `DaisySeed`, not `DaisyPod`** on the Pod — DaisyPod init left audio silent. (The spotykach build
+  uses the platform's own `_hw` init, which is correct for that board.)
+- **Trigger instruments with `schedule(...)` in the orchestra, not a score `i` event** (the score event
+  didn't fire → silence).
+- **Prefer table-less oscillators** (`vco2`, `oscils`); `poscil`+`ftgen` was silent (ftgen-at-init still
+  unexplained — worth revisiting).
+- **Large `ksmps`** (>=128; 256 proven). At `ksmps=32` Csound's per-cycle overhead overruns the audio ISR.
+- **No console.** With no serial, use audio as the debug signal (synthesize a C tone to test the
+  boot/output path; a distinct pitch as a "compile failed" flag).
+
+---
 
 ## Files
 
-- `src/engine/csound/csound_engine.{h,cpp}` — `CsoundEngine : IEngine`. Builds only in the QSPI target (needs `csound.h`/`libcsound.a`); not in `engine_select.h` / the SRAM bundle.
-- `csound-poc/harness.cpp` — thin QSPI harness driving `CsoundEngine` from the Pod knobs.
-- `csound-poc/Makefile` — `BOOT_QSPI`, custom SDRAM-heap linker script, v5.4 bootloader, `gnu++17`, links `libcsound.a` + the engine source.
-- `thirdparty/csound/` — Csound 7 with the official `Daisy/` port (toolchain, `Custom.cmake`, examples, linker script, bootloader).
+- `src/engine/csound/csound_engine.{h,cpp}` — `CsoundEngine : IEngine` (init/process/set_param/param/render
+  + the compiled-in orchestra + the `channel_for` param map). Compiles only for `ENGINE=csound`.
+- `src/engine/csound/csound_alloc.cpp` — the `--wrap` SDRAM bump pool (roadmap #2 replaces the internals).
+- `csound-poc/spotykach_qspi_vtor.cpp` — the `SCB->VTOR` inject (global ctor).
+- `alt_qspi.lds` — QSPI-execution linker script (code in QSPI, heaps as above).
+- `Makefile` — the `ENGINE=csound` branch (defines, `libcsound.a`, `-I`, `--wrap` LDFLAGS) +
+  `engine-csound` / `program-csound` targets.
+- `src/engine/engine_select.h` — `SPK_ENGINE_CSOUND → CsoundEngine` (gated).
+- `csound-poc/` — the Pod dev target (`harness.cpp`, `Makefile`) for quick iteration.
+- `thirdparty/csound/` — Csound 7 + the official `Daisy/` port (gitignored; rebuild via the recipe).
