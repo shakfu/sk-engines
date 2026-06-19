@@ -68,3 +68,21 @@ LDSCRIPT = ../alt_qspi_chuck.lds
 
 SYSTEM_FILES_DIR = $(LIBDAISY_DIR)/core
 include $(SYSTEM_FILES_DIR)/Makefile
+
+# nano.specs (set by the libDaisy Makefile) omits floating-point printf to save space. ChucK's parser
+# stringifies float literals via std::to_string -> __to_xstring -> vsnprintf("%f"), which without float
+# support returns a negative length; libstdc++ then builds string(buf, buf+len) with len<0, computes a
+# ~4 GB size, and std::__throw_length_error -> abort() (the nano libstdc++ stubs every __throw_* to a
+# bare abort, so it is uncatchable). Pull in the float-capable printf to fix it. Localized over SWD:
+# absyn_primary2str -> __to_xstring -> _M_create -> length_error -> abort. See docs/dev/chuck-pod-poc.md.
+LDFLAGS += -u _printf_float
+
+# Flash the QSPI app over ST-Link/SWD instead of USB DFU (no BOOT/RESET button dance). Needs the
+# ST-Link wired to the Daisy SWD pads and the board powered + booted at least once (so the bootloader
+# configured QUADSPI). daisy_qspi.cfg attaches without resetting, writes QSPI via the stmqspi driver,
+# then reboots into the bootloader. Inspect-only attach: `make -f Makefile.chuck openocd-attach`.
+program-swd: $(BUILD_DIR)/$(TARGET_BIN)
+	openocd -f daisy_qspi.cfg -c "init; daisy_program $(abspath $(BUILD_DIR)/$(TARGET_BIN))"
+
+openocd-attach:
+	openocd -f daisy_qspi.cfg -c "init; halt"

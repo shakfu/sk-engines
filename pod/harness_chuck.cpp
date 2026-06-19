@@ -12,6 +12,7 @@
 //
 // Prereq (once): build libchuck.a with scripts/fetch_chuck.sh.
 
+#include <cmath>             // fabsf - knob deadband
 #include "daisy_seed.h"
 #include "engine/chuck/chuck_engine.h"
 
@@ -44,7 +45,23 @@ static void AudioCallback(AudioHandle::InputBuffer  in,
                           AudioHandle::OutputBuffer out,
                           size_t                    size)
 {
-    // Slow onboard-LED toggle = the audio ISR is alive (~1.4 Hz at 256/48k).
+    // Read the knobs and push them to the VM ONCE PER BLOCK (~187 Hz), here in the audio ISR - NOT in
+    // main()'s loop. The main loop has no rate limit, so set_param there floods ChucK's global queue
+    // (thousands/sec) and the VM chokes draining it inside run(), starving everything. Once-per-block
+    // is the right cadence and lands the write right before run() consumes it (set_param -> queued ->
+    // this block's run() applies it). Mirrors the bare-metal pattern: no host thread, so drive globals
+    // from the audio callback.
+    // Deadband: a still pot still jitters in its low ADC bits; re-sending every block reassigns
+    // s.freq/s.gain constantly and zippers the audio (and churns the heap in the ISR). Only push when
+    // the reading actually moves. A light one-pole smooths the steps while turning.
+    static float sp_s = 0.f, mx_s = 0.f;        // smoothed knob state
+    static float sp_tx = -1.f, mx_tx = -1.f;    // last value sent to the VM
+    sp_s += 0.25f * (hw.adc.GetFloat(0) - sp_s);
+    mx_s += 0.25f * (hw.adc.GetFloat(1) - mx_s);
+    if (fabsf(sp_s - sp_tx) > 0.004f) { sp_tx = sp_s; engine.set_param(spotykach::ParamId::Speed, spotykach::DeckRef::A, sp_s); } // knob1 -> pitch
+    if (fabsf(mx_s - mx_tx) > 0.004f) { mx_tx = mx_s; engine.set_param(spotykach::ParamId::Mix,   spotykach::DeckRef::A, mx_s); } // knob2 -> level
+
+    // Slow onboard-LED toggle = the audio ISR is alive (~0.7 Hz at 256/48k).
     static uint32_t c = 0; static bool s = false;
     if (((c++) & 0x7F) == 0) { s = !s; hw.SetLed(s); }
     engine.process(in, out, size);
@@ -88,11 +105,11 @@ int main(void)
 
     hw.StartAudio(AudioCallback);
 
-    using spotykach::DeckRef;
-    using spotykach::ParamId;
+    // Knob reads + set_param now live in the audio callback (rate-limited to one block); the VM's
+    // run() consumes ~all the CPU, so the main loop only does off-ISR housekeeping. prepare() is the
+    // hook for the future SD .ck patch bank / live recompile (M3); empty for now. The onboard LED is
+    // driven from the callback (audio-alive blink).
     while (1) {
-        engine.set_param(ParamId::Speed, DeckRef::A, hw.adc.GetFloat(0));   // knob1 -> Speed (pitch)
-        engine.set_param(ParamId::Mix,   DeckRef::A, hw.adc.GetFloat(1));   // knob2 -> Mix (level)
         engine.prepare();
     }
 }
