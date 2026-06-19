@@ -19,6 +19,18 @@
 
 #include <cstdlib>            // malloc/free (routed to the SDRAM pool by chuck_alloc.cpp's --wrap)
 
+// Bring-up bisection (build: make engine-chuck CHUCKLVL=N). Splits ChucK init into stages so the
+// first stage that fails to boot (panel goes solid-white instead of rendering) is the culprit:
+//   0 = skip all (= NOCHUCK)         1 = new ChucK() + setParam only
+//   2 = + ChucK::init() (loads built-in types/UGens)   3 = + compileCode() (the recursive parser) = full
+#ifndef CHUCK_RUNTIME_LEVEL
+#define CHUCK_RUNTIME_LEVEL 3
+#endif
+#ifdef CHUCK_SKIP_RUNTIME            // NOCHUCK=1 is the level-0 alias
+#undef  CHUCK_RUNTIME_LEVEL
+#define CHUCK_RUNTIME_LEVEL 0
+#endif
+
 namespace spotykach {
 
 // Arms the SDRAM pool for ChucK's allocations (chuck_alloc.cpp). Called after _hw.Init() (so SDRAM is
@@ -90,17 +102,23 @@ void ChuckEngine::init(const EngineContext& ctx)
     _inbuf  = static_cast<float*>(std::malloc(sizeof(float) * kMaxBlock * _in_ch));
     _outbuf = static_cast<float*>(std::malloc(sizeof(float) * kMaxBlock * _out_ch));
 
+#if CHUCK_RUNTIME_LEVEL >= 1
     _ck = new ChucK();
     _ck->setParam(CHUCK_PARAM_SAMPLE_RATE,     static_cast<int>(_sr));
     _ck->setParam(CHUCK_PARAM_INPUT_CHANNELS,  _in_ch);
     _ck->setParam(CHUCK_PARAM_OUTPUT_CHANNELS, _out_ch);
     _ck->setParam(CHUCK_PARAM_OTF_ENABLE,      0);   // no on-the-fly server (bare metal: no sockets)
     _ck->setParam(CHUCK_PARAM_CHUGIN_ENABLE,   0);   // no dynamically-loaded UGen plugins (no dlopen)
-    _ck->init();
-
+#endif
+#if CHUCK_RUNTIME_LEVEL >= 2
+    _ck->init();                                     // builds the type system + registers built-in UGens
+#endif
+#if CHUCK_RUNTIME_LEVEL >= 3
     // Spork the built-in program. count=1, immediate=FALSE: queued, shreduled on the next VM step
     // (the first run()), matching the audio-thread compute model.
     _ck->compileCode(kProgram, "", 1);
+    _ready = true;                                   // only now is run() safe to call from the ISR
+#endif
 }
 
 void ChuckEngine::prepare()
@@ -112,7 +130,7 @@ void ChuckEngine::prepare()
 
 void ChuckEngine::process(const float* const* in, float** out, size_t size)
 {
-    if (!_ck || !_inbuf || !_outbuf) {            // no instance/scratch (alloc/compile fail) -> silence
+    if (!_ready || !_inbuf || !_outbuf) {         // not fully initialised (or alloc fail) -> silence
         for (size_t i = 0; i < size; i++) { out[0][i] = 0.f; out[1][i] = 0.f; }
         _level *= 0.90f;
         return;
@@ -175,7 +193,7 @@ float ChuckEngine::param(ParamId id, DeckRef::Ref d) const
 void ChuckEngine::render(DisplayModel& m)
 {
     m.clear();
-    const bool running = (_ck != nullptr);
+    const bool running = _ready;
 
     // Output level meter on both rings (green base, amber past ~-4 dB, red near clip). Same look as
     // CsoundEngine so the panel feedback is consistent across the two embedded engines.

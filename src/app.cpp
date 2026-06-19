@@ -64,6 +64,24 @@ class AppImpl {
     }
     CoreUI& ui() { return _ui; }
 
+#ifdef CHUCK_BRINGUP
+    // ChucK bring-up only (build: make engine-chuck BRINGUP=1). Blink the Daisy onboard LED - which is
+    // independent of the panel WS2812s - n times so we can see how far Init() gets when the panel never
+    // comes up (solid-white = it died before _ui.init()). Blocking; bring-up builds only.
+    void bringup_mark(int n) {
+        daisy::System::Delay(500);
+        for (int i = 0; i < n; i++) {
+            _hw.seed.SetLed(true);  daisy::System::Delay(160);
+            _hw.seed.SetLed(false); daisy::System::Delay(160);
+        }
+    }
+    // Slow toggle from the audio ISR so "audio is running" is visible (~1.4 Hz at 256/48k).
+    void bringup_audio_tick() {
+        static uint32_t c = 0; static bool s = false;
+        if (((c++) & 0x7F) == 0) { s = !s; _hw.seed.SetLed(s); }
+    }
+#endif
+
     void ProcessAudio(AudioHandle::InputBuffer  in,
                       AudioHandle::OutputBuffer out,
                       size_t                    size);
@@ -133,6 +151,9 @@ static void AudioCallback(AudioHandle::InputBuffer  in,
                           AudioHandle::OutputBuffer out,
                           size_t                    size)
 {
+#ifdef CHUCK_BRINGUP
+    impl.bringup_audio_tick();   // onboard LED ~1.4 Hz = the audio ISR is alive
+#endif
     impl.ProcessAudio(in, out, size);
 };
 
@@ -140,14 +161,17 @@ void AppImpl::Init()
 {
     auto sample_rate = 48000;
     auto block_size = 96;
-#if defined(SPK_ENGINE_CSOUND)
-    // Csound runs ksmps == the audio block, and its per-k-cycle overhead is fixed, so a larger block
-    // amortizes it - more CPU headroom for polyphony / dense MIDI (docs: >=128, 256 proven). The
-    // csound build is dedicated (QSPI-only), so this doesn't change any other engine. Trade: +~3.3 ms
-    // I/O latency (256 vs 96 frames at 48 kHz).
+#if defined(SPK_ENGINE_CSOUND) || defined(SPK_ENGINE_CHUCK)
+    // Csound/ChucK amortize a fixed per-block VM overhead, so a larger block buys CPU headroom (docs:
+    // >=128, 256 proven for csound). Both are dedicated QSPI-only builds, so this changes no other
+    // engine. ChucK's run() per-block cost (and double-precision UGen math) wants this just as much -
+    // 96 is the small-block case the csound notes warn against. Trade: +~3.3 ms latency (256 vs 96).
     block_size = 256;
 #endif
     _hw.Init(sample_rate, block_size);
+#ifdef CHUCK_BRINGUP
+    bringup_mark(1);   // reached: hardware (FMC/SDRAM) up
+#endif
 
     // Hand the engine the SDRAM arena + clock; the engine sub-allocates whatever buffers it needs
     // (item: EngineBuffers generalization). The platform/HAL no longer knows any engine's layout.
@@ -169,9 +193,18 @@ void AppImpl::Init()
         ctx.stream = &_stream;   // engine reads this in init()
     }
 #endif
+#ifdef CHUCK_BRINGUP
+    bringup_mark(2);   // reached: about to call engine.init() (ChucK create + compileCode)
+#endif
     _engine.init(ctx);
+#ifdef CHUCK_BRINGUP
+    bringup_mark(3);   // reached: engine.init() RETURNED (so ChucK create/compile did not hang/fault)
+#endif
 
     _ui.init();
+#ifdef CHUCK_BRINGUP
+    bringup_mark(4);   // reached: UI initialised - boot essentially complete
+#endif
     #ifdef STORAGE
     _storage.init(_engine);
     _storage.read_settigs();

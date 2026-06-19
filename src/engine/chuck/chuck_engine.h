@@ -46,6 +46,7 @@ public:
 
 private:
     ChucK* _ck    = nullptr;        // the live ChucK instance (single-threaded; no live swap yet)
+    bool   _ready = false;          // true only after init()+compileCode() succeed: gate run() / "running"
     float  _sr    = 48000.f;
     float  _block = 256.f;          // platform block size; == run() numFrames per process() call
     int    _in_ch  = 2;

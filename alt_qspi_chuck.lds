@@ -29,7 +29,12 @@ MEMORY
 	QSPIFLASH	(RX)  : ORIGIN = 0x90040000, LENGTH = 7936K
 }
 
-_estack = 0x20020000;
+/* Main stack at the TOP of the 512K AXI SRAM (grows down into the ~169K free above .bss), NOT the
+ * 128K DTCMRAM (which is ~76% full with .data, leaving only ~31K of stack). ChucK builds its type
+ * system and parses recursively and needs far more stack than that - a too-small stack overflows down
+ * into .dtcmram_bss and corrupts memory (the layout-dependent boot crashes we saw). AXI SRAM is live
+ * out of reset (no FMC needed), so it is valid as the stack from the first instruction. ChucK-only. */
+_estack = ORIGIN(SRAM) + LENGTH(SRAM);   /* 0x24080000 */
 
 SECTIONS
 {

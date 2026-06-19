@@ -51,6 +51,15 @@ C_DEFS += -D__PLATFORM_LINUX__ -D__USE_CHUCK_YACC__ \
 # Route ChucK's C-malloc family to the SDRAM pool (chuck_alloc.cpp); the platform heap stays in SRAM.
 LDFLAGS += -Wl,--wrap=malloc,--wrap=free,--wrap=calloc,--wrap=realloc
 
+# Bisect ChucK init (same flags as the main Makefile): CHUCKLVL=1 (new ChucK only) / 2 (+init) / 3
+# (+compile, default) ; NOCHUCK=1 skips it entirely. Pair with the onboard-LED blinks in harness_chuck.cpp.
+ifdef CHUCKLVL
+C_DEFS += -DCHUCK_RUNTIME_LEVEL=$(CHUCKLVL)
+endif
+ifeq ($(NOCHUCK), 1)
+C_DEFS += -DCHUCK_SKIP_RUNTIME
+endif
+
 # Spotykach v2 bootloader + the ChucK QSPI linker script (repo root). alt_qspi_chuck.lds reclaims the
 # unused 186K SRAM_EXEC region into SRAM (the full firmware needs it; harmless headroom here). The
 # harness re-injects VTOR itself, so it boots regardless of whether the bootloader sets it.

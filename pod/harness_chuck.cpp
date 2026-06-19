@@ -29,10 +29,24 @@ static const Pin kKnobPins[kNumKnobs] = { D21, D15 };
 
 // Daisy's non-interleaving buffers are already de-interleaved (InputBuffer = const float* const*,
 // OutputBuffer = float**), which is exactly IEngine::process's shape - forward straight through.
+// Onboard-LED heartbeat for bring-up (the Pod's LED is visible - unlike the cased spotykach). Blink
+// the seed LED n times so we can see how far init() got; blocking, bring-up only.
+static void blink(int n)
+{
+    daisy::System::Delay(500);
+    for (int i = 0; i < n; i++) {
+        hw.SetLed(true);  daisy::System::Delay(160);
+        hw.SetLed(false); daisy::System::Delay(160);
+    }
+}
+
 static void AudioCallback(AudioHandle::InputBuffer  in,
                           AudioHandle::OutputBuffer out,
                           size_t                    size)
 {
+    // Slow onboard-LED toggle = the audio ISR is alive (~1.4 Hz at 256/48k).
+    static uint32_t c = 0; static bool s = false;
+    if (((c++) & 0x7F) == 0) { s = !s; hw.SetLed(s); }
     engine.process(in, out, size);
 }
 
@@ -56,6 +70,8 @@ int main(void)
     hw.adc.Init(adc, kNumKnobs);
     hw.adc.Start();
 
+    blink(2);   // reached: hardware up, about to call engine.init() (new ChucK / init / compileCode)
+
     // Build the context the platform would normally inject. ChuckEngine reads sample_rate + block_size
     // and arms its own SDRAM pool; the arena and service pointers are unused on the Pod (null).
     spotykach::EngineContext ctx{};
@@ -67,6 +83,8 @@ int main(void)
     ctx.stream      = nullptr;
     ctx.qspi        = nullptr;
     engine.init(ctx);                           // new ChucK / compileCode(kProgram) - allocates in SDRAM
+
+    blink(3);   // reached: engine.init() RETURNED (ChucK create/init/compile did not crash)
 
     hw.StartAudio(AudioCallback);
 

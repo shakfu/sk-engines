@@ -195,6 +195,23 @@ ifeq ($(METER), 1)
 C_DEFS += -DMETER
 endif
 
+# ChucK bring-up debugging (opt-in, ENGINE=chuck only). See docs/dev/chuck-impl.md "M1/M2 hardware".
+#   make engine-chuck BRINGUP=1          - blink the Daisy onboard LED at boot checkpoints (1..4) so a
+#                                          non-booting QSPI app (solid-white panel) can be localised.
+#   make engine-chuck BRINGUP=1 NOCHUCK=1 - also skip ChucK's create/compile, to prove the platform +
+#                                          linker script boot without the ChucK runtime (isolation).
+ifeq ($(BRINGUP), 1)
+C_DEFS += -DCHUCK_BRINGUP
+endif
+ifeq ($(NOCHUCK), 1)
+C_DEFS += -DCHUCK_SKIP_RUNTIME
+endif
+# Bisect ChucK init: CHUCKLVL=1 (new ChucK only) / 2 (+init) / 3 (+compile, = full). The first level
+# whose flash boots the panel (vs solid-white) localises which call fails.
+ifdef CHUCKLVL
+C_DEFS += -DCHUCK_RUNTIME_LEVEL=$(CHUCKLVL)
+endif
+
 USE_FATFS = 1
 
 # Firmware identity baked into every binary (see src/version.h / version.cpp). SPK_VERSION is
