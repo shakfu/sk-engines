@@ -1,10 +1,14 @@
 # Dev notes — ChucK as an sk-engines engine (`ENGINE=chuck`) — ROADMAP
 
-> **Status: M0 DONE (2026-06-19) — `libchuck.a` cross-builds + links for cortex-m7; firmware
-> integration (M1+) not started.** `scripts/fetch_chuck.sh` fetches ChucK, cross-compiles the core
-> into `thirdparty/chuck/Daisy/lib/libchuck.a` (≈1.1 MB `.text`), and self-verifies with an on-target
-> link probe (`new ChucK()` → `compileCode("SinOsc s => dac;")` → `run()`). See **M0 — results**
-> below for what this took and what it found. The rest of this doc is the forward design.
+> **Status: M0 DONE (2026-06-19) — `libchuck.a` cross-builds + links for cortex-m7. M1/M2 CODE
+> LANDED + LINKS (2026-06-19); on-target flash/tone/CPU not yet done (no hardware in the loop).**
+> `scripts/fetch_chuck.sh` fetches ChucK, cross-compiles the core into
+> `thirdparty/chuck/Daisy/lib/libchuck.a` (≈1.1 MB `.text`), and self-verifies with an on-target link
+> probe. `ChuckEngine : IEngine` (`src/engine/chuck/`) now wraps it: it compiles + links both as the
+> Pod harness (`pod/harness_chuck.cpp`, `make -f Makefile.chuck` → a 1.32 MB BOOT_QSPI image) and as
+> the full firmware (`make engine-chuck` → `spotykach.bin`, SRAM 65% / QSPIFLASH 17% / SDRAM 94%).
+> What remains for M1/M2 is the **hardware** half: flash a Pod, confirm tone out of QSPI, and run
+> `METER=1` for the double-precision/XIP CPU headroom (risk #1). See **M1/M2 — results** below.
 
 > This is a design + roadmap for embedding
 > the [ChucK](https://chuck.stanford.edu) language as a swappable engine, modelled directly on the
@@ -216,15 +220,32 @@ sysroot/prelude/stubs it needs, and **self-verifies** by compiling + linking a p
 the probe links (text ≈ 1.1 MB). The threading risk (#2) was retired by `-D__DISABLE_THREADS__`. See
 "Building `libchuck.a`" above for the full recipe and findings. *Gate cleared.*
 
-**M1 — Pod tone from QSPI (retire risk #1 + #2).** On the bare-`DaisySeed` Pod target (the
-quick-iterate board, reuse `pod/`): hard-code `compileCode("SinOsc s => dac; while(true){1::second => now;}")`,
-single-threaded, no SD/MIDI, and get a tone out of QSPI. **Immediately run `METER=1` for CPU
-headroom** — this is the make-or-break double-precision/QSPI-XIP measurement. If a moderate UGen graph
-glitches, the whole effort needs the perf mitigations up front.
+**M1 — Pod tone from QSPI (retire risk #1 + #2). — CODE DONE / HARDWARE PENDING (2026-06-19).** The
+Pod vehicle is built: `pod/harness_chuck.cpp` + `pod/Makefile.chuck` stand in for the platform (build
+an `EngineContext`, `init()` the real `ChuckEngine`, drive `process()` from the audio callback, knobs
+→ `set_param()`). `make -f Makefile.chuck` cross-compiles + links a BOOT_QSPI image (≈1.32 MB) against
+`libchuck.a` + the SDRAM `--wrap` pool. Unlike the Csound Pod harness it links the *real* pool
+(`chuck_alloc.cpp`), so `chuck_heap_arm()` arms the `.sdram_bss` pool — the M2 heap model, on the Pod.
+**Still to do (needs a board):** flash it, confirm a tone, and **run `METER=1` for CPU headroom** —
+the make-or-break double-precision/QSPI-XIP measurement (risk #1). If a moderate UGen graph glitches,
+the perf mitigations come up front.
 
-**M2 — `IEngine` skeleton on the spotykach.** `ChuckEngine : IEngine` with `init`/`process`/`render`
-+ the built-in `kProgram` reading panel globals (`setGlobalFloat`). Reuse the SDRAM pool + VTOR inject
-+ QSPI Makefile branch. Panel knobs move the synth; rings show the level meter.
+**M2 — `IEngine` skeleton on the spotykach. — CODE DONE / HARDWARE PENDING (2026-06-19).**
+`ChuckEngine : IEngine` (`src/engine/chuck/chuck_engine.{h,cpp}`) implements `init`/`prepare`/`process`/
+`set_param`→`setGlobalFloat`/`param`/`render`/`capabilities` + the built-in `kProgram` (a `SawOsc => LPF
+=> dac` drone reading `speedA`/`mixA`/`sizeA`). `process()` interleaves the platform's de-interleaved
+buffers into `ck->run()` (SAMPLE=float) and back; the run() scratch is malloc'd from the SDRAM pool so
+the SRAM-tight platform pays nothing for it. Wired in: the `ENGINE=chuck` Makefile branch (BOOT_QSPI,
+the ChucK feature defines matching `libchuck.a`'s ABI, `-fexceptions -frtti` scoped to just the engine
+TU, `--wrap` malloc), `engine_select.h` (`SPK_ENGINE_CHUCK → ChuckEngine`), `chuck_alloc.cpp` (reuses
+the engine-agnostic `CsoundPool`), and the shared `spotykach_qspi_vtor.cpp`. `make engine-chuck` links
+the full firmware. **One platform fix this surfaced:** the QSPI build reserved 186 KB of AXI SRAM for
+`SRAM_EXEC` that holds no code (it executes in place from QSPIFLASH), so `CoreUI + libDaisy .bss`
+(~340 KB) overflowed the 326 KB `SRAM` region. Rather than touch the proven Csound QSPI path, ChucK
+gets its own `alt_qspi_chuck.lds` (identical to `alt_qspi.lds` except it reclaims the unused 186 KB
+`SRAM_EXEC` into `SRAM`, giving data the full 512 KB AXI SRAM); the `ENGINE=chuck` branch and the Pod
+harness point at it, and the stock `alt_qspi.lds` (csound) is byte-unchanged. **Still to do (needs a board):**
+flash, confirm the knobs drive the drone and the rings meter the output. SD bank/MIDI are M3/M4.
 
 **M3 — SD `.ck` patch bank + live swap.** Port `csound_patch.h` (numbered `/chuck/<n>.ck` slots, the
 Alt+PITCH quantizer, read+validate+BOM/CRLF-strip, built-in fallback) and `csound_reload.h`
@@ -260,19 +281,22 @@ handoff, and the MIDI note→global mapping + SPSC ring — exactly the units Cs
 
 ---
 
-## Files (proposed — mirrors the csound layout)
+## Files (mirrors the csound layout)
 
-- `src/engine/chuck/chuck_engine.{h,cpp}` — `ChuckEngine : IEngine` (init / compile / process /
-  set_param→`setGlobalFloat` / render + the built-in `kProgram` + the global-name param map). Compiles
-  only for `ENGINE=chuck`.
-- `src/engine/chuck/chuck_patch.h` — numbered `/chuck/<n>.ck` bank: path / scan / Alt+PITCH quantizer /
-  read+validate with built-in fallback (header-only, host-tested).
-- `src/engine/chuck/chuck_reload.h` — `ReloadGate` live-instance handoff (likely a thin rename of the
-  shared gate).
-- `src/engine/chuck/chuck_midi.h` — note→global mapping + the lock-free SPSC note ring.
-- `src/engine/chuck/sdram_alloc.cpp` + `sdram_pool.h` — the `--wrap` shim + coalescing pool, ideally
-  **promoted to a shared component** both csound and chuck link (today it lives under `csound/`).
-- `src/engine/chuck/spotykach_qspi_vtor.cpp` — the `SCB->VTOR` inject (or share the csound one).
+- `src/engine/chuck/chuck_engine.{h,cpp}` — **DONE (M2).** `ChuckEngine : IEngine` (init / compile /
+  process / set_param→`setGlobalFloat` / render + the built-in `kProgram` + the global-name param map).
+  Compiles only for `ENGINE=chuck`.
+- `src/engine/chuck/chuck_alloc.cpp` — **DONE (M2).** The `--wrap` malloc shim over a 12 MB
+  `.sdram_bss` pool. Reuses the engine-agnostic `CsoundPool` (`engine/csound/csound_pool.h`) rather than
+  duplicating it (roadmap: promote that to a shared `SdramPool`; reused as-is to keep csound byte-identical).
+- `pod/harness_chuck.cpp` + `pod/Makefile.chuck` — **DONE (M1).** The standalone Pod proof-of-life.
+- VTOR inject — **shared:** the `ENGINE=chuck` branch links `src/engine/csound/spotykach_qspi_vtor.cpp`
+  directly (the BOOT_QSPI vector-table fix is engine-agnostic); no chuck copy.
+- `src/engine/chuck/chuck_patch.h` — *M3.* numbered `/chuck/<n>.ck` bank: path / scan / Alt+PITCH
+  quantizer / read+validate with built-in fallback (header-only, host-tested).
+- `src/engine/chuck/chuck_reload.h` — *M3.* `ReloadGate` live-instance handoff (likely a thin rename of
+  the shared gate).
+- `src/engine/chuck/chuck_midi.h` — *M4.* note→global mapping + the lock-free SPSC note ring.
 
 ---
 

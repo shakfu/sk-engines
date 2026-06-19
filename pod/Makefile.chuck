@@ -1,0 +1,61 @@
+# Standalone ChucK-on-Daisy proof of life (M1 from docs/dev/chuck-impl.md). Builds a BOOT_QSPI app
+# (code in QSPI flash, ChucK heap in the SDRAM --wrap pool) linked against the cross-compiled
+# libchuck.a. Deliberately separate from the sk-engines SRAM firmware/Makefile and from the Csound
+# Pod harness (pod/Makefile).
+#
+#   make -f Makefile.chuck              - build the harness (ChuckEngine behind IEngine)
+#   make -f Makefile.chuck program-dfu  - flash over USB DFU (catch the bootloader's DFU window)
+#
+# Prereq (once): build libchuck.a + the shim sysroot with scripts/fetch_chuck.sh.
+
+APP_TYPE = BOOT_QSPI
+
+# The sk-engines contract headers (common.h: std::clamp) need C++17; libDaisy defaults to gnu++14.
+CPP_STANDARD = -std=gnu++17
+
+# ChucK's headers use C++ exceptions + RTTI, and libchuck.a was built with both ON (fetch_chuck.sh),
+# so the engine TU must agree for a matching ABI. The libDaisy CPPFLAGS set -fno-exceptions/-fno-rtti;
+# CPP_USER_FLAGS is appended last, so these re-enable them for this build.
+CPP_USER_FLAGS = -fexceptions -frtti
+
+TARGET      = harness_chuck
+CPP_SOURCES = harness_chuck.cpp \
+              ../src/engine/chuck/chuck_engine.cpp \
+              ../src/engine/chuck/chuck_alloc.cpp \
+              ../src/engine/led.ring.cpp \
+              ../src/engine/color.cpp
+
+# Daisy libraries (vendored in the sk-engines repo)
+LIBDAISY_DIR = ../lib/libDaisy
+DAISYSP_DIR  = ../lib/DaisySP
+
+# Cross-compiled ChucK static library + headers + shim sysroot (built via scripts/fetch_chuck.sh).
+CHUCK_BASE = ../thirdparty/chuck
+CHUCK_CORE = $(CHUCK_BASE)/src/core
+CHUCK_SHIM = $(CHUCK_BASE)/Daisy/shim
+CHUCK_LIB  = $(CHUCK_BASE)/Daisy/lib/libchuck.a
+
+C_INCLUDES += -I../src                 # sk-engines contract headers (engine/iengine.h etc.)
+C_INCLUDES += -I$(CHUCK_CORE)          # chuck.h / chuck_globals.h
+C_INCLUDES += -I$(CHUCK_SHIM)          # ck_prelude.h + the POSIX shim headers chuck.h pulls in
+LIBS       += $(CHUCK_LIB)
+
+# ChucK feature defines = the exact set fetch_chuck.sh built libchuck.a with. They MUST match so the
+# ChucK class layouts the engine TU sees agree with the archive (__DISABLE_THREADS__ etc. drop members).
+C_DEFS += -D__PLATFORM_LINUX__ -D__USE_CHUCK_YACC__ \
+  -DCPU_IS_LITTLE_ENDIAN=1 -DCPU_IS_BIG_ENDIAN=0 -DTYPEOF_SF_COUNT_T=__INT64_TYPE__ -DSIZEOF_SF_COUNT_T=8 \
+  -D__DISABLE_MIDI__ -D__DISABLE_WATCHDOG__ -D__DISABLE_NETWORK__ -D__DISABLE_OTF_SERVER__ \
+  -D__ALTER_HID__ -D__DISABLE_HID__ -D__DISABLE_SERIAL__ -D__DISABLE_ASYNCH_IO__ -D__DISABLE_THREADS__ \
+  -D__DISABLE_KBHIT__ -D__DISABLE_PROMPTER__ -D__DISABLE_SHELL__ -D__OLDSCHOOL_RANDOM__
+
+# Route ChucK's C-malloc family to the SDRAM pool (chuck_alloc.cpp); the platform heap stays in SRAM.
+LDFLAGS += -Wl,--wrap=malloc,--wrap=free,--wrap=calloc,--wrap=realloc
+
+# Spotykach v2 bootloader + the ChucK QSPI linker script (repo root). alt_qspi_chuck.lds reclaims the
+# unused 186K SRAM_EXEC region into SRAM (the full firmware needs it; harmless headroom here). The
+# harness re-injects VTOR itself, so it boots regardless of whether the bootloader sets it.
+BOOT_BIN = ../bootloader-spotykach-v2.bin
+LDSCRIPT = ../alt_qspi_chuck.lds
+
+SYSTEM_FILES_DIR = $(LIBDAISY_DIR)/core
+include $(SYSTEM_FILES_DIR)/Makefile

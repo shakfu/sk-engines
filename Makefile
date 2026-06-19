@@ -154,8 +154,36 @@ LIBS    += $(CSOUND_BASE)/lib/libcsound.a
 LDFLAGS += -u _printf_float
 # Route Csound's C-malloc family to the SDRAM bump pool (csound_alloc.cpp); the platform heap stays in SRAM.
 LDFLAGS += -Wl,--wrap=malloc,--wrap=free,--wrap=calloc,--wrap=realloc
+else ifeq ($(ENGINE), chuck)
+# ChucK is a QSPI-ONLY target (like Csound): it links libchuck.a (~1.1 MB code) which can't fit the
+# 186 KB SRAM_EXEC budget, so it must run from QSPI. Build it BOOT_QSPI with the QSPI linker script:
+#   make ENGINE=chuck APP_TYPE=BOOT_QSPI LDSCRIPT=alt_qspi_chuck.lds   (or just: make engine-chuck)
+# Prereq: libchuck.a + the shim sysroot (scripts/fetch_chuck.sh). engine_select.h maps SPK_ENGINE_CHUCK
+# -> ChuckEngine; see docs/dev/chuck-impl.md.
+C_DEFS += -DSPK_ENGINE_CHUCK
+# ChucK feature defines = the exact set fetch_chuck.sh built libchuck.a with. They MUST match so the
+# ChucK class layouts the engine TU sees agree with the archive (__DISABLE_THREADS__ etc. drop members).
+C_DEFS += -D__PLATFORM_LINUX__ -D__USE_CHUCK_YACC__ \
+  -DCPU_IS_LITTLE_ENDIAN=1 -DCPU_IS_BIG_ENDIAN=0 -DTYPEOF_SF_COUNT_T=__INT64_TYPE__ -DSIZEOF_SF_COUNT_T=8 \
+  -D__DISABLE_MIDI__ -D__DISABLE_WATCHDOG__ -D__DISABLE_NETWORK__ -D__DISABLE_OTF_SERVER__ \
+  -D__ALTER_HID__ -D__DISABLE_HID__ -D__DISABLE_SERIAL__ -D__DISABLE_ASYNCH_IO__ -D__DISABLE_THREADS__ \
+  -D__DISABLE_KBHIT__ -D__DISABLE_PROMPTER__ -D__DISABLE_SHELL__ -D__OLDSCHOOL_RANDOM__
+# ChucK's headers use C++ exceptions + RTTI, and libchuck.a was built with both ON, so the engine TU
+# must agree (ABI). libDaisy's CPPFLAGS set -fno-exceptions/-fno-rtti; re-enable them for JUST the
+# ChucK engine TU (a target-specific override below, after CPP_USER_FLAGS is appended last in CPPFLAGS).
+# Scoped to the one TU so the rest of the firmware keeps -fno-exceptions and doesn't drag the libstdc++
+# exception machinery (a multi-KB static .bss footprint) into the SRAM-tight platform.
+build/chuck_engine.o: CPP_USER_FLAGS += -fexceptions -frtti
+CHUCK_BASE = thirdparty/chuck
+# chuck.h/chuck_globals.h from src/core; the shim provides the POSIX headers chuck.h transitively pulls.
+CHUCK_INC  = -I$(CHUCK_BASE)/src/core -I$(CHUCK_BASE)/Daisy/shim
+# Reuse the Csound engine's VTOR inject (the BOOT_QSPI vector-table fix is engine-agnostic).
+ENGINE_SOURCES = src/engine/chuck/chuck_engine.cpp src/engine/chuck/chuck_alloc.cpp src/engine/csound/spotykach_qspi_vtor.cpp
+LIBS    += $(CHUCK_BASE)/Daisy/lib/libchuck.a
+# Route ChucK's C-malloc family to the SDRAM pool (chuck_alloc.cpp); the platform heap stays in SRAM.
+LDFLAGS += -Wl,--wrap=malloc,--wrap=free,--wrap=calloc,--wrap=realloc
 else
-$(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', 'edrums', 'reso', 'graincloud', 'tape', 'reverb', 'shuttle', 'radio', 'chorus', 'dfilter', 'voice', or 'csound')
+$(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', 'edrums', 'reso', 'graincloud', 'tape', 'reverb', 'shuttle', 'radio', 'chorus', 'dfilter', 'voice', 'csound', or 'chuck')
 endif
 
 # Opt-in (make ... METER=1): enable the on-device CPU load meter (app.cpp's CpuLoadMeter). It writes
@@ -193,7 +221,7 @@ APP_TYPE = BOOT_SRAM
 LDSCRIPT = alt_sram.lds
 BOOT_BIN = bootloader-spotykach-v2.bin
 
-C_INCLUDES = -Isrc/ -Ilib/ $(RESO_INC) $(GRAINCLOUD_INC) $(GEN_INC) $(CSOUND_INC)
+C_INCLUDES = -Isrc/ -Ilib/ $(RESO_INC) $(GRAINCLOUD_INC) $(GEN_INC) $(CSOUND_INC) $(CHUCK_INC)
 # NOTE: there used to be `C_USR_FLAGS = -ffast-math -funroll-loops` here, but the core Makefile reads
 # C_USER_FLAGS (with the E), so it was dead - those flags never reached the compiler and the shipping
 # firmware was built without them. Removed to stop it reading as active. The device meets its CPU/SRAM
@@ -270,7 +298,7 @@ all: check-boundary
 
 # One-shot variant flash: clean -> build -> flash over DFU. Put the device in DFU mode first
 # (hold Reset ~3s until the bottom pad LEDs breathe white), then `make granular` / `make passthrough`.
-.PHONY: engine-granular engine-passthrough engine-delay engine-edrums engine-reso engine-graincloud engine-tape engine-shuttle engine-reverb engine-radio engine-chorus engine-dfilter engine-voice engine-gigaverb engine-csound program-csound
+.PHONY: engine-granular engine-passthrough engine-delay engine-edrums engine-reso engine-graincloud engine-tape engine-shuttle engine-reverb engine-radio engine-chorus engine-dfilter engine-voice engine-gigaverb engine-csound program-csound engine-chuck program-chuck
 engine-granular:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=granular
@@ -328,6 +356,18 @@ engine-csound:
 # Re-flash the last csound build without rebuilding (board in DFU).
 program-csound:
 	-$(MAKE) $(CSOUND_FLAGS) program-dfu
+
+# ChucK is QSPI-only, same recipe as csound but with its own linker script (alt_qspi_chuck.lds reclaims
+# the unused SRAM_EXEC region for .bss - csound keeps the stock alt_qspi.lds). Links libchuck.a.
+CHUCK_FLAGS = ENGINE=chuck APP_TYPE=BOOT_QSPI LDSCRIPT=alt_qspi_chuck.lds
+engine-chuck:
+	$(MAKE) clean
+	$(MAKE) -j8 $(CHUCK_FLAGS)
+	-$(MAKE) $(CHUCK_FLAGS) program-dfu
+
+# Re-flash the last chuck build without rebuilding (board in DFU).
+program-chuck:
+	-$(MAKE) $(CHUCK_FLAGS) program-dfu
 
 engine-chorus:
 	$(MAKE) clean
