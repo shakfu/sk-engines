@@ -18,6 +18,10 @@
 #include "chuck_globals.h"    // Chuck_Globals_Manager: setGlobalFloat (host -> .ck program)
 
 #include <cstdlib>            // malloc/free (routed to the SDRAM pool by chuck_alloc.cpp's --wrap)
+#include <cstdio>             // snprintf - format the bring-up error capture
+#include <cstring>            // strncpy
+#include <typeinfo>          // typeid - name the thrown exception type in the capture
+#include <exception>         // std::exception
 
 // Bring-up bisection (build: make engine-chuck CHUCKLVL=N). Splits ChucK init into stages so the
 // first stage that fails to boot (panel goes solid-white instead of rendering) is the culprit:
@@ -82,6 +86,54 @@ static const char* global_for(ParamId id, DeckRef::Ref d, int& slot)
     }
 }
 
+// --- Bring-up crash capture (QSPI Pod debug; see docs/dev/chuck-pod-poc.md) -------------------
+// On bare metal an uncaught C++ exception out of ChucK init runs std::terminate -> abort, which spins
+// forever in newlib's _exit (dark LED, all fault registers zero - exactly the Pod symptom we localized
+// over SWD). We wrap the runtime bring-up in try/catch: on a throw we record which stage was running
+// and the exception type + what(), leave _ready=false (silent, recoverable boot), and let the unit run
+// instead of aborting. Read g_chuck_init_stage / g_chuck_init_error over SWD to see the root cause.
+extern "C" {
+volatile uint32_t g_chuck_init_stage     = 0;    // 1=new ChucK  2=init()  3=compileCode()  9=succeeded
+char              g_chuck_init_error[192] = "";   // cause on failure ("" if none); read over SWD
+
+// Override newlib's weak abort/__assert_func so a bare-metal assert/abort (which otherwise spins
+// silently in _exit - the dark-LED symptom) instead RECORDS its cause into g_chuck_init_error before
+// parking. This catches the failures the try/catch can't: a fired assert() in ChucK's compiler, or an
+// exception that std::terminate->abort()s because it could not unwind through the generated C parser
+// frames (chuck.tab.c / chuck.yy.c, built without unwind tables) to reach our catch. Read the buffer
+// over SWD to see file:line:expr (assert) or the caller address (abort -> addr2line).
+void __assert_func(const char* file, int line, const char* func, const char* expr)
+{
+    std::snprintf(g_chuck_init_error, sizeof(g_chuck_init_error), "assert %s:%d %s(): %s",
+                  file ? file : "?", line, func ? func : "?", expr ? expr : "?");
+    while (1) { __asm__ volatile("nop"); }        // park; cause captured for SWD readout
+}
+
+void abort(void)
+{
+    // Crude backtrace: this toolchain's nano libstdc++ compiles every std::__throw_* to `bl abort`
+    // (no exceptions), so abort() is the only signal. Scan the live stack for return addresses in the
+    // QSPI .text range and list the first several; addr2line them to recover the ChucK call path that
+    // reached the throw helper. (-O2 omits frame pointers, so a precise unwind isn't available.)
+    if (g_chuck_init_error[0] == '\0') {          // don't clobber a more specific assert message
+        uintptr_t sp;
+        __asm__ volatile("mov %0, sp" : "=r"(sp));
+        char* p = g_chuck_init_error;
+        char* const end = p + sizeof(g_chuck_init_error);
+        p += std::snprintf(p, end - p, "abort bt:");
+        const uintptr_t* s = reinterpret_cast<const uintptr_t*>(sp);
+        for (int i = 0, n = 0; i < 256 && n < 12 && p < end - 10; i++) {
+            const uintptr_t v = s[i];
+            if (v >= 0x90040000u && v < 0x90200000u && (v & 1u)) {   // thumb return addr in QSPI text
+                p += std::snprintf(p, end - p, " %08lx", static_cast<unsigned long>(v & ~1u));
+                n++;
+            }
+        }
+    }
+    while (1) { __asm__ volatile("nop"); }
+}
+}
+
 // ---------------------------------------------------------------------------------------------
 // Lifecycle
 // ---------------------------------------------------------------------------------------------
@@ -103,21 +155,41 @@ void ChuckEngine::init(const EngineContext& ctx)
     _outbuf = static_cast<float*>(std::malloc(sizeof(float) * kMaxBlock * _out_ch));
 
 #if CHUCK_RUNTIME_LEVEL >= 1
-    _ck = new ChucK();
-    _ck->setParam(CHUCK_PARAM_SAMPLE_RATE,     static_cast<int>(_sr));
-    _ck->setParam(CHUCK_PARAM_INPUT_CHANNELS,  _in_ch);
-    _ck->setParam(CHUCK_PARAM_OUTPUT_CHANNELS, _out_ch);
-    _ck->setParam(CHUCK_PARAM_OTF_ENABLE,      0);   // no on-the-fly server (bare metal: no sockets)
-    _ck->setParam(CHUCK_PARAM_CHUGIN_ENABLE,   0);   // no dynamically-loaded UGen plugins (no dlopen)
-#endif
+    try {
+        g_chuck_init_stage = 1;
+        _ck = new ChucK();
+        _ck->setParam(CHUCK_PARAM_SAMPLE_RATE,     static_cast<int>(_sr));
+        _ck->setParam(CHUCK_PARAM_INPUT_CHANNELS,  _in_ch);
+        _ck->setParam(CHUCK_PARAM_OUTPUT_CHANNELS, _out_ch);
+        _ck->setParam(CHUCK_PARAM_OTF_ENABLE,      0); // no on-the-fly server (bare metal: no sockets)
+        _ck->setParam(CHUCK_PARAM_CHUGIN_ENABLE,   0); // no dynamically-loaded UGen plugins (no dlopen)
 #if CHUCK_RUNTIME_LEVEL >= 2
-    _ck->init();                                     // builds the type system + registers built-in UGens
+        g_chuck_init_stage = 2;
+        _ck->init();                                 // builds the type system + registers built-in UGens
+        // Start the VM HERE, single-threaded, before StartAudio. REQUIRED: ChucK::globals() returns
+        // NULL until the VM is running (vm->running()), and ChucK::run() lazily auto-start()s on its
+        // first call - which, since run() executes in the audio ISR, would start the VM (allocating
+        // from the non-reentrant SDRAM pool) concurrently with the main loop's setGlobalFloat (also a
+        // pool alloc), corrupting the heap. Starting here removes that race. (See the chuck_tilde Max
+        // external: init() -> start() before audio.) See docs/dev/chuck-pod-poc.md.
+        _ck->start();
 #endif
 #if CHUCK_RUNTIME_LEVEL >= 3
-    // Spork the built-in program. count=1, immediate=FALSE: queued, shreduled on the next VM step
-    // (the first run()), matching the audio-thread compute model.
-    _ck->compileCode(kProgram, "", 1);
-    _ready = true;                                   // only now is run() safe to call from the ISR
+        g_chuck_init_stage = 3;
+        // Spork the built-in program. count=1, immediate=FALSE: queued, shreduled on the next VM step
+        // (the first run()), matching the audio-thread compute model.
+        _ck->compileCode(kProgram, "", 1);
+        _ready = true;                               // only now is run() safe to call from the ISR
+#endif
+        g_chuck_init_stage = 9;                      // reached the end with no throw
+    } catch (const std::exception& e) {
+        std::snprintf(g_chuck_init_error, sizeof(g_chuck_init_error), "%s: %s",
+                      typeid(e).name(), e.what());
+        _ready = false;                              // boot silent instead of aborting; cause captured
+    } catch (...) {
+        std::strncpy(g_chuck_init_error, "(non-std exception)", sizeof(g_chuck_init_error) - 1);
+        _ready = false;
+    }
 #endif
 }
 
@@ -179,8 +251,11 @@ void ChuckEngine::set_param(ParamId id, DeckRef::Ref d, float v)
     if (!_ck || !name) return;
     // Called from the main loop while process() runs in the audio ISR. With __DISABLE_THREADS__ the
     // globals queue is drained on the audio thread, so this enqueues a write that the next run()
-    // applies - the intended host -> .ck-program path (mirrors Csound's setControlChannel).
-    _ck->globals()->setGlobalFloat(name, v);
+    // applies - the intended host -> .ck-program path (mirrors Csound's setControlChannel). globals()
+    // is NULL until the VM is running; init() now start()s it, but null-guard anyway (a set_param
+    // before init() must not deref NULL).
+    Chuck_Globals_Manager* g = _ck->globals();
+    if (g) g->setGlobalFloat(name, v);
 }
 
 float ChuckEngine::param(ParamId id, DeckRef::Ref d) const

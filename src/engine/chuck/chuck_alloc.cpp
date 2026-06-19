@@ -45,6 +45,16 @@ inline bool in_pool(const void* p) {
     return p >= static_cast<const void*>(g_pool) && p < static_cast<const void*>(g_pool + kPoolBytes);
 }
 
+// The pool is shared between the main loop (ChucK setGlobalFloat -> new/delete) and the audio ISR
+// (ck->run() -> VM allocations). CsoundPool is NOT reentrant - concurrent alloc/free corrupts its free
+// list (we caught a HardFault in release() following a 0xaa..-pattern pointer). Serialize every pool
+// op with a short PRIMASK critical section. RAII-restore so it nests (an ISR alloc inside is fine).
+struct CritSec {
+    uint32_t primask;
+    CritSec()  { primask = __get_PRIMASK(); __disable_irq(); }
+    ~CritSec() { if (!primask) __enable_irq(); }
+};
+
 } // namespace
 
 namespace spotykach {
@@ -60,14 +70,16 @@ extern "C" {
 
 void* __wrap_malloc(std::size_t n) {
     if (!g_armed) return __real_malloc(n);
-    void* p = g_alloc.alloc(n);
+    void* p;
+    { CritSec cs; p = g_alloc.alloc(n); }
     return p ? p : __real_malloc(n);            // pool exhausted -> SRAM fallback
 }
 
 void* __wrap_calloc(std::size_t nmemb, std::size_t sz) {
     if (!g_armed) return __real_calloc(nmemb, sz);
     const std::size_t n = nmemb * sz;
-    void* p = g_alloc.alloc(n ? n : 1);
+    void* p;
+    { CritSec cs; p = g_alloc.alloc(n ? n : 1); }
     if (p) { std::memset(p, 0, n); return p; }
     return __real_calloc(nmemb, sz);            // fallback zeroes for us
 }
@@ -75,23 +87,25 @@ void* __wrap_calloc(std::size_t nmemb, std::size_t sz) {
 void* __wrap_realloc(void* old, std::size_t n) {
     if (!old)          return __wrap_malloc(n);
     if (!in_pool(old)) return __real_realloc(old, n);   // a real (SRAM) block
-    if (n == 0)        { g_alloc.release(old); return nullptr; }
-    void* p = g_alloc.grow(old, n);
+    if (n == 0)        { CritSec cs; g_alloc.release(old); return nullptr; }
+    void* p;
+    { CritSec cs; p = g_alloc.grow(old, n); }
     if (p) return p;
     // Pool can't satisfy the grow (even after coalescing): relocate to the SRAM heap, then free the
     // old pool block. realloc must preserve contents up to the smaller of old/new size.
     p = __real_malloc(n);
     if (p) {
-        const std::size_t oldn = g_alloc.payload(old);
+        std::size_t oldn;
+        { CritSec cs; oldn = g_alloc.payload(old); }
         std::memcpy(p, old, oldn < n ? oldn : n);
-        g_alloc.release(old);
+        { CritSec cs; g_alloc.release(old); }
     }
     return p;                                   // null leaves old intact (realloc contract)
 }
 
 void __wrap_free(void* p) {
     if (!p) return;
-    if (in_pool(p)) g_alloc.release(p);
+    if (in_pool(p)) { CritSec cs; g_alloc.release(p); }
     else            __real_free(p);
 }
 

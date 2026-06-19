@@ -1,14 +1,18 @@
 # Dev notes — ChucK as an sk-engines engine (`ENGINE=chuck`) — ROADMAP
 
-> **Status: M0 DONE (2026-06-19) — `libchuck.a` cross-builds + links for cortex-m7. M1/M2 CODE
-> LANDED + LINKS (2026-06-19); on-target flash/tone/CPU not yet done (no hardware in the loop).**
-> `scripts/fetch_chuck.sh` fetches ChucK, cross-compiles the core into
-> `thirdparty/chuck/Daisy/lib/libchuck.a` (≈1.1 MB `.text`), and self-verifies with an on-target link
-> probe. `ChuckEngine : IEngine` (`src/engine/chuck/`) now wraps it: it compiles + links both as the
-> Pod harness (`pod/harness_chuck.cpp`, `make -f Makefile.chuck` → a 1.32 MB BOOT_QSPI image) and as
-> the full firmware (`make engine-chuck` → `spotykach.bin`, SRAM 65% / QSPIFLASH 17% / SDRAM 94%).
-> What remains for M1/M2 is the **hardware** half: flash a Pod, confirm tone out of QSPI, and run
-> `METER=1` for the double-precision/XIP CPU headroom (risk #1). See **M1/M2 — results** below.
+> **Status: M0–M2 DONE — WORKING ON HARDWARE (2026-06-19).** ChucK boots, compiles, runs the VM, makes
+> sound, and responds to the knobs on a bare Daisy Pod (verified over SWD + by ear). `M0`: `libchuck.a`
+> cross-builds + links (`scripts/fetch_chuck.sh`, pinned `chuck-1.5.5.8`). `M1`: Pod tone from QSPI —
+> the `SawOsc => LPF => dac` drone plays, knobs drive `speedA`/`mixA`. `M2`: `ChuckEngine : IEngine`
+> (`src/engine/chuck/`) wired into both the Pod harness (`make -f Makefile.chuck`) and the full
+> firmware (`make engine-chuck`, build-verified — **spotykach hardware test still pending**).
+>
+> **Bring-up took four bug fixes** (`-u _printf_float`, `_ck->start()` before audio, a PRIMASK guard on
+> the non-reentrant SDRAM pool, and a sane knob cadence) — none ChucK-on-Cortex-M incompatibilities. The
+> full story, the SWD flash/inspect tooling, and the open items live in
+> [`chuck-pod-poc.md`](chuck-pod-poc.md) (read it for current state). The roadmap below (M3 SD bank, M4
+> MIDI) and the risk analysis are still accurate; the `METER=1` CPU-headroom pass (risk #1) is the main
+> open measurement — `ck->run(256)` is CPU-heavy (~near the block budget).
 
 > This is a design + roadmap for embedding
 > the [ChucK](https://chuck.stanford.edu) language as a swappable engine, modelled directly on the
@@ -220,17 +224,16 @@ sysroot/prelude/stubs it needs, and **self-verifies** by compiling + linking a p
 the probe links (text ≈ 1.1 MB). The threading risk (#2) was retired by `-D__DISABLE_THREADS__`. See
 "Building `libchuck.a`" above for the full recipe and findings. *Gate cleared.*
 
-**M1 — Pod tone from QSPI (retire risk #1 + #2). — CODE DONE / HARDWARE PENDING (2026-06-19).** The
-Pod vehicle is built: `pod/harness_chuck.cpp` + `pod/Makefile.chuck` stand in for the platform (build
-an `EngineContext`, `init()` the real `ChuckEngine`, drive `process()` from the audio callback, knobs
-→ `set_param()`). `make -f Makefile.chuck` cross-compiles + links a BOOT_QSPI image (≈1.32 MB) against
-`libchuck.a` + the SDRAM `--wrap` pool. Unlike the Csound Pod harness it links the *real* pool
-(`chuck_alloc.cpp`), so `chuck_heap_arm()` arms the `.sdram_bss` pool — the M2 heap model, on the Pod.
-**Still to do (needs a board):** flash it, confirm a tone, and **run `METER=1` for CPU headroom** —
-the make-or-break double-precision/QSPI-XIP measurement (risk #1). If a moderate UGen graph glitches,
-the perf mitigations come up front.
+**M1 — Pod tone from QSPI (retire risk #1 + #2). — DONE, WORKING (2026-06-19).** The Pod vehicle
+(`pod/harness_chuck.cpp` + `pod/Makefile.chuck`) builds an `EngineContext`, `init()`s the real
+`ChuckEngine`, drives `process()` from the audio callback, and reads the knobs → `set_param()`. The
+BOOT_QSPI image (≈1.32 MB) links against `libchuck.a` + the real SDRAM `--wrap` pool (`chuck_alloc.cpp`,
+so `chuck_heap_arm()` arms the `.sdram_bss` pool — the M2 heap model). **Flashed and confirmed on a Pod:
+the drone plays, knobs drive it.** Four bugs had to be fixed first (see [`chuck-pod-poc.md`](chuck-pod-poc.md)).
+**Still open:** `METER=1` CPU headroom — `ck->run(256)` is heavy (~near the block budget at block 256);
+quantify before adding voices.
 
-**M2 — `IEngine` skeleton on the spotykach. — CODE DONE / HARDWARE PENDING (2026-06-19).**
+**M2 — `IEngine` skeleton on the spotykach. — CODE DONE, BUILD-VERIFIED / SPOTYKACH HARDWARE PENDING (2026-06-19).**
 `ChuckEngine : IEngine` (`src/engine/chuck/chuck_engine.{h,cpp}`) implements `init`/`prepare`/`process`/
 `set_param`→`setGlobalFloat`/`param`/`render`/`capabilities` + the built-in `kProgram` (a `SawOsc => LPF
 => dac` drone reading `speedA`/`mixA`/`sizeA`). `process()` interleaves the platform's de-interleaved
@@ -244,8 +247,11 @@ the full firmware. **One platform fix this surfaced:** the QSPI build reserved 1
 (~340 KB) overflowed the 326 KB `SRAM` region. Rather than touch the proven Csound QSPI path, ChucK
 gets its own `alt_qspi_chuck.lds` (identical to `alt_qspi.lds` except it reclaims the unused 186 KB
 `SRAM_EXEC` into `SRAM`, giving data the full 512 KB AXI SRAM); the `ENGINE=chuck` branch and the Pod
-harness point at it, and the stock `alt_qspi.lds` (csound) is byte-unchanged. **Still to do (needs a board):**
-flash, confirm the knobs drive the drone and the rings meter the output. SD bank/MIDI are M3/M4.
+harness point at it, and the stock `alt_qspi.lds` (csound) is byte-unchanged. The four Pod fixes are all
+in the spotykach build (`-u _printf_float` in the `ENGINE=chuck` branch; `start()` + the pool guard via
+the shared `chuck_engine.cpp`/`chuck_alloc.cpp`; the knob-cadence fix is n/a — the spotykach UI is
+event-driven). **Still to do:** flash the cased unit, confirm the knobs drive the drone and the rings
+meter the output. SD bank/MIDI are M3/M4.
 
 **M3 — SD `.ck` patch bank + live swap.** Port `csound_patch.h` (numbered `/chuck/<n>.ck` slots, the
 Alt+PITCH quantizer, read+validate+BOM/CRLF-strip, built-in fallback) and `csound_reload.h`

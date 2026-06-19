@@ -180,6 +180,10 @@ CHUCK_INC  = -I$(CHUCK_BASE)/src/core -I$(CHUCK_BASE)/Daisy/shim
 # Reuse the Csound engine's VTOR inject (the BOOT_QSPI vector-table fix is engine-agnostic).
 ENGINE_SOURCES = src/engine/chuck/chuck_engine.cpp src/engine/chuck/chuck_alloc.cpp src/engine/csound/spotykach_qspi_vtor.cpp
 LIBS    += $(CHUCK_BASE)/Daisy/lib/libchuck.a
+# nano.specs omits floating-point printf; ChucK's parser stringifies float literals via std::to_string
+# -> vsnprintf("%f"), which returns a negative length without it and aborts in std::__throw_length_error
+# (nano libstdc++ stubs every __throw_* to a bare abort, so it is uncatchable). See docs/dev/chuck-pod-poc.md.
+LDFLAGS += -u _printf_float
 # Route ChucK's C-malloc family to the SDRAM pool (chuck_alloc.cpp); the platform heap stays in SRAM.
 LDFLAGS += -Wl,--wrap=malloc,--wrap=free,--wrap=calloc,--wrap=realloc
 else

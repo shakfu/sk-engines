@@ -1,122 +1,156 @@
-# ChucK on the Daisy Pod — debugging the boot crash (session handoff)
+# ChucK on the Daisy Pod — RESOLVED (working synth + knobs)
 
-> **Pick-up doc (2026-06-19).** The `ENGINE=chuck` spotykach firmware builds + links but **does not
-> boot on hardware** — the panel goes solid-white. We localized the fault to **ChucK's runtime init**
-> (`new ChucK()` / `ChucK::init()`), and the plan is to reproduce + debug it on a **bare Daisy Pod**
-> (visible onboard LED + accessible SWD pads + a minimal pure-ChucK harness). This doc is the state +
-> the exact next steps. Background: [`chuck-impl.md`](chuck-impl.md) (roadmap), [`csound-impl.md`](csound-impl.md)
-> (the proven sibling QSPI engine — the model for everything here).
+> **Status (2026-06-19): WORKING.** The `ENGINE=chuck` runtime now boots, compiles, and runs on a bare
+> Daisy Pod from QSPI: it creates the VM, compiles the built-in `.ck` program, runs the synthesis VM in
+> the audio callback, produces audio (the `SawOsc -> LPF -> dac` drone), and applies live knob input via
+> the global-variable queue. Confirmed over SWD (running in `Chuck_UGen::system_tick`,
+> `Chuck_VM_Shreduler::advance`, `Chuck_Globals_Manager::handle_global_queue_messages`) and by ear.
+>
+> This supersedes the earlier "debugging the boot crash" handoff. **Every premise of that doc was wrong:**
+> the platform, bootloader, linker script, and SDRAM were fine the whole time; the "solid-white panel" /
+> "no LED" was never a crash signature — it was an *instrumentation gap*. The real faults were four
+> independent, ordinary bugs, found by attaching a debugger. Background: [`chuck-impl.md`](chuck-impl.md)
+> (roadmap), [`csound-impl.md`](csound-impl.md) (the sibling QSPI engine).
 
-## Where we are
+## TL;DR — the four root causes (in the order we hit them)
 
-M0–M2 **code** is written and **links** (engine, Pod harness, Makefile wiring, linker script). The
-gap is purely **on-hardware boot of the QSPI app**. See `chuck-impl.md` for the full M0–M2 summary.
+| # | Symptom | Root cause | Fix |
+|---|---------|-----------|-----|
+| 1 | `abort()` during `compileCode()` (dark LED, **no** CPU fault) | `--specs=nano.specs` ships libstdc++ **without exceptions**: every `std::__throw_*` is a bare `bl abort`. ChucK stringifies float literals via `std::to_string` -> `vsnprintf("%f")`, which with no float-printf returns a negative length -> `std::string(buf, buf-1)` -> `__throw_length_error` -> `abort`. | Link `-u _printf_float`. |
+| 2 | HardFault right after init; type confusion (a `std::string` used as a ring buffer) | The VM was **never `start()`ed**. `ChucK::globals()` returns `NULL` until `vm->running()`, and `run()` lazily auto-`start()`s — *inside the audio ISR*, racing the main loop's `setGlobalFloat` through the non-reentrant pool. | Call `_ck->start()` in `init()` (single-threaded, before audio); null-guard `globals()`. |
+| 3 | Imprecise BusFault in `CsoundPool::release` (free-list following a `0xaa..` pointer) | The SDRAM pool is shared by the main loop (`setGlobalFloat` -> `new`) and the audio ISR (`ck->run()` -> VM allocs). `CsoundPool` is **not reentrant**; concurrent alloc/free corrupts the free list. | Wrap every pool op in a PRIMASK critical section (`chuck_alloc.cpp`). |
+| 4 | Knobs dead; later, audio noise once they worked | `set_param` was called in a **tight, unthrottled main loop** -> floods ChucK's 16384-slot global queue -> the VM chokes draining it in `run()` -> audio ISR eats ~100% CPU, starving the main loop (so `_cache` froze). Reading every block then exposed **ADC jitter** -> constant param reassignment -> zipper noise. | Read knobs **once per audio block in the callback**; **deadband + one-pole smooth** the values. |
 
-Files added/changed this session:
-- `src/engine/chuck/chuck_engine.{h,cpp}` — `ChuckEngine : IEngine` (built-in `kProgram` drone reading
-  `speedA`/`mixA`/`sizeA`; interleave→`ck->run()`→de-interleave; level meter render). Has a bring-up
-  **bisection** (`CHUCK_RUNTIME_LEVEL` 0..3) and a `_ready` gate so partial-init builds stay silent.
-- `src/engine/chuck/chuck_alloc.cpp` — 12 MB `.sdram_bss` `--wrap` pool (reuses `CsoundPool`).
-- `pod/harness_chuck.cpp` + `pod/Makefile.chuck` — the bare-Pod vehicle, now with a **visible
-  onboard-LED heartbeat** (blink 2 before `engine.init()`, 3 after, steady ~1.4 Hz once audio runs).
-- `src/app.cpp` — ChucK now uses **block 256** (was 96); `CHUCK_BRINGUP` LED checkpoints (useless on the
-  cased spotykach — its Daisy LED is hidden).
-- `Makefile` — `ENGINE=chuck` branch, `engine-chuck`/`program-chuck`, `engine_select.h` entry,
-  bring-up flags `BRINGUP=1` / `NOCHUCK=1` / `CHUCKLVL=N`.
-- `alt_qspi_chuck.lds` — ChucK-only linker script (the stock `alt_qspi.lds`, used by csound, is
-  unchanged). Two ChucK-specific changes: (1) reclaims the unused 186 KB `SRAM_EXEC` into `SRAM`
-  (full 512 KB AXI SRAM — needed or `.bss` overflows 326 KB); (2) **moves the main stack** to the top
-  of AXI SRAM (`_estack = 0x24080000`, ~169 KB) instead of the ~31 KB free in DTCMRAM.
+The headline: **ChucK runs fine on bare-metal Daisy.** None of the failures were ChucK-on-Cortex-M
+incompatibilities — they were a libc config flag, an init-ordering mistake, a missing lock, and a
+host-integration cadence bug.
 
-## What we proved on the spotykach (in order)
+## How we found them (methodology — reusable)
 
-1. **Flashing + the QSPI/bootloader path work** — csound (a QSPI app) runs on this unit; `dfu-util`
-   writes fine (the earlier `LIBUSB_ERROR_ACCESS` was a udev/`uaccess` gap, fixed with a `plugdev`
-   rule: `/etc/udev/rules.d/70-st-dfu.rules` `…0483/df11 MODE="0660" GROUP="plugdev"`).
-2. **Platform + `alt_qspi_chuck.lds` + bootloader are fine.** `make engine-chuck NOCHUCK=1` (skips the
-   whole ChucK runtime) **boots** — the panel renders (idle state: deck-B play pad red/blinking). So the
-   SRAM-reclaim linker script and the QSPI handoff are NOT the problem.
-3. **The crash is in ChucK's runtime init.** `make engine-chuck CHUCKLVL=2` (`new ChucK()` +
-   `ChucK::init()`, NO `compileCode()`) **crashes** (partial/garbage panel). `CHUCKLVL=3` (full) →
-   solid white. → the fault is in **`new ChucK()` or `ChucK::init()`**, not the compiler.
-4. **Not a stack overflow (by itself).** Moving the stack from ~31 KB (DTCMRAM) to ~169 KB (AXI SRAM,
-   `_estack=0x24080000`) did **not** fix it. (`_estack` verified at `0x24080000` via `nm`.)
-5. Level-2 and level-3 crash with **different** LED states — the layout-dependent signature of memory
-   corruption / an early fault, not a fixed deterministic point.
+The breakthrough was getting a debugger on the part. The cased spotykach hides the Daisy LED and SWD
+pads; the **bare Pod** exposes both, and an **ST-Link V3 mini** on SWD turned "guess from a white panel"
+into "read the program counter."
 
-**Leading hypotheses now** (ChucK init, on bare metal, that the host link-probe didn't exercise):
-- an **uncaught C++ exception** thrown in `init()` propagating into the `-fno-exceptions` platform →
-  `std::terminate` (only `chuck_engine.o` has `-fexceptions -frtti`);
-- a **null-deref hardfault** — `init()` touching a resource our POSIX/sndfile **stubs** return null for
-  (e.g. a built-in file/dir/`sf_*` path) and dereferencing it;
-- less likely: **pool exhaustion** during `init()` (12 MB) → `bad_alloc`. (STK rawwave file loads no-op
-  with no filesystem, so init's heap need is probably modest — but unconfirmed.)
-- **NOT yet confirmed:** is it `new ChucK()` or `ChucK::init()`? We never got the `CHUCKLVL=1` result.
+Two pieces of tooling, both kept in the tree:
 
-## Open question we still owe an answer
+- **`pod/daisy_qspi.cfg`** — OpenOCD config to flash *and* debug the QSPI app over SWD. The stock
+  `stm32h7x.cfg` only knows internal flash (`0x08000000`); a `BOOT_QSPI` app lives in QSPI XIP
+  (`0x90040000`). The config adds a `stmqspi` flash bank for the Daisy's IS25LP064A and **attaches
+  without resetting** so the bootloader-configured QUADSPI controller is live (a `reset halt` would
+  drop QUADSPI to its unconfigured power-on state). It also neutralizes `stm32h7x.cfg`'s DBGMCU
+  reset/examine events, which fail on this hla+QSPI setup. Targets: `make -f Makefile.chuck program-swd`
+  (flash over SWD, no DFU buttons) and `make -f Makefile.chuck openocd-attach` (inspect-only).
+- **In-firmware crash capture** (`chuck_engine.cpp`) — because the nano libstdc++ turns every C++ throw
+  into a bare `abort()` that spins in `_exit` (no fault, no message), we added: a `try/catch` recording
+  the exception type + `what()`; **overrides of `abort()` and `__assert_func`** that record the cause
+  (assert `file:line:expr`, or a stack-scan mini-backtrace of QSPI return addresses) instead of spinning
+  silently; and two fixed buffers readable over SWD:
+  - `g_chuck_init_stage` (`@0x24000168` in this build): `1`=new ChucK, `2`=init, `3`=compileCode, `9`=ok.
+  - `g_chuck_init_error[192]` (`@0x240000a8`): `"<type>: <what>"`, `"assert ..."`, or `"abort bt: <addrs>"`.
 
-`CHUCKLVL=1` (just `new ChucK()` + `setParam`): does it boot? → splits **construction** vs **`init()`**.
+Typical debug loop: flash (DFU or SWD), boot, then `openocd-attach` + `mdw`/`mdb` the buffers, or read
+fault registers (`CFSR @0xE000ED28`, `HFSR @0xE000ED2C`, `BFAR @0xE000ED38`) and the stacked exception
+frame at MSP to get the faulting PC, then `arm-none-eabi-addr2line` it. The single most useful trick was
+sampling PC repeatedly (resume/halt) to see where the CPU actually spends time — that exposed both the
+`_exit` spin (bug 1) and the audio-ISR starvation (bug 4).
 
-## Next steps — on the Daisy Pod (the plan we stopped at)
+> SWD note: the ST-Link/hla connect to the H7 at full clock is **flaky** (intermittent "init mode failed
+> / unable to connect"). Retry, and power-cycle the probe + target if it wedges. QSPI XIP rules still
+> apply: attach (don't `reset halt`), and the half-written-QSPI risk means a crashed `program-swd` can
+> need a DFU re-flash to recover.
 
-Why the Pod: onboard LED **visible**, SWD pads **accessible**, harness is **pure ChucK** (no CoreUI),
-and a **different memory map** (no 48 MB granular arena → ChucK gets a roomy pool/stack). Key tell: if
-the Pod harness **works**, ChucK is fine and the spotykach crash is its *memory layout* (the 48 MB
-arena starving ChucK) — a different, easier fix. If it **crashes the same**, we have a clean repro.
+## The four fixes in detail
 
-### 1. Flash the harness (full build) and read the onboard LED
+### 1. Float printf (`-u _printf_float`)
+`pod/Makefile.chuck` appends `LDFLAGS += -u _printf_float` after the libDaisy include. Without it,
+`std::to_string(double)` (reached from ChucK's parser stringifying the float literals in the `.ck`
+program) computes a negative length and aborts in `__throw_length_error`. This is a generic `nano.specs`
+gotcha, not ChucK-specific — any `%f`/`std::to_string(float)` in the firmware needs it.
+
+### 2. Start the VM (`_ck->start()`)
+`ChuckEngine::init()` now calls `_ck->start()` right after `_ck->init()` and before `compileCode()` —
+single-threaded, before `StartAudio`. This matches the proven embedding in `chuck-max`
+(`chuck_tilde.cpp`: `init()` -> `start()` before audio). `set_param` also null-guards `globals()`
+(it returns `NULL` pre-start). Without this, the VM only started lazily from inside the audio ISR,
+concurrently with the main loop — the source of the bug-3 race.
+
+### 3. Reentrant pool (`CritSec`)
+`chuck_alloc.cpp` wraps every `g_alloc` op (`alloc`/`release`/`grow`/`payload`) in a short
+PRIMASK-masked critical section (RAII save/restore, so it nests). `CsoundPool` (the engine-agnostic
+SDRAM coalescing allocator under `src/engine/csound/`, reused by ChucK via `--wrap`) has no internal
+locking, so this serializes the main loop and the audio ISR. Cost: interrupts are masked for the
+duration of a pool op; acceptable given how infrequent allocations are after startup.
+
+### 4. Knob cadence + deadband (`harness_chuck.cpp`)
+Knob reads + `set_param` moved from the main loop **into the audio callback** (one read per block,
+~187 Hz) — the correct bare-metal pattern with no host thread to schedule global updates. The main loop
+now only does off-ISR housekeeping (`prepare()`). Each knob is **deadbanded** (only re-sent when it moves
+> 0.004 from the last sent value) so ADC jitter on a still pot sends nothing (clean audio at rest), and
+**one-pole smoothed** so turning glides instead of stepping.
+
+## Build & flash
+
 ```
-cd pod
-make -f Makefile.chuck
-make -f Makefile.chuck program-dfu      # Pod in DFU; needs a QSPI-capable Daisy bootloader
-```
-- **2 → 3 blinks → steady ~1.4 Hz + audible drone** = ChucK WORKS on the Pod → focus on the spotykach
-  memory map (shrink the unused 48 MB granular arena for the chuck build, give ChucK a big pool).
-- **2 blinks then dark** = `engine.init()` crashes on the Pod too = minimal repro → debug it here.
+scripts/fetch_chuck.sh                       # once: fetch + cross-build libchuck.a (gitignored)
+cd pod && make -f Makefile.chuck             # build the harness (full ChucK by default)
 
-### 2a. If you have an SWD probe (fastest — ~5 min)
-QSPI execute-in-place rules (from `csound-impl.md`): **attach, don't flash**; **hardware breakpoints
-only**; attach **after** the bootloader maps QSPI. Flash via DFU, then attach and load symbols from
-`pod/build/harness_chuck.elf`, break at `spotykach::ChuckEngine::init`, and step through
-`new ChucK()` → `init()` → `compileCode()` to the faulting line / return code. (Resume here: produce
-the OpenOCD + arm-none-eabi-gdb command lines for ST-Link.)
+# Flash over USB DFU (proven):
+while ! make -f Makefile.chuck program-dfu; do sleep 0.3; done   # then tap RESET to catch the window
+#   then tap RESET once more to boot
 
-### 2b. If no probe — bisect with the visible LED
-```
-make -f Makefile.chuck CHUCKLVL=2 && make -f Makefile.chuck program-dfu   # new ChucK + init
-make -f Makefile.chuck CHUCKLVL=1 && make -f Makefile.chuck program-dfu   # new ChucK only
-```
-First level reaching **3 blinks** is fine; the one that stops at **2** is the culprit call.
+# OR flash over SWD (ST-Link wired, board booted once so QUADSPI is configured):
+make -f Makefile.chuck program-swd
 
-### 3. Likely fixes to try once localized
-- **If `init()` throws:** wrap `new ChucK()`/`init()`/`compileCode()` in `try/catch` in
-  `chuck_engine.cpp` (leave `_ready=false` on failure) — converts a crash into a graceful silent boot
-  AND confirms "it was an exception." (Catch works only if every frame from throw→catch has unwind
-  tables; libchuck does, `chuck_engine.o` does.)
-- **If null-deref:** find which stub `init()` derefs (the SWD backtrace names it); make the stub return
-  a benign non-null or guard the ChucK call. Candidates: dir scan, working-dir/realpath, `sf_*`.
-- **If pool exhaustion:** the chuck build wastes 48 MB on the granular arena ChucK never uses
-  (`buffer.sdram`, `.sdram_bss`). Conditionally shrink it for `SPK_ENGINE_CHUCK` and grow the chuck
-  pool (`kPoolBytes` in `chuck_alloc.cpp`) well past 12 MB. (This is also the prime suspect if the Pod
-  works but the spotykach doesn't.)
+make -f Makefile.chuck openocd-attach        # attach-only, for inspection
+```
 
-## Build/flash cheatsheet
-```
-make engine-chuck                  # spotykach: clean build + flash (full)
-make engine-chuck NOCHUCK=1        #   skip ChucK runtime  -> BOOTS (platform proven)
-make engine-chuck CHUCKLVL=2       #   new ChucK + init, no compile  -> CRASHES
-make engine-chuck CHUCKLVL=1       #   new ChucK only  -> ??? (the open question)
-make engine-chuck BRINGUP=1        #   onboard-LED checkpoints (hidden on the cased spotykach)
-cd pod && make -f Makefile.chuck   # bare Pod harness (visible LED heartbeat); same CHUCKLVL/NOCHUCK
-```
-DFU access (Linux): `/etc/udev/rules.d/70-st-dfu.rules` → `…0483/df11 MODE="0660" GROUP="plugdev"`,
-`udevadm control --reload-rules && udevadm trigger`, replug. Effective flash cmd:
-`dfu-util -a 0 -s 0x90040000:leave -D <bin> -d ,0483:df11`.
+Bring-up knobs still available: `NOCHUCK=1` (skip the whole ChucK runtime) and `CHUCKLVL=1|2|3`
+(new ChucK / +init / +compile) — see the `CHUCK_RUNTIME_LEVEL` gates. `g_chuck_init_stage`/`_error`
+double as the bisection readout.
+
+## Files changed this effort
+
+- `src/engine/chuck/chuck_engine.cpp` — `_ck->start()` in init; null-guarded `globals()`; `try/catch`
+  + `abort`/`__assert_func` overrides + `g_chuck_init_stage`/`g_chuck_init_error` capture.
+- `src/engine/chuck/chuck_alloc.cpp` — `CritSec` (PRIMASK) around every pool op.
+- `pod/harness_chuck.cpp` — knob handling in the audio callback, deadband + one-pole smoothing; main
+  loop reduced to housekeeping.
+- `pod/Makefile.chuck` — `LDFLAGS += -u _printf_float`; `program-swd` / `openocd-attach` targets.
+- `pod/daisy_qspi.cfg` — **new**: SWD flash (`stmqspi` IS25LP064A) + attach config.
+
+## Open items / next steps
+
+- **CPU headroom.** `ck->run(256)` dominates the audio budget (~all of it at block 256). The drone fits
+  real-time, but there is little margin. Profile before adding voices; consider a larger block, a coarser
+  `.ck` control rate, or trimming the program. Quantify actual headroom (PC-sampling % was ~indicative,
+  not measured).
+- **Decide what debug instrumentation to keep.** The `abort`/`__assert_func` capture + `g_chuck_init_*`
+  buffers are cheap and genuinely useful for future bring-up — recommend keeping. The stack-scan
+  backtrace in `abort` and any leftover `blink()` checkpoints are optional.
+- **Promote `CsoundPool` -> a shared `SdramPool`** (rename out of `csound/`), now that two engines depend
+  on it and it needs the reentrancy guard. Keep both engines on the one instance or give each its own.
+- **Spotykach build: ported, build-verified, not yet hardware-tested.** `-u _printf_float` added to the
+  `Makefile` `ENGINE=chuck` branch; `start()` + pool `CritSec` come free from the shared
+  `chuck_engine.cpp`/`chuck_alloc.cpp` TUs. Fix #4 (param cadence) is **n/a** — the spotykach UI is
+  event-driven (`core.ui.cpp`: `PotMoved` -> `_apply` -> `set_param`), so it does not flood ChucK's
+  global queue the way the bare Pod harness's per-block loop did. `make engine-chuck` links clean (SDRAM
+  93.8%: the 48 MB granular arena + 12 MB ChucK pool coexist; the pool is reserved separately, not
+  starved). Flash + verify on hardware. (The earlier `CHUCKLVL=2` crash was almost certainly these same
+  four bugs, not memory.)
+- **M3+:** SD `.ck` patch bank + live recompile, MIDI-in — unchanged from `chuck-impl.md`.
 
 ## Toolchain / facts
-- `/opt/daisy-compiler` arm-none-eabi-gcc 10.2.1. `libchuck.a` built by `scripts/fetch_chuck.sh`
-  (exceptions+RTTI ON; `chuck_engine.o` must match — `-fexceptions -frtti`, scoped to that one TU).
+
+- `/Library/DaisyToolchain/0.2.0` arm-none-eabi-gcc **10.3.1** (this machine; macOS). `libchuck.a` built
+  by `scripts/fetch_chuck.sh` (CHUCK_REF `chuck-1.5.5.8`, exceptions+RTTI ON; `chuck_engine.o` matches
+  with `-fexceptions -frtti`). `thirdparty/chuck` is gitignored — reproduce with the fetch script.
+- ChucK feature defines in the engine TU **must** match `fetch_chuck.sh` (ABI). Verified matching this
+  effort — the type confusion (bug 2) was init-ordering, not an ABI mismatch.
 - STM32H750: 512 K AXI SRAM @`0x24000000`, 128 K DTCMRAM @`0x20000000`, 64 M SDRAM @`0xc0000000`,
-  QSPI app @`0x90040000`.
-- ChucK feature defines in the engine TU MUST match `fetch_chuck.sh` (ABI). See the `ENGINE=chuck`
-  Makefile branch.
+  QSPI app @`0x90040000`. QUADSPI peripheral @`0x52005000`; QSPI chip IS25LP064A (8 MB). Daisy Pod pots:
+  knob1 = `D21`, knob2 = `D15` (matches libDaisy `DaisyPod`). User LED = PC7. Audio user LED ~0.7 Hz
+  blink = ISR alive.
+- `alt_qspi_chuck.lds` (ChucK-only linker script) reclaims the unused 186 K `SRAM_EXEC` into `SRAM` and
+  puts the stack at the top of AXI SRAM (`_estack=0x24080000`). Unchanged this effort and not implicated.
+- DFU (Linux): `…0483/df11` needs a `plugdev` udev rule. On macOS DFU works directly (no udev). The
+  bootloader is a Daisy QSPI bootloader (2 s breathing window); apps load at `0x90040000`.
