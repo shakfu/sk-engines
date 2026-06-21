@@ -6,7 +6,15 @@ using namespace spotykach;
 // enough for the heaviest engine (granular needs ~35 MB: 2x source + delay + detector + slices +
 // track), with margin; the pool does NOT compute this from any engine's constants (decoupled). The
 // 32 KB alignment matches the granular buffers' former alignment so sub-allocations can preserve it.
+#if defined(SPK_NO_ENGINE_ARENA)
+// Some engines bring their own SDRAM heap and never touch this arena - the QSPI engines (csound, chuck)
+// synthesize from their own ~12 MB pool (csound_alloc.cpp / chuck_alloc.cpp). Such a build sets
+// SPK_NO_ENGINE_ARENA in its Makefile branch, and the arena shrinks to a token block, reclaiming ~48 MB
+// of SDRAM. This keys on the capability, NOT on any engine name, so the platform stays engine-agnostic.
+static constexpr size_t kEngineArenaBytes = 64u * 1024u; // 64 KB token (the engine ignores ctx.arena)
+#else
 static constexpr size_t kEngineArenaBytes = 48u * 1024u * 1024u; // 48 MB (of 64 MB SDRAM)
+#endif
 
 #define ALIGN32K __attribute__((aligned(32768)))
 #define ALIGN32  __attribute__((aligned(32)))

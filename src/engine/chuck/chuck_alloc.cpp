@@ -36,7 +36,13 @@ void* __real_realloc(void*, size_t);
 
 namespace {
 
-constexpr size_t kPoolBytes = 12u * 1024u * 1024u;   // ChucK setup is a few MB; SDRAM has room
+// ChucK's BASE footprint (built-in type system + the full STK UGen registration) is already several MB
+// per VM, and that base is NOT freed by a patch reset (CK_MSG_CLEARVM only clears the user namespace),
+// so a 12 MB pool sat near-full at baseline with no headroom for swapping - exhausting fast. Since the
+// engine-arena shrink (SPK_NO_ENGINE_ARENA) freed ~48 MB of SDRAM, give ChucK a generous 40 MB pool:
+// one VM is then a small fraction, leaving ample room for sustained patch swaps. (Total SDRAM: 40 MB
+// pool + ~2 MB stream rings + token arena ~= 42 MB of 64 MB.)
+constexpr size_t kPoolBytes = 40u * 1024u * 1024u;
 alignas(16) CHUCK_SDRAM_BSS std::uint8_t g_pool[kPoolBytes];
 spotykach::CsoundPool g_alloc;                        // the shared, engine-agnostic SDRAM allocator
 bool g_armed = false;

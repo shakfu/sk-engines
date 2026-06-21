@@ -122,14 +122,21 @@ double as the bisection readout.
 
 - **CPU headroom.** `ck->run(256)` dominates the audio budget (~all of it at block 256). The drone fits
   real-time, but there is little margin. Profile before adding voices; consider a larger block, a coarser
-  `.ck` control rate, or trimming the program. Quantify actual headroom (PC-sampling % was ~indicative,
-  not measured).
+  `.ck` control rate, or trimming the program. **Now measurable on the spotykach panel, no probe:** build
+  `make engine-chuck METER=1` and the ChucK engine's `render()` shows ring A = whole-callback CPU load
+  (arc=avg, dot=peak, colour=severity; red >= 85% = at/over budget) and ring B = live concurrent-shred
+  count (one cyan dot per shred, from `vm()->shreduler()->get_all_shred_ids`, sampled in `process()`
+  after `run()` so it can't race the shreduler). Same flag also streams max/avg/min load over USB CDC
+  (app.cpp's `CpuLoadMeter`). The production build's rings are a stereo output meter (per-channel RMS arc
+  + peak dot, dB-scaled). This is the answer to "how many concurrent shreds fit" - read CPU vs shred count
+  together as you add voices.
 - **Decide what debug instrumentation to keep.** The `abort`/`__assert_func` capture + `g_chuck_init_*`
   buffers are cheap and genuinely useful for future bring-up — recommend keeping. The stack-scan
   backtrace in `abort` and any leftover `blink()` checkpoints are optional.
 - **Promote `CsoundPool` -> a shared `SdramPool`** (rename out of `csound/`), now that two engines depend
   on it and it needs the reentrancy guard. Keep both engines on the one instance or give each its own.
-- **Spotykach build: ported, build-verified, not yet hardware-tested.** `-u _printf_float` added to the
+- **Spotykach build: HARDWARE-VERIFIED (2026-06-21)** — first DFU flash of the cased unit booted, ran the
+  VM, and made sound; the four Pod fixes carried over via the shared TUs with no new bugs. `-u _printf_float` added to the
   `Makefile` `ENGINE=chuck` branch; `start()` + pool `CritSec` come free from the shared
   `chuck_engine.cpp`/`chuck_alloc.cpp` TUs. Fix #4 (param cadence) is **n/a** — the spotykach UI is
   event-driven (`core.ui.cpp`: `PotMoved` -> `_apply` -> `set_param`), so it does not flood ChucK's
@@ -137,7 +144,10 @@ double as the bisection readout.
   93.8%: the 48 MB granular arena + 12 MB ChucK pool coexist; the pool is reserved separately, not
   starved). Flash + verify on hardware. (The earlier `CHUCKLVL=2` crash was almost certainly these same
   four bugs, not memory.)
-- **M3+:** SD `.ck` patch bank + live recompile, MIDI-in — unchanged from `chuck-impl.md`.
+- **M3 — DONE (code/build, 2026-06-21):** SD `chuck/<n>.ck` patch bank + Alt+PITCH live recompile
+  (`chuck_patch.h` + the gated single-VM `CK_MSG_CLEARVM` reset + `compileCode` swap). Host selector test
+  passes; both firmware targets link clean; hardware test pending. **M4** (MIDI-in) is next — unchanged
+  from `chuck-impl.md`.
 
 ## Toolchain / facts
 

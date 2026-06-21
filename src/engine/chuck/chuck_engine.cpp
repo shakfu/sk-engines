@@ -6,6 +6,7 @@
 // See chuck_engine.h / docs/dev/chuck-impl.md.
 
 #include "engine/chuck/chuck_engine.h"
+#include "engine/chuck/chuck_patch.h"   // chuck_path / scan_chuck_patches / aux_to_index / read_program
 
 // NOTE: we deliberately do NOT pull in the shim's ck_prelude.h here. That force-include exists so
 // ChucK's *source* (compiled into libchuck.a) finds the POSIX functions it calls without including
@@ -16,10 +17,19 @@
 // branch and MUST match the set libchuck.a was built with (ABI: they drop members from ChucK classes).
 #include "chuck.h"            // provided by the QSPI build's -Ithirdparty/chuck/src/core
 #include "chuck_globals.h"    // Chuck_Globals_Manager: setGlobalFloat (host -> .ck program)
+#include "chuck_vm.h"         // Chuck_VM::process_msg + Chuck_Msg + CK_MSG_CLEARVM (the patch reset);
+                             // also shreduler()->get_all_shred_ids() for the METER shred count
+
+#ifdef METER
+#include "meter.h"            // Meter::cpu().load - the platform's whole-callback CpuLoadMeter, driven
+                             // by app.cpp's OnBlockStart/OnBlockEnd. The on-panel meter reads it in render().
+#include <vector>
+#endif
 
 #include <cstdlib>            // malloc/free (routed to the SDRAM pool by chuck_alloc.cpp's --wrap)
 #include <cstdio>             // snprintf - format the bring-up error capture
 #include <cstring>            // strncpy
+#include <cmath>             // std::sqrt - per-channel output RMS for the level meter
 #include <typeinfo>          // typeid - name the thrown exception type in the capture
 #include <exception>         // std::exception
 
@@ -86,11 +96,35 @@ static const char* global_for(ParamId id, DeckRef::Ref d, int& slot)
     }
 }
 
+// The (ParamId) set global_for maps - iterated to reseed a freshly compiled program's globals.
+static const ParamId kMappedParams[] = {
+    ParamId::Speed, ParamId::Mix, ParamId::Size, ParamId::Env,
+    ParamId::Feedback, ParamId::ModSpeed, ParamId::ModAmp,
+};
+
+// Scratch buffer size for an SD-loaded program. A `.ck` patch is a few KB; 64 KB is generous head-
+// room. It is malloc'd from the (armed) SDRAM pool, used only during compile, then freed.
+static constexpr int kPatchMax = 64 * 1024;
+
+// Map a linear amplitude (0..1, where 1.0 = 0 dBFS) to a 0..1 ring position on a dB scale
+// (kMeterFloorDb .. 0 dB). A linear ring barely moves for musical signal - everything crowds the
+// bottom - so the level meter uses dB to read like a real meter. Returns 0 at/below the floor, 1 at or
+// above 0 dBFS. (The CPU meter stays linear: it is a fraction of the block budget, not a signal level.)
+static inline float meter_db_norm(float amp)
+{
+    constexpr float kMeterFloorDb = -60.f;
+    if (amp <= 0.f) return 0.f;
+    const float db = 20.f * std::log10(amp);
+    if (db <= kMeterFloorDb) return 0.f;
+    if (db >= 0.f)           return 1.f;
+    return (db - kMeterFloorDb) / -kMeterFloorDb;   // (db + 60) / 60
+}
+
 // --- Bring-up crash capture (QSPI Pod debug; see docs/dev/chuck-pod-poc.md) -------------------
 // On bare metal an uncaught C++ exception out of ChucK init runs std::terminate -> abort, which spins
 // forever in newlib's _exit (dark LED, all fault registers zero - exactly the Pod symptom we localized
 // over SWD). We wrap the runtime bring-up in try/catch: on a throw we record which stage was running
-// and the exception type + what(), leave _ready=false (silent, recoverable boot), and let the unit run
+// and the exception type + what(), leave the gate unpublished (silent, recoverable boot), let it run
 // instead of aborting. Read g_chuck_init_stage / g_chuck_init_error over SWD to see the root cause.
 extern "C" {
 volatile uint32_t g_chuck_init_stage     = 0;    // 1=new ChucK  2=init()  3=compileCode()  9=succeeded
@@ -135,12 +169,138 @@ void abort(void)
 }
 
 // ---------------------------------------------------------------------------------------------
+// VM build (fresh instance per patch) + patch bank
+// ---------------------------------------------------------------------------------------------
+ChucK* ChuckEngine::build_vm(const char* text)
+{
+#if CHUCK_RUNTIME_LEVEL == 0
+    (void)text; return nullptr;                  // NOCHUCK: skip the runtime entirely
+#else
+    ChucK* ck = nullptr;
+    try {
+        // g_chuck_init_stage / g_chuck_init_error: bring-up readout over SWD (1=new 2=init 3=compile
+        // 9=ok). On a throw, the nano libstdc++ may abort() uncatchably; the -u _printf_float fix +
+        // the abort/__assert_func overrides capture the cause instead of spinning silently.
+        g_chuck_init_stage = 1;
+        ck = new ChucK();
+        ck->setParam(CHUCK_PARAM_SAMPLE_RATE,     static_cast<int>(_sr));
+        ck->setParam(CHUCK_PARAM_INPUT_CHANNELS,  _in_ch);
+        ck->setParam(CHUCK_PARAM_OUTPUT_CHANNELS, _out_ch);
+        ck->setParam(CHUCK_PARAM_OTF_ENABLE,      0);   // no on-the-fly server (bare metal: no sockets)
+        ck->setParam(CHUCK_PARAM_CHUGIN_ENABLE,   0);   // no dynamically-loaded UGen plugins (no dlopen)
+        g_chuck_init_stage = 2;
+        // init() builds the type system + registers built-in UGens; start() before any run() (globals()
+        // is NULL until vm->running(), and a lazy auto-start from the ISR would race the main loop on the
+        // pool). Single-threaded here (main loop, gate held by the caller). See docs/dev/chuck-pod-poc.md.
+        if (!ck->init() || !ck->start()) { delete ck; return nullptr; }
+        g_chuck_init_stage = 3;
+        // Spork the program (count=1, immediate=FALSE). A compile failure (bad SD patch) returns FALSE,
+        // not a throw, for ordinary syntax errors -> the caller falls back to the built-in.
+        if (!text || !ck->compileCode(text, "", 1)) { delete ck; return nullptr; }
+        g_chuck_init_stage = 9;
+        return ck;
+    } catch (const std::exception& e) {
+        std::snprintf(g_chuck_init_error, sizeof(g_chuck_init_error), "%s: %s", typeid(e).name(), e.what());
+    } catch (...) {
+        std::strncpy(g_chuck_init_error, "(non-std exception)", sizeof(g_chuck_init_error) - 1);
+    }
+    if (ck) delete ck;                            // a throw mid-build -> reclaim the partial VM
+    return nullptr;
+#endif
+}
+
+void ChuckEngine::reset_vm()
+{
+    if (!_ck) return;
+    Chuck_VM* vm = _ck->vm();
+    if (!vm) return;
+    // CK_MSG_CLEARVM, processed SYNCHRONOUSLY by process_msg (we're gated, ISR silent, so direct VM
+    // mutation is safe): removeAll() shreds + clear_user_namespace() (the per-compileCode type/code
+    // accumulation - the leak) + cleanup_global_variables(). process_msg deletes the msg for us when
+    // reply_cb/reply_queue are null. This is the canonical ChucK reset (cf. chuck-max's `reset`).
+    Chuck_Msg* msg = new Chuck_Msg;
+    msg->type = CK_MSG_CLEARVM;
+    msg->reply_cb = (ck_msg_func)NULL;
+    vm->process_msg(msg);
+}
+
+const char* ChuckEngine::program_for(int avail_index, char* buf, bool* from_sd)
+{
+    if (avail_index < 0 || avail_index >= _avail_n) avail_index = 0;
+    const int slot = _avail_slot[avail_index];
+    if (slot < 0) { if (from_sd) *from_sd = false; return kProgram; }   // the built-in
+    char path[24];
+    chuck_path(slot, path, sizeof(path));
+    return read_program(_stream, path, buf, buf ? kPatchMax : 0, kProgram, from_sd);
+}
+
+void ChuckEngine::rescan_bank()
+{
+    scan_chuck_patches(_stream, _present, kMaxChuckSlots);
+    int n = 0;
+    _avail_slot[n++] = -1;                       // index 0 is always the built-in
+    for (int s = 0; s < kMaxChuckSlots; s++)
+        if (_present[s] && n < kMaxAvail) _avail_slot[n++] = s;
+    _avail_n = n;
+    if (_sel >= _avail_n)         _sel = _avail_n - 1;       // keep the selection in range
+    if (_sel_preview >= _avail_n) _sel_preview = _avail_n - 1;
+}
+
+void ChuckEngine::reseed_globals()
+{
+    // After a live recompile the new program's globals are at 0; replay the knob positions the platform
+    // last sent so the patch picks up the current panel state instead of jumping on the next pot move.
+    Chuck_Globals_Manager* g = _ck ? _ck->globals() : nullptr;
+    if (!g) return;
+    for (ParamId id : kMappedParams) {
+        for (int di = 0; di < 2; di++) {
+            const DeckRef::Ref d = di == 0 ? DeckRef::A : DeckRef::B;
+            int slot = -1;
+            const char* name = global_for(id, d, slot);
+            if (name && slot >= 0 && slot < kSlots) g->setGlobalFloat(name, _cache[slot]);
+        }
+    }
+}
+
+void ChuckEngine::do_reload(int target)
+{
+    char* buf = static_cast<char*>(std::malloc(kPatchMax));
+    bool  from_sd = false;
+    const char* prog = program_for(target, buf, &from_sd);
+
+    // Take the live VM out of the audio path (the ISR sees null -> silence), reset it, then compile the
+    // new program onto it. reset_vm() (CK_MSG_CLEARVM) is the leak fix: it clears the user type system
+    // that compileCode accumulates - removeAllShreds() alone never freed it, so a few swaps exhausted the
+    // 12 MB pool and previously-fine patches began overrunning. We reset SYNCHRONOUSLY (under the gate)
+    // BEFORE compiling, so the new program's types survive (a queued CLEARVM would wipe them). One
+    // persistent VM is kept (the built-in type/UGen registration is expensive; only the user namespace
+    // is cleared) - far cheaper than tearing the VM down.
+    ChucK* vm = static_cast<ChucK*>(_gate.take());
+    if (!vm) { if (buf) std::free(buf); return; }          // boot never succeeded -> nothing to swap
+
+    reset_vm();                                            // clear the old patch (shreds + types + globals)
+    bool ok = _ck->compileCode(prog, "", 1) ? true : false;
+    if (!ok && from_sd) {                                  // a bad SD patch must not kill audio: built-in
+        from_sd = false; target = 0;
+        ok = _ck->compileCode(kProgram, "", 1) ? true : false;
+    }
+    if (buf) std::free(buf);
+
+    reseed_globals();                                      // replay knob state into the fresh program
+    _panic = false;                                        // fresh chance: clear any prior overrun-mute
+    _overrun_n = 0;
+    _gate.publish(vm);                                     // ISR resumes next block (runs the new shred)
+    if (ok) { _sel = target; _patch_loaded = from_sd; }
+}
+
+// ---------------------------------------------------------------------------------------------
 // Lifecycle
 // ---------------------------------------------------------------------------------------------
 void ChuckEngine::init(const EngineContext& ctx)
 {
-    _sr    = ctx.sample_rate;
-    _block = ctx.block_size;
+    _sr     = ctx.sample_rate;
+    _block  = ctx.block_size;
+    _stream = ctx.stream;                          // SD service for the patch bank (null on a card-less Pod)
     if (_block > kMaxBlock) _block = kMaxBlock;   // run() scratch is sized for kMaxBlock frames
 
     // Route ChucK's allocations (the VM/UGen graph, MBs at create/compile) to the SDRAM pool in
@@ -154,57 +314,76 @@ void ChuckEngine::init(const EngineContext& ctx)
     _inbuf  = static_cast<float*>(std::malloc(sizeof(float) * kMaxBlock * _in_ch));
     _outbuf = static_cast<float*>(std::malloc(sizeof(float) * kMaxBlock * _out_ch));
 
-#if CHUCK_RUNTIME_LEVEL >= 1
-    try {
-        g_chuck_init_stage = 1;
-        _ck = new ChucK();
-        _ck->setParam(CHUCK_PARAM_SAMPLE_RATE,     static_cast<int>(_sr));
-        _ck->setParam(CHUCK_PARAM_INPUT_CHANNELS,  _in_ch);
-        _ck->setParam(CHUCK_PARAM_OUTPUT_CHANNELS, _out_ch);
-        _ck->setParam(CHUCK_PARAM_OTF_ENABLE,      0); // no on-the-fly server (bare metal: no sockets)
-        _ck->setParam(CHUCK_PARAM_CHUGIN_ENABLE,   0); // no dynamically-loaded UGen plugins (no dlopen)
-#if CHUCK_RUNTIME_LEVEL >= 2
-        g_chuck_init_stage = 2;
-        _ck->init();                                 // builds the type system + registers built-in UGens
-        // Start the VM HERE, single-threaded, before StartAudio. REQUIRED: ChucK::globals() returns
-        // NULL until the VM is running (vm->running()), and ChucK::run() lazily auto-start()s on its
-        // first call - which, since run() executes in the audio ISR, would start the VM (allocating
-        // from the non-reentrant SDRAM pool) concurrently with the main loop's setGlobalFloat (also a
-        // pool alloc), corrupting the heap. Starting here removes that race. (See the chuck_tilde Max
-        // external: init() -> start() before audio.) See docs/dev/chuck-pod-poc.md.
-        _ck->start();
-#endif
-#if CHUCK_RUNTIME_LEVEL >= 3
-        g_chuck_init_stage = 3;
-        // Spork the built-in program. count=1, immediate=FALSE: queued, shreduled on the next VM step
-        // (the first run()), matching the audio-thread compute model.
-        _ck->compileCode(kProgram, "", 1);
-        _ready = true;                               // only now is run() safe to call from the ISR
-#endif
-        g_chuck_init_stage = 9;                      // reached the end with no throw
-    } catch (const std::exception& e) {
-        std::snprintf(g_chuck_init_error, sizeof(g_chuck_init_error), "%s: %s",
-                      typeid(e).name(), e.what());
-        _ready = false;                              // boot silent instead of aborting; cause captured
-    } catch (...) {
-        std::strncpy(g_chuck_init_error, "(non-std exception)", sizeof(g_chuck_init_error) - 1);
-        _ready = false;
+    // Enable the DWT cycle counter for the CPU-overrun safeguard (idempotent; the RNG seed + the meter
+    // also use it). Seed the run() budget with an estimate at 480 MHz (the Daisy H750 boosted clock);
+    // process() refines _block_cycles to the true block period at runtime, so the estimate need not be
+    // exact - it only has to be in the right ballpark before the first clean block is measured.
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+    DWT->CTRL        |= DWT_CTRL_CYCCNTENA_Msk;
+    _block_cycles = static_cast<uint32_t>(480000000.0f * _block / _sr);
+
+    // Boot: probe the SD bank, pick the boot slot, build the VM for that program. The card usually
+    // mounts ~1 s after this init(), so this typically builds the built-in and prepare()'s boot
+    // auto-load swaps in the first SD slot once it appears. build_vm() carries the try/catch +
+    // g_chuck_init_* bring-up capture; on failure (incl. NOCHUCK) it returns nullptr -> boot silent.
+    rescan_bank();
+    _sel = (_avail_n > 1) ? 1 : 0;               // first SD patch if any, else the built-in
+    _sel_preview = _sel;
+
+    char* buf = static_cast<char*>(std::malloc(kPatchMax));
+    bool  from_sd = false;
+    const char* prog = program_for(_sel, buf, &from_sd);
+    _ck = build_vm(prog);
+    if (!_ck && from_sd) {                        // a bad SD patch must not cost audio: use the built-in
+        from_sd = false; _sel = 0;
+        _ck = build_vm(kProgram);
     }
-#endif
+    if (buf) std::free(buf);
+    if (_ck) {                                    // publishing the VM is what makes run() live in the ISR
+        _patch_loaded = from_sd;
+        _gate.publish(_ck);                       // boot: _cache all 0, so no reseed needed
+    }
 }
 
 void ChuckEngine::prepare()
 {
-    // Main-loop housekeeping (off the audio ISR). Nothing yet: the SD patch bank + live recompile
-    // (M3) and the MIDI drain (M4) will live here, gated against the ISR. The built-in program runs
-    // entirely inside process()'s run() calls.
+    // Main-loop housekeeping (off the audio ISR). The heavy patch recompile lives here, gated against
+    // the ISR by the ReloadGate. (The MIDI drain, M4, will join it.)
+    //
+    // Boot auto-load: the SD card mounts ~1 s after power-up (Storage's state machine), after this
+    // engine's init() has already booted the built-in. So keep rescanning (throttled - rescan_bank is
+    // f_stat I/O) until a slot appears, then load the first SD patch once. After that the user drives
+    // patch choice with the Alt selector.
+    if (_stream && !_boot_loaded && (_probe_div++ & 0x1FF) == 0) {
+        rescan_bank();
+        if (_avail_n > 1) {                          // a slot appeared (built-in is index 0)
+            _boot_loaded = true;
+            _reload_target = 1;                      // the first present SD slot
+            _reload_pending = true;
+        }
+    }
+
+    // While the Alt selector is open, keep rescanning if the bank is still empty so slots appear as
+    // soon as the card mounts. Stops once any slot is found.
+    if (_aux_held && _avail_n <= 1) _rescan_pending = true;
+    if (_rescan_pending) { _rescan_pending = false; rescan_bank(); }
+    if (_reload_pending) { _reload_pending = false; do_reload(_reload_target); }
 }
 
 void ChuckEngine::process(const float* const* in, float** out, size_t size)
 {
-    if (!_ready || !_inbuf || !_outbuf) {         // not fully initialised (or alloc fail) -> silence
+    const uint32_t entry = DWT->CYCCNT;           // block-period + overrun timing (CPU-overrun safeguard)
+    ChucK* ck = static_cast<ChucK*>(_gate.begin_use());
+    // Silence when: not ready (boot fail / mid-reload / alloc fail), OR _panic (this patch was muted for
+    // overrunning real-time - skipping run() frees the CPU so the main loop + selector stay alive).
+    if (!ck || !_inbuf || !_outbuf || _panic) {
         for (size_t i = 0; i < size; i++) { out[0][i] = 0.f; out[1][i] = 0.f; }
-        _level *= 0.90f;
+        _peak_l *= 0.90f;                         // let the meters decay while silent
+        _peak_r *= 0.90f;
+        _rms_l  *= 0.90f;
+        _rms_r  *= 0.90f;
+        _last_entry = entry;
+        _gate.end_use();
         return;
     }
 
@@ -220,34 +399,80 @@ void ChuckEngine::process(const float* const* in, float** out, size_t size)
 
     // One VM compute call: consumes _inbuf, advances every shred sample-accurately across n frames,
     // fills _outbuf interleaved (numFrames * _out_ch). SAMPLE == float, so no double marshalling.
-    _ck->run(_inbuf, _outbuf, static_cast<long>(n));
+    const uint32_t run0 = DWT->CYCCNT;
+    ck->run(_inbuf, _outbuf, static_cast<long>(n));
+    const uint32_t run_cycles = DWT->CYCCNT - run0;
 
-    float peak = 0.f;
+    // Per-channel output metering for render() - peak (max abs) and RMS (sum-of-squares -> sqrt), L and
+    // R separately, the same quantities numchuck's get_audio_meters exposes (here shown on the rings).
+    float pl = 0.f, pr = 0.f, sl = 0.f, sr = 0.f;
     for (size_t i = 0; i < n; i++) {              // interleaved _outbuf -> de-interleaved out
         const float l = _outbuf[i * 2];
         const float r = _outbuf[i * 2 + 1];
         out[0][i] = l;
         out[1][i] = r;
         const float a = (l < 0 ? -l : l), b = (r < 0 ? -r : r);
-        if (a > peak) peak = a;
-        if (b > peak) peak = b;
+        if (a > pl) pl = a;
+        if (b > pr) pr = b;
+        sl += l * l;
+        sr += r * r;
     }
-    // Peak meter for render(): fast attack, slow decay. Single-float write, read in the main loop.
-    _level = (peak > _level) ? peak : _level * 0.90f;
+    const float inv = (n > 0) ? 1.f / static_cast<float>(n) : 0.f;
+    const float rl = std::sqrt(sl * inv);
+    const float rr = std::sqrt(sr * inv);
+    // Single-float writes, read in the main loop (render). Peak: fast attack, slow decay. RMS: smoothed.
+    _peak_l = (pl > _peak_l) ? pl : _peak_l * 0.90f;
+    _peak_r = (pr > _peak_r) ? pr : _peak_r * 0.90f;
+    _rms_l += 0.25f * (rl - _rms_l);
+    _rms_r += 0.25f * (rr - _rms_r);
+
+    // CPU-overrun safeguard. Learn the true block period (the minimum inter-block gap: under overrun the
+    // gap inflates, so the min converges to the real period and corrects the 480 MHz estimate). If run()
+    // exceeded a whole block period for kOverrunBlocks consecutive blocks, the patch can't keep up -
+    // latch _panic so the next block onward outputs silence and returns the CPU to the main loop.
+    if (_last_entry) {
+        const uint32_t period = entry - _last_entry;
+        if (period > 0 && period < _block_cycles) _block_cycles = period;
+    }
+    if (run_cycles > _block_cycles) { if (++_overrun_n >= kOverrunBlocks) _panic = true; }
+    else                            { _overrun_n = 0; }
+    _last_entry = entry;
+
+#ifdef METER
+    // Sample the live concurrent-shred count for the on-panel meter. Done HERE - after run() returned,
+    // on the audio thread - so the shreduler lists are stable (run() is the only mutator and it is the
+    // same thread), not racing a main-loop read. Throttled (~every 32 blocks) and into a reused vector
+    // so the per-block hot path (and the CPU figure we are metering) is barely perturbed.
+    if ((_meter_div++ & 0x1F) == 0) {
+        static std::vector<t_CKUINT> ids;     // reused scratch: clear+refill, no realloc after warmup
+        Chuck_VM* vm = ck->vm();
+        if (vm && vm->shreduler()) {
+            vm->shreduler()->get_all_shred_ids(ids);
+            _shreds = static_cast<int>(ids.size());
+        }
+    }
+#endif
+
+    _gate.end_use();
 }
 
 Capabilities ChuckEngine::capabilities() const
 {
-    // CapOwnDisplay: the engine draws the rings (the level meter). CapAux (the patch selector) is
-    // added with the SD bank in M3.
-    return CapOwnDisplay;
+    // CapAux: claim Alt+PITCH as the patch selector (ParamId::Aux). CapOwnDisplay: the engine draws
+    // the rings (level meter, and the selector while Alt is held).
+    return CapAux | CapOwnDisplay;
 }
 
 void ChuckEngine::set_param(ParamId id, DeckRef::Ref d, float v)
 {
+    if (id == ParamId::Aux) {                      // Alt+PITCH: preview a patch (deck A drives selection)
+        if (d == DeckRef::A) _sel_preview = aux_to_index(v, _avail_n);
+        return;                                    // committed on release (set_aux_active), in prepare()
+    }
+
     int slot = -1;
     const char* name = global_for(id, d, slot);
-    if (slot >= 0 && slot < kSlots) _cache[slot] = v;
+    if (slot >= 0 && slot < kSlots) _cache[slot] = v;   // cache even while mid-reload (for reseed)
     if (!_ck || !name) return;
     // Called from the main loop while process() runs in the audio ISR. With __DISABLE_THREADS__ the
     // globals queue is drained on the audio thread, so this enqueues a write that the next run()
@@ -260,33 +485,128 @@ void ChuckEngine::set_param(ParamId id, DeckRef::Ref d, float v)
 
 float ChuckEngine::param(ParamId id, DeckRef::Ref d) const
 {
+    if (id == ParamId::Aux)                        // pickup readback: the committed selection's position
+        return (_avail_n <= 1) ? 0.f : (static_cast<float>(_sel) + 0.5f) / static_cast<float>(_avail_n);
     int slot = -1;
     global_for(id, d, slot);
     return (slot >= 0 && slot < kSlots) ? _cache[slot] : 0.f;
 }
 
+void ChuckEngine::set_aux_active(DeckRef::Ref d, bool held)
+{
+    if (d != DeckRef::A) return;                   // deck A's Alt+PITCH drives the global patch selection
+    if (held && !_aux_held) {                      // press: refresh the bank, start preview at the live one
+        _rescan_pending = true;
+        _sel_preview = _sel;
+    }
+    if (!held && _aux_held) {                       // release: commit if the choice changed
+        if (_sel_preview != _sel) { _reload_target = _sel_preview; _reload_pending = true; }
+    }
+    _aux_held = held;
+}
+
 void ChuckEngine::render(DisplayModel& m)
 {
     m.clear();
-    const bool running = _ready;
+    const bool running = (_gate.current() != nullptr);
 
-    // Output level meter on both rings (green base, amber past ~-4 dB, red near clip). Same look as
-    // CsoundEngine so the panel feedback is consistent across the two embedded engines.
-    float lvl = _level;
-    if (lvl > 1.f) lvl = 1.f;
-    const uint32_t col = (lvl > 0.85f) ? 0xff2000u : (lvl > 0.60f) ? 0xffa000u : 0x00ff00u;
+    // While Alt is held: the patch selector - one dot per selectable program around each ring, the
+    // previewed one bright. (The built-in is index 0; SD slots follow.) Same look as CsoundEngine.
+    if (_aux_held) {
+        for (int i = 0; i < 2; i++) {
+            m.play[i] = { running ? 0x00ff00u : 0x000000u, running ? 1.f : 0.f };
+            m.ring[i].set_hex_color(0x00c0ff);          // patch-selector hue (cyan)
+            m.ring[i].set_segment(0.f, 0.999f);
+            for (int a = 0; a < _avail_n; a++) {
+                const float pos = (_avail_n <= 1) ? 0.f : static_cast<float>(a) / static_cast<float>(_avail_n);
+                m.ring[i].add_point(pos, (a == _sel_preview) ? 1.f : 0.18f);
+            }
+            m.ring[i].set_updated();
+        }
+        m.mode_center = { 0x00c0ffu, 0.6f };            // selector hue
+        return;
+    }
+
+    // CPU-overrun mute: this patch overran real-time and was silenced to keep the controls alive. Solid
+    // red rings + red centre so the user knows to Alt+PITCH to another patch (which clears the panic).
+    // After the selector branch above, so the selector still draws/works as the escape route.
+    if (_panic) {
+        for (int i = 0; i < 2; i++) {
+            m.play[i] = { 0xff0000u, 1.f };
+            m.ring[i].set_hex_color(0xff0000);
+            m.ring[i].set_segment(0.f, 0.999f);
+            m.ring[i].set_updated();
+        }
+        m.mode_center = { 0xff0000u, 0.8f };
+        return;
+    }
+
+#ifdef METER
+    // On-panel CPU + shred meter (build: make engine-chuck METER=1). Two rings, the two halves of the
+    // concurrency-headroom question: ring A = how hard the CPU is working, ring B = how many shreds are
+    // running. The same METER flag also streams max/avg/min load over USB CDC (app.cpp); this readout
+    // needs no host. See docs/dev/chuck-impl.md risk #1.
+    {
+        float avg = Meter::cpu().load.GetAvgCpuLoad();
+        float pk  = Meter::cpu().load.GetMaxCpuLoad();
+        if (avg < 0.f) avg = 0.f;
+        if (avg > 1.f) avg = 1.f;
+        if (pk  < 0.f) pk  = 0.f;
+        if (pk  > 1.f) pk  = 1.f;
+        const uint32_t col = (pk > 0.85f) ? 0xff2000u : (pk > 0.60f) ? 0xffa000u : 0x00ff00u;
+
+        // Ring A (deck A) = CPU load. Faint base ring = the full block budget; the bright arc = current
+        // average load; the dot = the peak (max) load; the colour = peak severity (green/amber/red,
+        // red >= 85% = at/over budget -> dropouts; max latches, so one overrun stays visible).
+        m.play[0] = { running ? 0x00ff00u : 0x000000u, running ? 1.f : 0.f };
+        m.ring[0].set_hex_color(0x0a0a0a);
+        m.ring[0].set_segment(0.f, 0.999f);
+        if (avg > 0.01f) { m.ring[0].set_hex_color(col); m.ring[0].set_segment(0.f, avg); }
+        m.ring[0].add_point(pk, 1.f);
+        m.ring[0].set_updated();
+
+        // Ring B (deck B) = concurrent-shred count: one cyan dot per live shred (count them), capped at
+        // the ring resolution for legibility. (A pool-memory arc was tried here but REMOVED: reading it
+        // walked the whole SDRAM pool with interrupts disabled every render, starving the audio ISR -
+        // worse as the pool filled - which itself triggered the overrun mute. Observer effect.)
+        constexpr int kMaxDots = 16;
+        int n = _shreds;
+        if (n > kMaxDots) n = kMaxDots;
+        m.play[1] = { running ? 0x00ff00u : 0x000000u, running ? 1.f : 0.f };
+        m.ring[1].set_hex_color(0x0a0a0a);                 // faint base so the ring scale is visible
+        m.ring[1].set_segment(0.f, 0.999f);
+        m.ring[1].set_hex_color(0x00c0ff);                 // cyan = shred markers
+        for (int s = 0; s < n; s++)
+            m.ring[1].add_point(static_cast<float>(s) / static_cast<float>(kMaxDots), 1.f);
+        m.ring[1].set_updated();
+
+        m.mode_center = { 0xff00ffu, 0.6f };               // magenta = meter mode (vs the source LED)
+        return;
+    }
+#endif
+
+    // Per-channel output level meter: ring A = left, ring B = right. The bright arc is RMS (loudness),
+    // a dot marks the peak; colour by peak severity (green base, amber past ~-4 dB, red near clip). This
+    // is numchuck's per-channel RMS+peak metering, drawn on the two rings instead of returned as values.
+    const float rms[2]  = { _rms_l,  _rms_r  };
+    const float peak[2] = { _peak_l, _peak_r };
     for (int i = 0; i < 2; i++) {
+        const float a = meter_db_norm(rms[i]);         // RMS  -> dB ring position (loudness arc)
+        const float p = meter_db_norm(peak[i]);        // peak -> dB ring position (marker)
+        // Colour by peak on the dB scale: red near 0 dBFS (>= -3 dB), amber from ~-12 dB, else green.
+        const uint32_t col = (p > 0.95f) ? 0xff2000u : (p > 0.80f) ? 0xffa000u : 0x00ff00u;
         m.play[i] = { running ? 0x00ff00u : 0x000000u, running ? 1.f : 0.f };
         m.ring[i].set_hex_color(0x0a0a0a);              // faint full base ring
         m.ring[i].set_segment(0.f, 0.999f);
-        if (running && lvl > 0.02f) {                   // bright arc proportional to level
+        if (running && a > 0.001f) {                    // bright arc proportional to RMS (dB)
             m.ring[i].set_hex_color(col);
-            m.ring[i].set_segment(0.f, lvl);
+            m.ring[i].set_segment(0.f, a);
         }
+        if (running && p > 0.001f) m.ring[i].add_point(p, 1.f);   // peak marker (dB)
         m.ring[i].set_updated();
     }
-    // Centre mode LED: white = the built-in program (the only source until the M3 SD bank lands).
-    m.mode_center = { 0xffffffu, 0.5f };
+    // Centre mode LED tells the program source: cyan = an SD slot, white = the built-in.
+    m.mode_center = { _patch_loaded ? 0x00c0ffu : 0xffffffu, 0.5f };
 }
 
 } // namespace spotykach

@@ -79,10 +79,11 @@ TEST_CSOUND_ALLOC = $(BUILD)/test_csound_alloc
 TEST_CSOUND_PATCH = $(BUILD)/test_csound_patch
 TEST_CSOUND_MIDI  = $(BUILD)/test_csound_midi
 TEST_CSOUND_RELOAD = $(BUILD)/test_csound_reload
+TEST_CHUCK_PATCH = $(BUILD)/test_chuck_patch
 BENCH_REVERB     = $(BUILD)/bench_reverb
 BENCH_GRAINCLOUD = $(BUILD)/bench_graincloud
 
-.PHONY: all clean run test test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-tape test-stream test-shuttle test-radio test-chorus test-dfilter test-voice test-csound-alloc test-csound-patch test-csound-midi test-csound-reload bench-reverb bench-graincloud
+.PHONY: all clean run test test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-tape test-stream test-shuttle test-radio test-chorus test-dfilter test-voice test-csound-alloc test-csound-patch test-csound-midi test-csound-reload test-chuck-patch bench-reverb bench-graincloud
 all: $(TARGET)
 
 $(TARGET): $(SRC) | $(BUILD)
@@ -124,6 +125,14 @@ $(TEST_CSOUND_RELOAD): test_csound_reload.cpp $(ROOT)/src/engine/csound/csound_r
 	$(CXX) $(CXXFLAGS) -pthread test_csound_reload.cpp -o $@
 test-csound-reload: $(TEST_CSOUND_RELOAD)
 	./$(TEST_CSOUND_RELOAD)
+
+# ChucK program selector (SD patch / built-in fallback). Header-only logic + a fake IStreamDeck, no
+# libchuck/Daisy deps, so it compiles alone.
+$(TEST_CHUCK_PATCH): test_chuck_patch.cpp $(ROOT)/src/engine/chuck/chuck_patch.h \
+                     $(ROOT)/src/engine/istreamdeck.h | $(BUILD)
+	$(CXX) $(CXXFLAGS) test_chuck_patch.cpp -o $@
+test-chuck-patch: $(TEST_CHUCK_PATCH)
+	./$(TEST_CHUCK_PATCH)
 
 # graincloud kernel smoke test (the de-STL'd GrainflowLib only; no engine/LIB deps).
 $(TEST_GRAINCLOUD_KERNEL): test_graincloud_kernel.cpp $(wildcard $(GRAINCLOUD_TP)/grainflow/*.h) | $(BUILD)
@@ -198,7 +207,7 @@ run: $(TARGET)
 
 # `test` runs both engine harnesses. Both inject the transport via EngineContext (granular drives the
 # real platform Transport; edrums uses a small stub ITransport) - the post-transport-decoupling way.
-test: test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-tape test-stream test-shuttle test-radio test-chorus test-dfilter test-voice test-csound-alloc test-csound-patch test-csound-midi test-csound-reload
+test: test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-tape test-stream test-shuttle test-radio test-chorus test-dfilter test-voice test-csound-alloc test-csound-patch test-csound-midi test-csound-reload test-chuck-patch
 
 test-granular: $(TEST)
 	./$(TEST)

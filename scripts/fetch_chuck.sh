@@ -218,8 +218,23 @@ int   ioctl(int fd, unsigned long r, ...){ (void)fd;(void)r; return -1; }
 int   isatty(int fd){ (void)fd; return 0; }
 int   fileno(void* f){ (void)f; return -1; }
 int   setenv(const char* n, const char* v, int o){ (void)n;(void)v;(void)o; return 0; }
-long  random(void){ return 0; }
-void  srandom(unsigned s){ (void)s; }
+/* BSD random()/srandom(): a real xorshift32 PRNG (ChucK's Math.random* route here under
+   __OLDSCHOOL_RANDOM__ via util_math.cpp ck_random()->random(); the old return-0 stub froze all
+   randomness). 31-bit non-negative like BSD random(). Seeded per-boot from the Cortex-M7 DWT cycle
+   counter so the sequence differs each power-up; an explicit nonzero srandom() is honored (reproducible).
+   _ck_rng==0 means "not yet seeded" -> seed from hardware on first use. */
+static unsigned long _ck_rng = 0;
+static unsigned long _ck_hw_seed(void){
+    /* enable + read DWT->CYCCNT via raw addresses (no CMSIS dep): DEMCR.TRCENA, DWT_CTRL.CYCCNTENA. */
+    volatile unsigned long *demcr    = (volatile unsigned long*)0xE000EDFCUL;
+    volatile unsigned long *dwt_ctrl = (volatile unsigned long*)0xE0001000UL;
+    volatile unsigned long *dwt_cyc  = (volatile unsigned long*)0xE0001004UL;
+    *demcr |= (1UL<<24); *dwt_ctrl |= 1UL;
+    unsigned long c = *dwt_cyc;
+    return c ? c : 0x2545F491UL;
+}
+long  random(void){ unsigned long x=_ck_rng?_ck_rng:_ck_hw_seed(); x^=x<<13; x^=x>>17; x^=x<<5; _ck_rng=x; return (long)(x & 0x7FFFFFFFUL); }
+void  srandom(unsigned s){ _ck_rng = s ? (unsigned long)s : _ck_hw_seed(); }
 int   usleep(unsigned us){ (void)us; return 0; }
 char* realpath(const char* p, char* r){ (void)p;(void)r; return NULL; }
 long  getline(char** l, size_t* n, void* f){ (void)l;(void)n;(void)f; return -1; }

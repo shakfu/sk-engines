@@ -144,9 +144,12 @@ else ifeq ($(ENGINE), csound)
 C_DEFS += -DSPK_ENGINE_CSOUND
 # Enable the platform SD streaming service so ctx.stream is injected (app.cpp): the engine reads
 # /csound/<n>.csd patches off the card via ctx.stream->exists/read_text. Without this, ctx.stream is
-# null and only the built-in orchestra is ever available. Adds ~2 MB of SDRAM rings (12 MB csound
-# pool + 48 MB arena + ~2 MB rings = ~62 MB, within the 64 MB SDRAM).
+# null and only the built-in orchestra is ever available.
 C_DEFS += -DSPK_USE_STREAM
+# Csound runs its synthesis from its own 12 MB SDRAM pool (csound_alloc.cpp) and never touches the
+# platform engine arena, so opt out of it: shrinks the 48 MB arena to a token block (buffer.sdram.cpp),
+# dropping SDRAM from ~62 MB to ~14 MB. A capability flag, not an engine-name check (shared with chuck).
+C_DEFS += -DSPK_NO_ENGINE_ARENA
 CSOUND_BASE = thirdparty/csound/Daisy
 CSOUND_INC  = -I$(CSOUND_BASE)/include/csound
 ENGINE_SOURCES = src/engine/csound/csound_engine.cpp src/engine/csound/csound_alloc.cpp src/engine/csound/spotykach_qspi_vtor.cpp
@@ -161,6 +164,15 @@ else ifeq ($(ENGINE), chuck)
 # Prereq: libchuck.a + the shim sysroot (scripts/fetch_chuck.sh). engine_select.h maps SPK_ENGINE_CHUCK
 # -> ChuckEngine; see docs/dev/chuck-impl.md.
 C_DEFS += -DSPK_ENGINE_CHUCK
+# Enable the platform SD streaming service so ctx.stream is injected (app.cpp): the engine reads
+# /chuck/<n>.ck patches off the card via ctx.stream->exists/read_text. Without this, ctx.stream is null
+# and only the built-in program is ever available (the Alt+PITCH selector shows one entry, nothing to
+# load).
+C_DEFS += -DSPK_USE_STREAM
+# ChucK synthesizes from its own 12 MB SDRAM pool (chuck_alloc.cpp) and never touches the platform engine
+# arena, so opt out of it: shrinks the 48 MB arena to a token block (buffer.sdram.cpp), leaving SDRAM at
+# ~22% (12 MB pool + 2 MB stream rings) instead of ~97%. A capability flag, not an engine-name check.
+C_DEFS += -DSPK_NO_ENGINE_ARENA
 # ChucK feature defines = the exact set fetch_chuck.sh built libchuck.a with. They MUST match so the
 # ChucK class layouts the engine TU sees agree with the archive (__DISABLE_THREADS__ etc. drop members).
 C_DEFS += -D__PLATFORM_LINUX__ -D__USE_CHUCK_YACC__ \
