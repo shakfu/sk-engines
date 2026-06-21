@@ -16,7 +16,7 @@ LDFLAGS += -u _printf_float
 CPP_STANDARD = -std=gnu++17
 
 TARGET      = harness
-CPP_SOURCES = harness.cpp ../src/engine/csound/csound_engine.cpp
+CPP_SOURCES = harness_csound.cpp ../src/engine/csound/csound_engine.cpp
 
 # Daisy libraries (vendored in the sk-engines repo)
 LIBDAISY_DIR = ../lib/libDaisy
