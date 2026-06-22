@@ -28,7 +28,7 @@ Current engines include:
 
 10. [chorus](docs/engines/chorus.md): stereo chorus - the demo of the **generated** Faust path (author a `.dsp` + a small JSON manifest, no hand-written C++)
 
-11. [dfilter](docs/engines/dfilter.md): dual resonant filter, one independent voice per channel - the generated **parallel (DoubleMono) dual-deck** demo
+11. [filter](docs/engines/filter.md): dual resonant filter, one independent voice per channel - the generated **parallel (DoubleMono) dual-deck** demo
 
 12. [voice](docs/engines/voice.md): drone oscillator (deck A) into a resonant filter (deck B) - the generated **series (chain) dual-deck** demo (instrument -> FX)
 
@@ -99,7 +99,7 @@ The firmware is a fixed hardware/UI **platform** that hosts a swappable DSP **en
 
 - `make -j8 ENGINE=gigaverb` — a stereo reverb (Tom Erbe's **gigaverb**) authored in Max/MSP **gen~** and translated to C++ by [gen-dsp](https://github.com/shakfu/gen-dsp). The engine directory is generated from a gen~ export with `make gen-engines` (or `scripts/gen_engine.py`); see [`docs/engine-types/gen.md`](docs/engine-types/gen.md).
 
-- `make -j8 ENGINE=chorus` / `dfilter` / `voice` — engines **generated** from a Faust `.dsp` + a small JSON manifest with no hand-written C++ (`make faust-engine MANIFEST=…`): **chorus** (a stereo chorus, the single-deck demo), **dfilter** (a resonant filter per channel, the parallel dual-deck demo), and **voice** (a drone oscillator into a filter, the series dual-deck demo). See [`docs/engine-types/faust.md`](docs/engine-types/faust.md).
+- `make -j8 ENGINE=chorus` / `filter` / `voice` — engines **generated** from a Faust `.dsp` + a small JSON manifest with no hand-written C++ (`make faust-engine MANIFEST=…`): **chorus** (a stereo chorus, the single-deck demo), **filter** (a resonant filter per channel, the parallel dual-deck demo), and **voice** (a drone oscillator into a filter, the series dual-deck demo). See [`docs/engine-types/faust.md`](docs/engine-types/faust.md).
 
 - `make -j8 ENGINE=passthrough` — a minimal stereo-passthrough variant.
 
@@ -133,7 +133,7 @@ The bootloader version used in this project enables USB DFU firmware updating fr
 
 `make program-dfu` flashes whatever is currently in `build/` (it does not rebuild). To flash a non-default engine, build it first in the same step, e.g. `make ENGINE=passthrough && make program-dfu`.
 
-For convenience there are one-shot targets that **clean + build + flash** a variant (put the device in DFU mode first, as in step 3): `make engine-granular` (the looper), `make engine-delay`, `make engine-edrums`, `make engine-reso`, `make engine-tape`, `make engine-shuttle`, `make engine-radio`, `make engine-reverb`, `make engine-chorus`, `make engine-dfilter`, `make engine-voice`, `make engine-gigaverb`, and `make engine-passthrough`. (`make engine-csound` and `make engine-chuck` also exist but are QSPI builds with a one-time `libcsound.a` / `libchuck.a` prerequisite — see [`docs/engines/csound.md`](docs/engines/csound.md), [`docs/engines/chuck.md`](docs/engines/chuck.md).)
+For convenience there are one-shot targets that **clean + build + flash** a variant (put the device in DFU mode first, as in step 3): `make engine-granular` (the looper), `make engine-delay`, `make engine-edrums`, `make engine-reso`, `make engine-tape`, `make engine-shuttle`, `make engine-radio`, `make engine-reverb`, `make engine-chorus`, `make engine-filter`, `make engine-voice`, `make engine-gigaverb`, and `make engine-passthrough`. (`make engine-csound` and `make engine-chuck` also exist but are QSPI builds with a one-time `libcsound.a` / `libchuck.a` prerequisite — see [`docs/engines/csound.md`](docs/engines/csound.md), [`docs/engines/chuck.md`](docs/engines/chuck.md).)
 
 Once finished, the device will automatically boot the new firmware. This can "brick" (temporarily) the device and require reinstallation of either the bootloader, the firmware binary, or both.
 

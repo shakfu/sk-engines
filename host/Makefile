@@ -71,7 +71,7 @@ TEST_STREAM  = $(BUILD)/test_stream
 TEST_SHUTTLE = $(BUILD)/test_shuttle
 TEST_RADIO   = $(BUILD)/test_radio
 TEST_CHORUS  = $(BUILD)/test_chorus
-TEST_DFILTER = $(BUILD)/test_dfilter
+TEST_FILTER = $(BUILD)/test_filter
 TEST_VOICE   = $(BUILD)/test_voice
 TEST_DELAY   = $(BUILD)/test_delay
 TEST_GRAINCLOUD_KERNEL = $(BUILD)/test_graincloud_kernel
@@ -83,7 +83,7 @@ TEST_CHUCK_PATCH = $(BUILD)/test_chuck_patch
 BENCH_REVERB     = $(BUILD)/bench_reverb
 BENCH_GRAINCLOUD = $(BUILD)/bench_graincloud
 
-.PHONY: all clean run test test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-tape test-stream test-shuttle test-radio test-chorus test-dfilter test-voice test-csound-alloc test-csound-patch test-csound-midi test-csound-reload test-chuck-patch bench-reverb bench-graincloud
+.PHONY: all clean run test test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-tape test-stream test-shuttle test-radio test-chorus test-filter test-voice test-csound-alloc test-csound-patch test-csound-midi test-csound-reload test-chuck-patch bench-reverb bench-graincloud
 all: $(TARGET)
 
 $(TARGET): $(SRC) | $(BUILD)
@@ -174,11 +174,11 @@ $(TEST_CHORUS): test_chorus.cpp $(LIB_SRC) $(ROOT)/src/engine/chorus/chorus_engi
                 $(ROOT)/src/engine/chorus/faust_kernel_chorus.h | $(BUILD)
 	$(CXX) $(CXXFLAGS) test_chorus.cpp $(LIB_SRC) -o $@
 
-# Generated Faust `dfilter` (parallel DoubleMono dual-deck) and `voice` (series chain dual-deck) engines -
+# Generated Faust `filter` (parallel DoubleMono dual-deck) and `voice` (series chain dual-deck) engines -
 # header-only like chorus (shared FaustEngine / FaustChainEngine wrapper + cyfaust kernels), no extra .cpp.
-$(TEST_DFILTER): test_dfilter.cpp $(LIB_SRC) $(ROOT)/src/engine/dfilter/dfilter_engine.h \
-                 $(ROOT)/src/engine/dfilter/faust_kernel_dfilter.h | $(BUILD)
-	$(CXX) $(CXXFLAGS) test_dfilter.cpp $(LIB_SRC) -o $@
+$(TEST_FILTER): test_filter.cpp $(LIB_SRC) $(ROOT)/src/engine/filter/filter_engine.h \
+                 $(ROOT)/src/engine/filter/faust_kernel_filter.h | $(BUILD)
+	$(CXX) $(CXXFLAGS) test_filter.cpp $(LIB_SRC) -o $@
 
 $(TEST_VOICE): test_voice.cpp $(LIB_SRC) $(ROOT)/src/engine/voice/voice_engine.h \
                $(wildcard $(ROOT)/src/engine/voice/faust_kernel_*.h) | $(BUILD)
@@ -207,7 +207,7 @@ run: $(TARGET)
 
 # `test` runs both engine harnesses. Both inject the transport via EngineContext (granular drives the
 # real platform Transport; edrums uses a small stub ITransport) - the post-transport-decoupling way.
-test: test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-tape test-stream test-shuttle test-radio test-chorus test-dfilter test-voice test-csound-alloc test-csound-patch test-csound-midi test-csound-reload test-chuck-patch
+test: test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-tape test-stream test-shuttle test-radio test-chorus test-filter test-voice test-csound-alloc test-csound-patch test-csound-midi test-csound-reload test-chuck-patch
 
 test-granular: $(TEST)
 	./$(TEST)
@@ -245,8 +245,8 @@ test-radio: $(TEST_RADIO)
 test-chorus: $(TEST_CHORUS)
 	./$(TEST_CHORUS)
 
-test-dfilter: $(TEST_DFILTER)
-	./$(TEST_DFILTER)
+test-filter: $(TEST_FILTER)
+	./$(TEST_FILTER)
 
 test-voice: $(TEST_VOICE)
 	./$(TEST_VOICE)

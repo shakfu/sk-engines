@@ -1,15 +1,15 @@
-// GENERATED from dfilter.dsp + dfilter.json by scripts/gen_faust_engine.py.
-// Edit the manifest (dfilter.json), not this file; then re-run the generator / `make faust-engine`.
+// GENERATED from filter.dsp + filter.json by scripts/gen_faust_engine.py.
+// Edit the manifest (filter.json), not this file; then re-run the generator / `make faust-engine`.
 // Dual filter - independent resonant low-pass per deck
 #pragma once
 
 #include "engine/faust/faust_fx.h"
-#include "engine/dfilter/faust_kernel_dfilter.h"
+#include "engine/filter/faust_kernel_filter.h"
 
 namespace spotykach {
 
-struct DfilterEngineTraits {
-    using Kernel = fx_dfilter::mydsp;
+struct FilterEngineTraits {
+    using Kernel = fx_filter::mydsp;
 
     // Platform knob -> Faust slider (keyed by ParamId; the wrapper captures each slider's range from the
     // kernel and linear-maps the 0..1 knob into it).
@@ -33,6 +33,6 @@ struct DfilterEngineTraits {
     static constexpr uint32_t     color        = 0xff8833;
 };
 
-using DfilterEngine = FaustEngine<DfilterEngineTraits>;
+using FilterEngine = FaustEngine<FilterEngineTraits>;
 
 } // namespace spotykach

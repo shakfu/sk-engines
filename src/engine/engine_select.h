@@ -48,11 +48,11 @@
   #include "engine/chorus/chorus_engine.h"
   namespace spotykach { using ActiveEngine = ChorusEngine; }
 // <<< faust:chorus <<<
-// >>> faust:dfilter >>>
-#elif defined(SPK_ENGINE_DFILTER)
-  #include "engine/dfilter/dfilter_engine.h"
-  namespace spotykach { using ActiveEngine = DfilterEngine; }
-// <<< faust:dfilter <<<
+// >>> faust:filter >>>
+#elif defined(SPK_ENGINE_FILTER)
+  #include "engine/filter/filter_engine.h"
+  namespace spotykach { using ActiveEngine = FilterEngine; }
+// <<< faust:filter <<<
 // >>> faust:voice >>>
 #elif defined(SPK_ENGINE_VOICE)
   #include "engine/voice/voice_engine.h"

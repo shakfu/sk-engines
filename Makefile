@@ -121,13 +121,13 @@ C_DEFS += -DSPK_ENGINE_CHORUS
 # shared FaustEngine<Traits> wrapper), so there is no engine .cpp.
 ENGINE_SOURCES =
 # <<< faust:chorus <<<
-# >>> faust:dfilter >>> (managed by scripts/gen_faust_engine.py)
-else ifeq ($(ENGINE), dfilter)
-C_DEFS += -DSPK_ENGINE_DFILTER
-# Faust engine generated from dfilter.dsp + dfilter.json - header-only (the cyfaust kernel + the
+# >>> faust:filter >>> (managed by scripts/gen_faust_engine.py)
+else ifeq ($(ENGINE), filter)
+C_DEFS += -DSPK_ENGINE_FILTER
+# Faust engine generated from filter.dsp + filter.json - header-only (the cyfaust kernel + the
 # shared FaustEngine<Traits> wrapper), so there is no engine .cpp.
 ENGINE_SOURCES =
-# <<< faust:dfilter <<<
+# <<< faust:filter <<<
 # >>> faust:voice >>> (managed by scripts/gen_faust_engine.py)
 else ifeq ($(ENGINE), voice)
 C_DEFS += -DSPK_ENGINE_VOICE
@@ -199,7 +199,7 @@ LDFLAGS += -u _printf_float
 # Route ChucK's C-malloc family to the SDRAM pool (chuck_alloc.cpp); the platform heap stays in SRAM.
 LDFLAGS += -Wl,--wrap=malloc,--wrap=free,--wrap=calloc,--wrap=realloc
 else
-$(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', 'edrums', 'reso', 'graincloud', 'tape', 'reverb', 'shuttle', 'radio', 'chorus', 'dfilter', 'voice', 'csound', or 'chuck')
+$(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', 'edrums', 'reso', 'graincloud', 'tape', 'reverb', 'shuttle', 'radio', 'chorus', 'filter', 'voice', 'csound', or 'chuck')
 endif
 
 # Opt-in (make ... METER=1): enable the on-device CPU load meter (app.cpp's CpuLoadMeter). It writes
@@ -331,7 +331,7 @@ all: check-boundary
 
 # One-shot variant flash: clean -> build -> flash over DFU. Put the device in DFU mode first
 # (hold Reset ~3s until the bottom pad LEDs breathe white), then `make granular` / `make passthrough`.
-.PHONY: engine-granular engine-passthrough engine-delay engine-edrums engine-reso engine-graincloud engine-tape engine-shuttle engine-reverb engine-radio engine-chorus engine-dfilter engine-voice engine-gigaverb engine-csound program-csound engine-chuck program-chuck
+.PHONY: engine-granular engine-passthrough engine-delay engine-edrums engine-reso engine-graincloud engine-tape engine-shuttle engine-reverb engine-radio engine-chorus engine-filter engine-voice engine-gigaverb engine-csound program-csound engine-chuck program-chuck
 engine-granular:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=granular
@@ -407,10 +407,10 @@ engine-chorus:
 	$(MAKE) -j8 ENGINE=chorus
 	$(MAKE) ENGINE=chorus program-dfu
 
-engine-dfilter:
+engine-filter:
 	$(MAKE) clean
-	$(MAKE) -j8 ENGINE=dfilter
-	$(MAKE) ENGINE=dfilter program-dfu
+	$(MAKE) -j8 ENGINE=filter
+	$(MAKE) ENGINE=filter program-dfu
 
 engine-voice:
 	$(MAKE) clean
@@ -448,7 +448,7 @@ engine-reverb:
 # && .venv/bin/pip install cyfaust`. Override the interpreter with `CYFAUST_PY=/path/to/python` to pin a
 # different libfaust version. Add a kernel: drop <name>.dsp in its engine dir, add a spec here, and bind it.
 CYFAUST_PY ?= .venv/bin/python
-FAUST_KERNELS ?= src/engine/reverb:rv_:dattorro src/engine/reverb:rv_:zita src/engine/reverb:rv_:greyhole src/engine/tape:tfx_:tapefx src/engine/chorus:fx_:chorus src/engine/dfilter:fx_:dfilter src/engine/voice:fx_voice_:osc src/engine/voice:fx_voice_:filter
+FAUST_KERNELS ?= src/engine/reverb:rv_:dattorro src/engine/reverb:rv_:zita src/engine/reverb:rv_:greyhole src/engine/tape:tfx_:tapefx src/engine/chorus:fx_:chorus src/engine/filter:fx_:filter src/engine/voice:fx_voice_:osc src/engine/voice:fx_voice_:filter
 # `faust-gen` is the former name, kept as a deprecated alias.
 .PHONY: faust-kernels faust-gen
 faust-kernels faust-gen:

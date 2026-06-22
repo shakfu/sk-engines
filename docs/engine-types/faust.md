@@ -23,7 +23,7 @@ The MODFREQ knob (which reaches an engine via `set_mod_speed`, not `set_param`) 
 
 A manifest `deck_mode` key lets a generated engine use **both** decks as independent control banks (the default, absent, is the single shared control set of `chorus`):
 
-- **`parallel`** (DoubleMono) - two instances of **one mono kernel**, deck A on the left channel and deck B on the right, each with its own knob bank; the two never interact. On `FaustEngine<Traits>` with `decks = 2`. Demo: [dfilter](../engines/dfilter.md) (a resonant low-pass per channel).
+- **`parallel`** (DoubleMono) - two instances of **one mono kernel**, deck A on the left channel and deck B on the right, each with its own knob bank; the two never interact. On `FaustEngine<Traits>` with `decks = 2`. Demo: [filter](../engines/filter.md) (a resonant low-pass per channel).
 
 - **`series`** (chain) - **two different kernels** wired A→B, deck A driving stage 1 and deck B stage 2; covers FX→FX and instrument→FX (a 0-input generator into an effect). On the sibling `FaustChainEngine<Traits>` template. Demo: [voice](../engines/voice.md) (a drone oscillator into a resonant filter).
 

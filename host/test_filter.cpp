@@ -1,4 +1,4 @@
-// Headless test for the generated `dfilter` engine - the PARALLEL (DoubleMono) dual-deck mode of the
+// Headless test for the generated `filter` engine - the PARALLEL (DoubleMono) dual-deck mode of the
 // Faust generator. Proves FaustEngine<Traits> with decks=2 keeps two INDEPENDENT control banks and
 // processes deck A on the left channel, deck B on the right - the thing a single-deck engine (chorus)
 // structurally cannot do:
@@ -11,7 +11,7 @@
 #include <vector>
 #include <algorithm>
 
-#include "engine/dfilter/dfilter_engine.h"
+#include "engine/filter/filter_engine.h"
 #include "host_setup.h"
 
 using namespace spotykach;
@@ -21,7 +21,7 @@ int g_failures = 0;
 void check(bool c, const char* m) { if (!c) { std::printf("  FAIL: %s\n", m); g_failures++; } }
 
 // Drive an 8 kHz tone into both channels; return per-channel RMS over `blocks`.
-void run(DfilterEngine& e, int blocks, float& rms_l, float& rms_r, bool& finite) {
+void run(FilterEngine& e, int blocks, float& rms_l, float& rms_r, bool& finite) {
     float il[host::kBlock], ir[host::kBlock], ol[host::kBlock], orr[host::kBlock];
     const float* in[2] = { il, ir };
     float* out[2] = { ol, orr };
@@ -47,7 +47,7 @@ int main() {
     host::HostArena arena;
     EngineContext ctx = host::make_context(arena, time);
 
-    DfilterEngine e; e.init(ctx);
+    FilterEngine e; e.init(ctx);
 
     // 1. per-deck params are independent (Pitch -> "cutoff" on each deck's own instance).
     e.set_param(ParamId::Speed, DeckRef::A, 0.1f);
@@ -57,8 +57,8 @@ int main() {
     check(std::fabs(e.param(ParamId::Speed, DeckRef::A) - 0.1f) < 1e-4f,
           "deck B's cutoff did NOT clobber deck A's (independent state)");
 
-    // 2. fresh engine reports the kernel slider defaults, per deck (cutoff default 1.0 in dfilter.dsp -> Pitch).
-    DfilterEngine fresh; fresh.init(ctx);
+    // 2. fresh engine reports the kernel slider defaults, per deck (cutoff default 1.0 in filter.dsp -> Pitch).
+    FilterEngine fresh; fresh.init(ctx);
     check(std::fabs(fresh.param(ParamId::Speed, DeckRef::A) - 1.0f) < 0.02f, "deck A boot = kernel default");
     check(std::fabs(fresh.param(ParamId::Speed, DeckRef::B) - 1.0f) < 0.02f, "deck B boot = kernel default");
 
@@ -73,7 +73,7 @@ int main() {
     check(rr > 0.05f, "deck B (open) passes the 8 kHz tone on the right");
     check(rl < 0.2f * rr, "deck A (cutoff shut) attenuates the left far below the right - channels are independent");
 
-    if (g_failures == 0) { std::printf("OK: all dfilter checks passed\n"); return 0; }
+    if (g_failures == 0) { std::printf("OK: all filter checks passed\n"); return 0; }
     std::printf("FAILED: %d check(s)\n", g_failures);
     return 1;
 }

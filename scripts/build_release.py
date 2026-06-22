@@ -50,7 +50,7 @@ DEFAULT_ENGINES = [
     "chuck",
     "csound",
     "delay",
-    "dfilter",
+    "filter",
     "edrums",
     "graincloud",
     "radio",
@@ -64,15 +64,19 @@ DEFAULT_ENGINES = [
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # Engines that aren't a plain `ENGINE=<name>` build need extra make flags (the same ones their
-# `make engine-<name>` one-shot target wraps). csound is a QSPI app: its ~2 MB of Csound code can't
-# fit the 186 KB SRAM_EXEC budget, so it executes in place from QSPI flash (BOOT_QSPI + the QSPI
-# linker script) and links against a pre-built libcsound.a (scripts/fetch_csound.sh).
+# `make engine-<name>` one-shot target wraps). csound and chuck are QSPI apps: their ~2 MB / ~1.1 MB of
+# runtime code can't fit the 186 KB SRAM_EXEC budget, so they execute in place from QSPI flash (BOOT_QSPI
+# + a QSPI linker script) and link against a pre-built static lib (scripts/fetch_{csound,chuck}.sh).
+# These mirror the Makefile's CSOUND_FLAGS / CHUCK_FLAGS exactly; chuck uses its OWN linker script
+# (alt_qspi_chuck.lds reclaims the unused SRAM_EXEC region for .bss), so it is NOT the same as csound's.
 ENGINE_MAKE_FLAGS = {
     "csound": ["APP_TYPE=BOOT_QSPI", "LDSCRIPT=alt_qspi.lds"],
+    "chuck":  ["APP_TYPE=BOOT_QSPI", "LDSCRIPT=alt_qspi_chuck.lds"],
 }
 # Files that must already exist for an engine to build (clear error vs a cryptic link failure).
 ENGINE_PREREQUISITES = {
     "csound": [("thirdparty/csound/Daisy/lib/libcsound.a", "run scripts/fetch_csound.sh first")],
+    "chuck":  [("thirdparty/chuck/Daisy/lib/libchuck.a",   "run scripts/fetch_chuck.sh first")],
 }
 
 # Filename prefix for the distributed artifacts (sk-<engine>-<version>.bin). Note this is the
@@ -224,20 +228,29 @@ def changelog_section(version: str, changelog: Path | None = None) -> str | None
 
 def flashing_section(version: str, engines: list[str]) -> str:
     """The `## Flashing ...` section of the release notes (markdown)."""
-    # csound is the one QSPI app in the set (it executes from flash rather than being copied to SRAM),
-    # which adds two flashing wrinkles the generic steps don't cover.
-    csound_note = """
-### Note for the `csound` engine
+    # csound and chuck are QSPI apps in the set (they execute from flash rather than being copied to
+    # SRAM), which adds two flashing wrinkles the generic steps don't cover.
+    qspi_engines = [e for e in ("csound", "chuck") if e in engines]
+    qspi_note = ("""
+### Note for the {names} engine{plural}
 
-`sk-csound-*.bin` is a **QSPI app**: unlike the other engines it executes in place from QSPI flash
-(its Csound runtime is ~2 MB, too big for SRAM), so it is also a larger download and takes longer to
+{bins} {is_are} **QSPI app{plural}**: unlike the other engines {they} execute in place from QSPI flash
+(their language runtimes are too big for SRAM), so {they} are also larger downloads and take longer to
 flash. Same address and steps as above, with two caveats:
 
-- It needs a bootloader that **runs QSPI apps** (the spotykach bootloader does); a SRAM-only
-  bootloader cannot run it.
+- {They_cap} need a bootloader that **runs QSPI apps** (the spotykach bootloader does); a SRAM-only
+  bootloader cannot run {them}.
 - With `dfu-util`, the `:leave` step may print a harmless `Error 74` / "get_status" message at the
   end - the write has already succeeded. Ignore it (the Web Programmer does not show this).
-""" if "csound" in engines else ""
+""".format(
+        names=" and ".join(f"`{e}`" for e in qspi_engines),
+        plural="s" if len(qspi_engines) > 1 else "",
+        bins=" and ".join(f"`{ARTIFACT_PREFIX}-{e}-*.bin`" for e in qspi_engines),
+        is_are="are" if len(qspi_engines) > 1 else "is",
+        they="they" if len(qspi_engines) > 1 else "it",
+        them="them" if len(qspi_engines) > 1 else "it",
+        They_cap="They" if len(qspi_engines) > 1 else "It",
+    ) if qspi_engines else "")
 
     return f"""## Flashing an sk-engines firmware ({version})
 
@@ -271,7 +284,7 @@ Needs a WebUSB browser - Chrome or Edge (Firefox and Safari will not work).
 - Confirm the download is intact:  `shasum -a 256 -c SHA256SUMS`
 - Confirm what a binary is:        `arm-none-eabi-strings <file>.bin | grep '^spotykach '`
   (prints e.g. `spotykach {version} engine=reverb`)
-{csound_note}"""
+{qspi_note}"""
 
 
 def write_release_notes(path: Path, version: str, engines: list[str]) -> None:

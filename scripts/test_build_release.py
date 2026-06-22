@@ -86,6 +86,35 @@ def test_flashing_section_csound_note_only_when_csound_present():
     assert "Error 74" in note             # the benign QSPI :leave message
 
 
+def test_flashing_section_chuck_note():
+    # chuck is a QSPI app too: it must get the same flashing note as csound.
+    note = m.flashing_section("0.3.0", ["chuck", "reverb"])
+    assert "Note for the `chuck` engine" in note
+    assert "Error 74" in note
+
+
+def test_flashing_section_both_qspi_engines_pluralized():
+    note = m.flashing_section("0.3.0", ["csound", "chuck", "reverb"])
+    assert "Note for the `csound` and `chuck` engines" in note   # plural heading, both named
+    assert "sk-csound-*.bin` and `sk-chuck-*.bin` are **QSPI apps**" in note
+
+
+def test_qspi_engines_have_boot_qspi_flags_and_prereqs():
+    # The bug that crashed `make dist`: a QSPI engine in DEFAULT_ENGINES with no BOOT_QSPI make flags
+    # gets built as a plain SRAM engine and overflows SRAM_EXEC. Every QSPI engine must carry the
+    # right flags (its own linker script) and a prebuilt-lib prerequisite.
+    expected = {
+        "csound": "alt_qspi.lds",
+        "chuck":  "alt_qspi_chuck.lds",
+    }
+    for engine, ldscript in expected.items():
+        assert engine in m.DEFAULT_ENGINES
+        flags = m.ENGINE_MAKE_FLAGS.get(engine, [])
+        assert "APP_TYPE=BOOT_QSPI" in flags
+        assert f"LDSCRIPT={ldscript}" in flags
+        assert engine in m.ENGINE_PREREQUISITES
+
+
 # --- CHANGELOG extraction (ported from the former release_notes.py) ----------------------------
 
 CHANGELOG_SAMPLE = """\

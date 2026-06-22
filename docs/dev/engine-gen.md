@@ -2,7 +2,7 @@
 
 **Status: v1 implemented** (the `chorus` demo). Goal: author a **new simple Faust effect or instrument** with a `.dsp` + a small **JSON manifest** and **no hand-written C++** — `make`-it and it's a flashable engine. This generalises the pattern the gen~ generator already uses (`scripts/gen_engine.py`: manifest + marker-wired build + preserved glue) to the Faust path, which was previously all hand-written.
 
-**What shipped:** the shared runtime (`src/engine/faust/{faust_capture.h,faust_fx.h,faust_chain.h}` — `FaustEngine<Traits>` + `FaustChainEngine<Traits>` + the zone-capture `CaptureUI`), the generator (`scripts/engine_gen_common.py` + `scripts/gen_faust_engine.py`, `make faust-engine`), and three demos: `chorus` (single-deck stereo FX, ~80.5% SRAM_EXEC), `dfilter` (parallel/DoubleMono dual-deck, ~83%) and `voice` (series/chain dual-deck — drone osc into a filter, ~84%). Each is `.dsp`(s) + a JSON manifest → generated `<name>_engine.h`, a host test (`test_chorus`/`test_dfilter`/`test_voice`), and a control diagram from the same manifest. The dual-deck modes are §9. The hand-written `reverb`/`tape` wrappers were also **refactored onto the shared `faust_capture.h`** (their private `CaptureUI`/`Bind`/`Role` deleted): one zone-capture implementation now serves the generator and both rich engines, re-verified host-green (`reverb`/`tape`/`shuttle` host tests) with reverb's SRAM_EXEC cost +288 B (a `CaptureUI<false>` template flag drops the generator-only slider-default capture from the hand-written path, so they pay nothing extra for it).
+**What shipped:** the shared runtime (`src/engine/faust/{faust_capture.h,faust_fx.h,faust_chain.h}` — `FaustEngine<Traits>` + `FaustChainEngine<Traits>` + the zone-capture `CaptureUI`), the generator (`scripts/engine_gen_common.py` + `scripts/gen_faust_engine.py`, `make faust-engine`), and three demos: `chorus` (single-deck stereo FX, ~80.5% SRAM_EXEC), `filter` (parallel/DoubleMono dual-deck, ~83%) and `voice` (series/chain dual-deck — drone osc into a filter, ~84%). Each is `.dsp`(s) + a JSON manifest → generated `<name>_engine.h`, a host test (`test_chorus`/`test_filter`/`test_voice`), and a control diagram from the same manifest. The dual-deck modes are §9. The hand-written `reverb`/`tape` wrappers were also **refactored onto the shared `faust_capture.h`** (their private `CaptureUI`/`Bind`/`Role` deleted): one zone-capture implementation now serves the generator and both rich engines, re-verified host-green (`reverb`/`tape`/`shuttle` host tests) with reverb's SRAM_EXEC cost +288 B (a `CaptureUI<false>` template flag drops the generator-only slider-default capture from the hand-written path, so they pay nothing extra for it).
 
 This file scopes the design; the plan in [§7](#7-implementation-plan) was the build order.
 
@@ -132,7 +132,7 @@ The manifest selects the mode with a `deck_mode` key (absent / `"single"` = v1 b
 Two instances of **one** mono kernel: deck A processes the **left** channel, deck B the **right**, each driven by its own knob bank (the reverb DoubleMono shape, generalised). The two never interact; the crossfader is unused. Requires a **mono** kernel (1-in/1-out). The `knobs` map is shared (both decks expose the same controls), so the manifest is the v1 form plus `"deck_mode": "parallel"`:
 
 ```json
-{ "engine": "dfilter", "backend": "faust", "deck_mode": "parallel",
+{ "engine": "filter", "backend": "faust", "deck_mode": "parallel",
   "knobs": { "Pitch": "cutoff", "Position": "reso", "Size": "drive", "Mix (SOS)": "mix" },
   "features": { "meter": true, "color": "0xff8833" } }
 ```
@@ -156,4 +156,4 @@ Runtime: a sibling template **`FaustChainEngine<Traits>`** (`src/engine/faust/fa
 
 **Still out of scope** (stays hand-written): the runtime route/mode switch (Stereo↔DoubleMono selection, reverb's case), per-deck voice allocation, and >2 decks/stages. v1.1 is exactly "two independent instances/stages, fixed topology" — the largest step that stays pure data, not integration logic.
 
-**Examples shipped:** `dfilter` (parallel — two independent resonant low-pass voices, one per channel) and `voice` (series — a drone oscillator into a resonant filter, deck A = osc, deck B = filter). Both host-tested for per-deck/per-stage independence (the property chorus structurally cannot have).
+**Examples shipped:** `filter` (parallel — two independent resonant low-pass voices, one per channel) and `voice` (series — a drone oscillator into a resonant filter, deck A = osc, deck B = filter). Both host-tested for per-deck/per-stage independence (the property chorus structurally cannot have).

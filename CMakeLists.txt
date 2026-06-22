@@ -147,11 +147,11 @@ elseif(ENGINE STREQUAL chorus)
     set(ENGINE_DEFINE SPK_ENGINE_CHORUS)
     set(ENGINE_SOURCES)
 # <<< faust:chorus <<<
-# >>> faust:dfilter >>>
-elseif(ENGINE STREQUAL dfilter)
-    set(ENGINE_DEFINE SPK_ENGINE_DFILTER)
+# >>> faust:filter >>>
+elseif(ENGINE STREQUAL filter)
+    set(ENGINE_DEFINE SPK_ENGINE_FILTER)
     set(ENGINE_SOURCES)
-# <<< faust:dfilter <<<
+# <<< faust:filter <<<
 # >>> faust:voice >>>
 elseif(ENGINE STREQUAL voice)
     set(ENGINE_DEFINE SPK_ENGINE_VOICE)

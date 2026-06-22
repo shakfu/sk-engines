@@ -1,5 +1,5 @@
 {
-  "engine": "dfilter",
+  "engine": "filter",
   "backend": "faust",
   "deck_mode": "parallel",
   "title": "Dual filter - independent resonant low-pass per deck",

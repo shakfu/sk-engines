@@ -1,6 +1,6 @@
-// dfilter.dsp - mono resonant low-pass with drive.
+// filter.dsp - mono resonant low-pass with drive.
 //
-// Stage of the 'dfilter' PARALLEL dual-deck demo: FaustEngine runs one instance of this kernel per deck
+// Stage of the 'filter' PARALLEL dual-deck demo: FaustEngine runs one instance of this kernel per deck
 // (deck A on the left channel, deck B on the right), each with its own cutoff/reso/drive/mix - so the two
 // channels are filtered fully independently. Mono (1 in, 1 out), as DoubleMono requires.
 import("stdfaust.lib");

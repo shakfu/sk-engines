@@ -1,5 +1,5 @@
 {
-  "engine": "dfilter",
+  "engine": "filter",
   "title": "Dual filter - independent resonant low-pass per deck",
   "subtitle": "parallel DoubleMono: deck A filters left, deck B filters right",
   "knobs": {

@@ -3,7 +3,7 @@
 #pragma once
 
 // GENERATED FILE - do not edit by hand. Regenerate with `make faust-kernels` (cyfaust cpp backend).
-// Source: src/engine/dfilter/dfilter.dsp. The generated `class mydsp` is wrapped in namespace spotykach::fx_dfilter; its
+// Source: src/engine/filter/filter.dsp. The generated `class mydsp` is wrapped in namespace spotykach::fx_filter; its
 // dsp/UI/Meta base types resolve to the shared arch shim (see engine/faust_arch.h).
 
 #include <algorithm>
@@ -12,15 +12,15 @@
 #include <math.h>
 #include "engine/faust_arch.h"
 
-namespace spotykach { namespace fx_dfilter {
+namespace spotykach { namespace fx_filter {
 /* ------------------------------------------------------------
-name: "dfilter"
+name: "filter"
 Code generated with Faust 2.85.5 (https://faust.grame.fr)
 Compilation options: -lang cpp -fpga-mem-th 4 -ct 1 -es 1 -mcd 16 -mdd 1024 -mdy 33 -single -ftz 0
 ------------------------------------------------------------ */
 
-#ifndef  __fx_dfilter_H__
-#define  __fx_dfilter_H__
+#ifndef  __fx_filter_H__
+#define  __fx_filter_H__
 
 #ifndef FAUSTFLOAT
 #define FAUSTFLOAT float
@@ -78,7 +78,7 @@ class mydsp : public dsp {
 	
 	void metadata(Meta* m) { 
 		m->declare("compile_options", "-lang cpp -fpga-mem-th 4 -ct 1 -es 1 -mcd 16 -mdd 1024 -mdy 33 -single -ftz 0");
-		m->declare("filename", "dfilter");
+		m->declare("filename", "filter");
 		m->declare("filters.lib/fir:author", "Julius O. Smith III");
 		m->declare("filters.lib/fir:copyright", "Copyright (C) 2003-2019 by Julius O. Smith III <jos@ccrma.stanford.edu>");
 		m->declare("filters.lib/fir:license", "MIT-style STK-4.3 license");
@@ -102,7 +102,7 @@ class mydsp : public dsp {
 		m->declare("maths.lib/license", "LGPL with exception");
 		m->declare("maths.lib/name", "Faust Math Library");
 		m->declare("maths.lib/version", "2.9.0");
-		m->declare("name", "dfilter");
+		m->declare("name", "filter");
 		m->declare("platform.lib/name", "Generic Platform Library");
 		m->declare("platform.lib/version", "1.3.0");
 		m->declare("signals.lib/name", "Faust Routing Library");
@@ -172,7 +172,7 @@ class mydsp : public dsp {
 	}
 	
 	virtual void buildUserInterface(UI* ui_interface) {
-		ui_interface->openVerticalBox("dfilter");
+		ui_interface->openVerticalBox("filter");
 		ui_interface->addHorizontalSlider("cutoff", &fHslider2, FAUSTFLOAT(1.0f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.001f));
 		ui_interface->addHorizontalSlider("drive", &fHslider1, FAUSTFLOAT(0.0f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.001f));
 		ui_interface->addHorizontalSlider("mix", &fHslider0, FAUSTFLOAT(1.0f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.001f));
@@ -211,4 +211,4 @@ class mydsp : public dsp {
 };
 
 #endif
-} } // namespace spotykach::fx_dfilter
+} } // namespace spotykach::fx_filter
