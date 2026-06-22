@@ -1,88 +1,195 @@
 # Dev notes — ChucK as an sk-engines engine (`ENGINE=chuck`) — ROADMAP
 
-> **Status: M0–M2 DONE (WORKING ON HARDWARE), M3 CODE-DONE/BUILD-VERIFIED (2026-06-21).** ChucK boots,
-> compiles, runs the VM, makes sound, and responds to the knobs on a bare Daisy Pod (verified over SWD
-> + by ear). `M0`: `libchuck.a` cross-builds + links (`scripts/fetch_chuck.sh`, pinned `chuck-1.5.5.8`).
+> **Status: M0–M3 DONE + HARDWARE-VERIFIED; patch-swap memory leak RESOLVED (2026-06-22).** ChucK boots,
+> compiles, runs the VM, makes sound, and responds to the knobs on the cased spotykach (and a bare Pod).
+> `M0`: `libchuck.a` cross-builds + links (`scripts/fetch_chuck.sh`, pinned `chuck-1.5.5.8`).
 > `M1`: Pod tone from QSPI — the `SawOsc => LPF => dac` drone plays, knobs drive `speedA`/`mixA`. `M2`:
 > `ChuckEngine : IEngine` (`src/engine/chuck/`) wired into both the Pod harness (`make -f Makefile.chuck`)
-> and the full firmware (`make engine-chuck`). **`M2`+`M3` are now HARDWARE-VERIFIED ON THE SPOTYKACH
-> (2026-06-21):** the first flash of the cased unit (`make engine-chuck METER=1`, DFU) booted, ran the
-> VM, and made sound. **`M3` is HARDWARE-VERIFIED too:** the SD `chuck/<n>.ck` patch bank + Alt+PITCH
-> live swap (`chuck_patch.h` + the gated single-VM `CK_MSG_CLEARVM` reset + `compileCode` recompile) — boot
-> auto-load, the selector, and live switching all confirmed on the spotykach with a card of
-> `examples/chuck/*.ck` (after two fixes: the `ENGINE=chuck` branch was missing `-DSPK_USE_STREAM` so the
-> bank saw no card, and the 48 MB engine arena is now opted out via `-DSPK_NO_ENGINE_ARENA` since ChucK
-> brings its own pool — SDRAM 97% -> 22%). An **on-panel CPU/shred meter** (`METER=1`) makes risk #1 readable without a probe
-> (ring A = CPU load, ring B = live shred count; production build's rings = stereo dB output meter). See
-> the M3 roadmap entry for the three deliberate deltas from the Csound original.
+> and the full firmware (`make engine-chuck`); flashed on the cased unit, boots/runs/sounds. **`M3`** —
+> the SD `chuck/<n>.ck` patch bank + Alt+PITCH live swap — is hardware-verified: boot auto-load, the
+> selector, and live switching all work with a card of `examples/chuck/*.ck` (after two fixes: the
+> `ENGINE=chuck` branch was missing `-DSPK_USE_STREAM` so the bank saw no card, and the 48 MB engine arena
+> is opted out via `-DSPK_NO_ENGINE_ARENA` since ChucK brings its own pool — SDRAM 97% -> 22%).
+> **The live-swap memory leak is FIXED (2026-06-22):** the swap mechanism is now **one persistent VM +
+> a compile-once bytecode cache** (NOT the old destroy+recreate or `CK_MSG_CLEARVM` reset, both of which
+> leaked ChucK's never-freed type system). Memory rises once per distinct patch then plateaus; confirmed
+> on the cased unit by ear + the panel pool meter. See the "Patch-swap memory leak — RESOLVED" section
+> below for the full root-cause + fix writeup. An **on-panel meter** (`METER=1`): ring A = CPU load,
+> ring B = SDRAM pool usage (the leak readout); production build's rings = stereo dB output meter. The one
+> remaining rough edge is slot 5 (a CPU-heavy patch that the overrun safeguard mutes — not a leak).
 
 ---
 
-## ⚠ OPEN BUG — patch-swap resource leak (UNRESOLVED, handoff 2026-06-21)
+## Patch-swap memory leak — RESOLVED (hardware-confirmed 2026-06-22)
 
-**Symptom.** Cycling patches with the Alt+PITCH selector (SD slot → SD slot, repeatedly) degrades the
-unit: patches that played fine individually start failing after several swaps — audio glitches / the
-CPU-overrun safeguard latches (the double-red panic rings). It is **cumulative** across swaps and
-recovers only on power-cycle. **Confirmed still present in the PRODUCTION build** (`make engine-chuck`,
-no METER) — so it is a genuine per-swap leak, not only the instrumentation bug below.
+**TL;DR.** Live patch-swapping leaked SDRAM cumulatively until the pool exhausted and patches that
+played fine alone began overrunning / latching the double-red panic. Root cause was **inside ChucK
+1.5.5.8, not our code**: ChucK never frees its type system on VM teardown (it relies on process exit),
+so *every* "tear down and reload" strategy we tried leaked. The fix stops fighting it: **keep ONE ChucK
+VM for the whole session (never destroy it) and compile each distinct patch at most once (cache the
+emitted bytecode, re-spork it on subsequent swaps)**. Memory now rises only the first time each patch is
+visited and then plateaus, flat across unlimited cycling. Verified on the cased spotykach via the panel
+pool meter (ring B steps once per patch, then holds) and by ear (every patch recovers memory on swap).
+The one patch that still misbehaves — slot 5 — is a *separate, CPU* problem (see the last subsection),
+not memory.
 
-**This is the thing to fix next session.** Everything else (boot, single-patch playback, knobs, the
-bank selector, the PRNG fix, the arena shrink, the CPU-overrun safeguard) works on hardware.
+### The symptom
 
-### What was tried (in order) and the outcome
-1. **Original M3 reload:** `removeAllShreds()` + `compileCode()` on one persistent VM. Leaked. (Expected
-   in hindsight — `removeAllShreds` frees shreds but NOT the user type system `compileCode` accumulates.)
-2. **CLEARVM reset** (current code): `reset_vm()` = `Chuck_VM::process_msg(CK_MSG_CLEARVM)` (synchronous,
-   under the gate) then `compileCode()`. CLEARVM does `removeAll()` + `env()->clear_user_namespace()` +
-   `cleanup_global_variables()`. This is the canonical reset (matches the user's chuck-max `reset`,
-   `~/projects/personal/chuck-max/source/projects/chuck_tilde/chuck_tilde.cpp` `ck_reset`). **Still leaks.**
-3. **Pool 12 MB → 40 MB** (`chuck_alloc.cpp` `kPoolBytes`). Buys more swaps before failure; does not stop
-   the leak. Kept (free headroom now that the arena is shrunk).
-4. **Observer-effect meter bug (FIXED, separate):** a pool-memory meter I added walked the whole pool
-   under PRIMASK every render → starved the audio ISR → false overrun, worse as the pool filled. Removed.
-   It *amplified* the symptom in METER builds but is NOT the underlying leak (production leaks without it).
-5. **VM destroy+recreate** (`delete _ck; new ChucK()` per swap): briefly implemented, then **discarded**
-   in favour of CLEARVM. **NOT in the current code.** This is the most promising untried-on-hardware fix
-   (see below) — it is the only approach that fully reclaims, mirroring Csound's `csoundDestroy`+create.
+Cycling patches with the Alt+PITCH selector (SD slot → SD slot, repeatedly) progressively degraded the
+unit. Each patch played correctly in isolation, but after several swaps audio began glitching and the
+CPU-overrun safeguard latched (solid-red rings on both decks). The degradation was **cumulative across
+swaps** and cleared **only on power-cycle**. It reproduced in the **production** build (`make
+engine-chuck`, no METER), so it was a genuine resource leak, not a metering artifact.
 
-### Leading hypotheses for next session
-- **ChucK accumulates beyond what CLEARVM frees.** `clear_user_namespace()` clears user *types*, but the
-  compiler's emitted bytecode (`Chuck_VM_Code`), compilation contexts, and string/const pools per
-  `compileCode` may persist. Known-ish ChucK behaviour. → only a full VM teardown reclaims it.
-- **`dac` graph not disconnected.** `=> dac` adds a UGen to `dac`'s source list (with a ref). When a
-  shred is removed, was mid-investigating whether `removeAll()`/`free_shred()` (`chuck_vm.cpp` ~1314 /
-  ~1356) actually sever the `dac` connection. If not, old patches' UGens linger AND keep **ticking** →
-  this would be a CPU leak (matches the overrun symptom), not just memory. NB `all_detach()` is commented
-  out in the `CK_MSG_EXIT` handler (`chuck_vm.cpp` ~1011), a hint ChucK doesn't auto-detach the dac graph.
+### Root cause: ChucK's type system is immortal by design
 
-### Recommended next steps
-1. **First, classify the leak: CPU vs memory vs both.** Add a NON-destructive memory readout — an O(1)
-   running `_used` counter in `CsoundPool` (increment on alloc, decrement on free), **NOT** a walk, and
-   surface it (panel or USB CDC). Likewise watch ring A (CPU). This tells us which resource grows per
-   swap. (Do not re-introduce the `used_bytes()` walk in any hot/ISR/PRIMASK path.)
-2. **Check the `dac` graph.** Instrument/inspect `m_dac`'s source-list length across swaps (or just try:
-   in `do_reload`, before recompiling, explicitly disconnect everything from `dac`). If the source list
-   grows per swap, that's the leak; disconnect it on reset.
-3. **If CLEARVM genuinely can't reclaim, switch `do_reload` to VM destroy+recreate** — `delete _ck` then
-   `build_vm(newprog)` (the `build_vm` helper already exists and is used at init; `do_reload` would call
-   it instead of `reset_vm`+`compileCode`). Delete-then-build keeps one VM's footprint at a time. Cost:
-   the type-system + STK re-registration per swap (a bigger silence gap), but it fully reclaims. This is
-   the safe fallback and mirrors the proven Csound engine exactly.
-4. **Sanity-check against chuck-max:** does it sustain many `reset`+recompile cycles without growth? If
-   chuck-max also grows, the leak is inherent to ChucK's reset path and destroy+recreate is the answer.
+ChucK builds its built-in type system (every UGen/STK class, the global namespace) into a `ChucK`
+instance at `init()`, and **never frees it on teardown** — it assumes the host process will exit and
+let the OS reclaim everything. On a bare-metal device that never exits, every VM-create/destroy or
+recompile cycle that touches the type system leaks. The evidence in `thirdparty/chuck/src/core`:
+
+- **`Chuck_Env::cleanup()`** (`chuck_type.cpp` ~264, run from `~Chuck_Env`) unlock-deletes only the
+  ~25 *base* types (`void`/`int`/`float`/…/`Object`/`Type`) and carries a literal
+  `// TODO: free all types in the Env`. Every *registered* type (the UGens, the STK instruments —
+  the multi-MB bulk), which lives in `global_nspc`, is left alone.
+- **`global_nspc`** is `CK_SAFE_ADD_REF`'d when the Env is built (`chuck_type.cpp` ~151) with **no
+  matching release** in `cleanup()` or `~Chuck_Env` — so its refcount can't reach 0.
+- **`Chuck_Context::~Chuck_Context()`** (`chuck_type.cpp` ~6532) releases its namespace **only
+  `if(has_error)`**; on a *successful* compile it deliberately keeps it, with the comment "the nspc
+  stays as part of the type system, since many things have been added to it." So each successful
+  `compileCode()` also retains a context's worth of namespace.
+
+Net: the global type system is leaked once per VM creation, and a user context is leaked once per
+compile. Neither is ever reclaimed within a running process.
+
+This is **why every teardown strategy we tried failed** — they differ only in *how much* they re-leak:
+
+| # | Strategy | What it did | Why it still leaked |
+|---|----------|-------------|---------------------|
+| 1 | `removeAllShreds()` + `compileCode()` on one VM (original M3) | freed the shreds, recompiled | each `compileCode` retains a context (`~Chuck_Context` keeps `nspc`) — small but unbounded over swaps |
+| 2 | `CK_MSG_CLEARVM` reset + `compileCode()` (one VM) | `removeAll` + `clear_user_namespace` + `cleanup_global_variables` | CLEARVM clears *user* types, but not the retained compile contexts / emitted code — KB-scale per swap |
+| 3 | Pool 12 MB → 40 MB | more headroom | only delays exhaustion; not a fix (kept anyway — free headroom after the arena shrink) |
+| 5 | VM destroy+recreate (`delete _ck; new ChucK()` per swap) | full teardown + fresh VM each swap | **worst case** — re-leaks the *entire* built-in type system (multi-MB) every swap; this is the one the panel meter caught climbing |
+
+(#4 was the separate observer-effect metering bug — see below.) Note the destroy+recreate path is
+otherwise sound: `Chuck_VM::stop()` (`chuck_vm.cpp` ~547) clears `m_is_running` synchronously, so
+`~ChucK`'s `while(vm->running()) ck_usleep()` busy-wait (`chuck.cpp` ~1028) can't hang on bare metal;
+and `o_isGlobalInit` persists across cycles (the dtor never calls `globalCleanup()`), so repeated
+create/destroy is stable. It simply can't reclaim the type system, so it leaks the most.
+
+### Confirming it on hardware: the per-swap pool meter
+
+Before committing to a fix we added a **non-destructive** pool-usage readout so we could *measure*
+the leak (which resource, what rate) instead of guessing — the roadmap's "classify the leak" step.
+`ChuckEngine::note_pool_usage()` samples `CsoundPool::used_bytes()` **once per swap**, inside
+`do_reload` between the ReloadGate `take()` and `publish()` — i.e. with the VM out of the audio path,
+so the walk is race-free and entirely off the per-block hot path. (This is the deliberate opposite of
+the earlier **observer-effect bug** (#4): a pool meter that walked the whole pool under `PRIMASK`
+*every render* starved the audio ISR and itself triggered false overruns, worsening as the pool
+filled. That walk was removed; the new sample is swap-time only.) `csound_pool.h` is **unchanged** (no
+risk to the shared Csound allocator); `chuck_alloc.cpp` just exposes `chuck_pool_used()` /
+`chuck_pool_capacity()`.
+
+Readouts:
+- **Cased unit (no SWD): panel, `make engine-chuck METER=1`.** Ring A = CPU load. Ring B = SDRAM pool
+  usage — bright arc = live bytes right after the last swap, dot = high-water mark. Under
+  destroy+recreate the arc + dot **climbed multi-MB per swap and never recovered**, which both
+  confirmed the leak and confirmed it was *memory* (not fragmentation — fragmentation would drop the
+  arc while the dot stayed high).
+- **Bare Pod: SWD globals** `g_chuck_pool_used_kb` / `_peak_kb` / `_cap_kb` / `g_chuck_swaps` (always
+  built). `openocd-attach` then `mdw <addr-from-build/spotykach.map>`.
+
+### The fix: one persistent VM + compile-once cache
+
+Two levers, both required, both in `do_reload` / `load_program` (`chuck_engine.cpp`):
+
+**Lever 1 — one persistent VM, never destroyed.** `build_vm()` now creates the `ChucK` **once** at
+`init()` (`new ChucK` / `setParam` / `init` / `start`, *no* program compiled) and the engine keeps it
+for the whole session. Because the VM is never torn down, the built-in type system is built exactly
+once and can never be re-leaked — this removes the entire multi-MB-per-swap term. A swap no longer
+touches the VM's existence, only its *shreds*:
+
+- `do_reload` takes the ReloadGate (ISR sees null → outputs silence during the swap), then **stops the
+  current patch synchronously**. ChucK's `removeAllShreds()` only *flags* removal
+  (`m_asap_remove_all_shreds`, `chuck_vm.cpp` ~1471); the flag is enacted at the **top of the next
+  `compute()` tick** (`chuck_vm.cpp` ~572 → the protected `removeAll()` ~1314 → `free_shred()` →
+  `detach_ugens()` ~1989, which disconnects the shred's UGens from `dac`). So we must enact it
+  **before** sporking the new patch — otherwise that deferred remove-all would also kill the
+  just-sporked shred, and the old patch's UGens would keep ticking on `dac` (a CPU leak). We force it
+  with a **one-frame `_ck->run(_inbuf, _outbuf, 1)`** under the gate: one tick runs `removeAll()` at
+  the top, freeing + detaching the old shred before any new spork. (`removeAll`/`free_shred` are
+  `protected`, hence the flush trick rather than calling them directly.)
+
+**Lever 2 — compile each distinct patch at most once (cache the bytecode).** The remaining leak is
+per-*compile* (the retained context). `load_program()` eliminates repeat compiles:
+
+- ChucK's `compileCode()` does parse/type-check/emit (`compiler->compileCode`, `chuck.cpp` ~1302) →
+  `vm_code = compiler->output()` (~1306) → `vm->spork(vm_code, …)` (~1320). `Chuck_Compiler::output()`
+  (`chuck_compile.cpp` ~1161) returns `this->code`, which is the **freshly emitted** `Chuck_VM_Code`
+  for that compile (assigned at ~761). So after a successful compile we grab that pointer, `add_ref()`
+  it (`Chuck_VM_Object::add_ref`, `chuck_oo.h` ~81), and **pin it in a cache** keyed by slot
+  (`_builtin_code` + `_slot_code[kMaxChuckSlots]`, via `cache_cell()`).
+- On a swap to an **already-visited** patch, `load_program()` finds the pinned code and **re-sporks it
+  directly** — `_ck->vm()->spork(code, NULL, TRUE)` (public, `chuck_vm.h` ~640) — with **no
+  recompile**, so no new context is created and nothing new is retained. Re-sporking cached code is
+  ChucK's normal "run this program again" path; the new shred gets a fresh stack and fresh UGen
+  instances, and `reseed_globals()` replays the current knob positions into it.
+- Lifetime: the pinned `add_ref` keeps each cached `Chuck_VM_Code` alive even as its shreds come and go
+  (when a shred is removed it releases *its* ref; ours holds the object at refcount ≥ 1). The cache is
+  session-lifetime (never evicted), so total compiles — hence total retained contexts — are bounded by
+  the number of **distinct** patches (≤ `kMaxChuckSlots + 1`), independent of how many times you swap.
+
+**Resulting memory model.** Steady state is a fixed, bounded footprint: one type system (built once at
+boot) + one retained context per distinct patch (compiled the first time it's selected). After every
+slot has been visited once, usage is **flat forever** regardless of further cycling. On the meter:
+ring B steps up on each patch's first load, then holds — exactly what was observed.
+
+**The swap, end to end (`do_reload`):** gate `take()` → `removeAllShreds()` + 1-frame `run()` (stop +
+detach old, synchronously) → `load_program(target)` (re-spork cached code, or compile-once + pin) →
+`reseed_globals()` (replay knobs) → clear `_panic`/overrun counter → `note_pool_usage()` (sample, ISR
+still quiesced) → gate `publish(_ck)` (re-arm the ISR with the same VM).
+
+### Caveats / known limitations (documented in `chuck_engine.h`)
+
+- **Cached code survives SD rescans.** Editing a slot's `.ck` file on the card mid-session won't take
+  effect until power-cycle (the slot's bytecode is already pinned). Fine for a fixed patch bank.
+- **Shared user namespace across patches.** Because there's no per-swap reset, all compiled patches
+  share one user namespace; two patches that define the *same top-level type name* would collide on
+  the second one's compile. Fine for the curated examples; a real concern only if users author colliding
+  classes.
+- **Broken patches aren't cached.** A slot that fails to compile produces no code to pin, so it
+  recompiles (and retains one context) on each visit, then falls back to the built-in. Bounded by how
+  often a *broken* slot is selected; acceptable.
+
+### Slot 5 / heavy patches: a separate CPU axis, not memory
+
+After the leak fix, all patches recover memory across swaps **except slot 5**, which still latches the
+double-red panic. This is the **CPU-overrun safeguard doing its job**, not a leak: slot 5 is the heavy
+FM/STK patch (multiple `HnkyTonk` 4-op voices + reverb) whose `ck->run()` can't finish within the audio
+block, so `_panic` mutes it to keep the controls alive (see "CPU-overrun safeguard" in the memory note
+/ `process()`). It's a headroom problem, fixable only by lightening the patch (fewer voices, drop the
+reverb/chorus) or raising the block size — orthogonal to the memory work here. The leak fix is complete
+and independent of it.
 
 ### Current code state (all uncommitted on branch `dev`)
-- `src/engine/chuck/chuck_engine.{h,cpp}` — M3 bank + selector; `build_vm()` (init-time VM create+compile);
-  `reset_vm()` (CK_MSG_CLEARVM); `do_reload()` (gated take → reset_vm → compileCode → reseed → publish);
-  CPU-overrun safeguard (`_panic` mute-and-wait, always-on, DWT-timed in `process()`); METER meter
-  (ring A CPU / ring B shred-count); production stereo dB output meter; bring-up capture (`g_chuck_init_*`).
-- `src/engine/chuck/chuck_alloc.cpp` — 40 MB `--wrap` SDRAM pool (`CsoundPool`) + PRIMASK `CritSec`.
+- `src/engine/chuck/chuck_engine.{h,cpp}` — M3 bank + selector; **one persistent VM + compile-once
+  cache**: `build_vm()` (create/init/start ONCE at init, no compile); `compile_and_spork()` (the only
+  compile path, bring-up-captured); `load_program()` (re-spork cached `Chuck_VM_Code` or compile+pin,
+  keyed by slot via `cache_cell()`, built-in fallback); `do_reload()` (gated take → `removeAllShreds` +
+  1-frame `run()` flush → `load_program` → reseed → `note_pool_usage` → republish, VM never destroyed);
+  `_builtin_code`/`_slot_code[]` pinned-code cache; `note_pool_usage()` (per-swap pool sampling →
+  members + `g_chuck_pool_*` SWD globals); CPU-overrun safeguard (`_panic` mute-and-wait, always-on,
+  DWT-timed in `process()`); METER meter (ring A CPU / ring B pool-usage arc + high-water); production
+  stereo dB output meter; bring-up capture (`g_chuck_init_*`).
+- `src/engine/chuck/chuck_alloc.cpp` — 40 MB `--wrap` SDRAM pool (`CsoundPool`) + PRIMASK `CritSec`;
+  `chuck_pool_used()`/`chuck_pool_capacity()` diagnostics (used_bytes walk, swap-time only).
 - `src/engine/chuck/chuck_patch.h` — SD `chuck/<n>.ck` selector (host-tested).
 - `scripts/fetch_chuck.sh` + `thirdparty/chuck/Daisy/shim/chuck_posix_stubs.c` — `random()` xorshift PRNG
   seeded from DWT CYCCNT (fixes frozen `Math.random*`). `libchuck.a` was rebuilt with this (`ar r`).
 - `Makefile` `ENGINE=chuck` branch — `-DSPK_USE_STREAM` (SD bank) + `-DSPK_NO_ENGINE_ARENA` (arena shrink,
   shared with csound). `src/hw/buffer.sdram.cpp` — arena → 64 KB token under `SPK_NO_ENGINE_ARENA`.
 - `examples/chuck/0..6.ck` + `README.md` (desktop-`chuck`-compile-checked); `host/test_chuck_patch.cpp`.
+- Build: both variants link clean — production SDRAM 65.82% / QSPI 17.02% / SRAM 65.22%; host suite green.
 - Nothing committed this whole effort — the user commits.
 
 ---
@@ -143,7 +250,7 @@ uses, exactly like `CsoundEngine`. The host class is `ChucK` (`src/core/chuck.h`
 | `process(in,out,n)` | `chuck->run(in, out, n)` — **`SAMPLE = float`**, interleaved by channel-count; one call per block | de-interleave → `csoundPerformKsmps` → de-interleave |
 | `set_param(id,deck,v)` | `chuck->globals()->setGlobalFloat("speedA", v)` (the program reads the global) | `csoundSetControlChannel(name, v)` |
 | `handle_midi_note(ch,note)` | enqueue → in `process()` `setGlobalInt("midiNote", n)` + `broadcastGlobalEvent("noteOn")` (a `MidiNote`-style shred sporks a voice) | `csoundEvent(CS_INSTR_EVENT, …)` |
-| Alt+PITCH live patch swap | `reset_vm()` (`CK_MSG_CLEARVM`) + `compileCode(newText)` behind the `ReloadGate` | `ReloadGate` + `csoundDestroy` + recompile |
+| Alt+PITCH live patch swap | one persistent VM: `removeAllShreds()` + 1-frame `run()` flush, then re-spork the patch's cached `Chuck_VM_Code` (compile-once) behind the `ReloadGate` | `ReloadGate` + `csoundDestroy` + recompile |
 | `render(m)` | output-level meter + patch selector + run-state | identical |
 | `capabilities()` | `CapAux \| CapOwnDisplay` | identical |
 
@@ -339,23 +446,23 @@ MIDI is M4.
 fallback) + the bank/selector wiring in `chuck_engine.{h,cpp}` (rescan, boot auto-load of the lowest
 slot, Alt+PITCH preview/commit, the cyan/white source LED, the gated live recompile). The host
 selector test (`make -C host test-chuck-patch`) passes and both firmware targets link clean
-(`pod/Makefile.chuck`, `make engine-chuck`). **Hardware test pending** (needs a card with `chuck/*.ck`).
-Two deliberate deltas from the Csound original:
+(`pod/Makefile.chuck`, `make engine-chuck`). **Hardware-verified, incl. the memory-leak fix (2026-06-22)**
+— see the "Patch-swap memory leak — RESOLVED" section above for the full story. Three deliberate deltas
+from the Csound original:
 - **No `chuck_reload.h`.** The `ReloadGate` is engine-agnostic (`void*`, no Csound deps), so the ChucK
   engine reuses `engine/csound/csound_reload.h` directly - the same reuse pattern `chuck_alloc.cpp`
   already uses for `CsoundPool`. One gate, one host test (`test-csound-reload` covers it).
-- **One persistent VM, reset (not rebuilt), gated.** Csound's `do_reload` destroys + recreates the
-  `CSOUND`; ChucK keeps one VM (its built-in type/UGen registration is expensive) and *resets* it: a
-  reload is `reset_vm()` then `compileCode(newText)` on `_ck`, with the `ReloadGate` taking the VM out
-  of the audio path for the swap. `reset_vm()` sends `CK_MSG_CLEARVM` via `Chuck_VM::process_msg`
-  (synchronous: `removeAll` shreds + `clear_user_namespace` + `cleanup_global_variables`). **This is the
-  patch-swap leak fix:** `removeAllShreds()` alone does NOT free the user type system that `compileCode`
-  accumulates per compile, so the original `removeAllShreds`+recompile leaked a program's footprint per
-  swap and exhausted the 12 MB pool after a few switches (previously-fine patches then overran). The
-  reset must be SYNCHRONOUS and BEFORE the compile (a queued `CLEARVM` via
-  `execute_chuck_msg_with_globals` would be drained inside the next `run()` and wipe the just-compiled
-  types). The gate is still required: `compileCode` mutates VM state and, under `__DISABLE_THREADS__`,
-  nothing locks it against a concurrent `run()`. A brief audio gap on a user-initiated swap is the cost.
+- **One persistent VM + compile-once cache (NOT rebuilt, NOT reset).** Csound's `do_reload` destroys +
+  recreates the `CSOUND`; ChucK keeps **one** VM for the whole session and only changes its *shreds*,
+  because ChucK never frees its type system on teardown — so both destroying the VM and `CK_MSG_CLEARVM`-
+  resetting it leaked (see the RESOLVED writeup for the full root cause + the earlier failed attempts).
+  A reload, behind the `ReloadGate`: `removeAllShreds()` + a 1-frame `run()` to flush the *deferred*
+  removal (which detaches the old patch's UGens from `dac`) BEFORE sporking the new patch, then either
+  re-spork the target's **cached** `Chuck_VM_Code` (`vm()->spork(code, NULL, TRUE)` — no recompile, no
+  leak) or, on the patch's first visit, `compileCode()` it once and pin the emitted code in the cache.
+  The gate is required because `compileCode`/`spork` mutate VM state and, under `__DISABLE_THREADS__`,
+  nothing locks them against a concurrent `run()`. A brief audio gap on the swap (and a slightly longer
+  one on a patch's first, compiling visit) is the cost.
 - **No structural pre-validation.** A `.csd` must begin with `<CsoundSynthesizer>`; a `.ck` has no
   required header, so `read_program` only normalizes (BOM/CRLF) and rejects empty/whitespace-only
   files. The real validation is `compileCode()` returning false -> fall back to the built-in.

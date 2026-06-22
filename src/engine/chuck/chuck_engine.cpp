@@ -17,13 +17,12 @@
 // branch and MUST match the set libchuck.a was built with (ABI: they drop members from ChucK classes).
 #include "chuck.h"            // provided by the QSPI build's -Ithirdparty/chuck/src/core
 #include "chuck_globals.h"    // Chuck_Globals_Manager: setGlobalFloat (host -> .ck program)
-#include "chuck_vm.h"         // Chuck_VM::process_msg + Chuck_Msg + CK_MSG_CLEARVM (the patch reset);
-                             // also shreduler()->get_all_shred_ids() for the METER shred count
+#include "chuck_vm.h"         // Chuck_VM::spork (re-spork cached code) + Chuck_VM_Code (the cached bytecode)
+#include "chuck_compile.h"    // Chuck_Compiler::output() - the just-emitted code to pin in the cache
 
 #ifdef METER
 #include "meter.h"            // Meter::cpu().load - the platform's whole-callback CpuLoadMeter, driven
                              // by app.cpp's OnBlockStart/OnBlockEnd. The on-panel meter reads it in render().
-#include <vector>
 #endif
 
 #include <cstdlib>            // malloc/free (routed to the SDRAM pool by chuck_alloc.cpp's --wrap)
@@ -50,6 +49,10 @@ namespace spotykach {
 // Arms the SDRAM pool for ChucK's allocations (chuck_alloc.cpp). Called after _hw.Init() (so SDRAM is
 // live), before `new ChucK()`. No-op-safe if the --wrap allocator isn't linked.
 void chuck_heap_arm() noexcept;
+// SDRAM pool diagnostics (chuck_alloc.cpp): the patch-swap leak probe. used() is an O(live-blocks) walk -
+// call only with the audio path quiesced (note_pool_usage(), at a swap), never per-block/per-render.
+std::size_t chuck_pool_used()     noexcept;
+std::size_t chuck_pool_capacity() noexcept;
 
 // ---------------------------------------------------------------------------------------------
 // Built-in fallback program. The engine compiles this when there is no SD .ck (everything, for now -
@@ -130,6 +133,15 @@ extern "C" {
 volatile uint32_t g_chuck_init_stage     = 0;    // 1=new ChucK  2=init()  3=compileCode()  9=succeeded
 char              g_chuck_init_error[192] = "";   // cause on failure ("" if none); read over SWD
 
+// Patch-swap leak instrumentation. note_pool_usage() refreshes these once per swap (and at init), with
+// the ISR quiesced. A used_kb that climbs monotonically across swaps (never recovering) is the ChucK
+// per-VM type-system leak (chuck-impl.md root cause). Read over SWD on the bare Pod (mdw the addresses
+// from build/spotykach.map); the cased unit reads the same figure off the panel in a METER build.
+volatile uint32_t g_chuck_pool_used_kb = 0;   // live pool usage right after the last swap
+volatile uint32_t g_chuck_pool_peak_kb = 0;   // high-water mark across all swaps (only rises on a leak)
+volatile uint32_t g_chuck_pool_cap_kb  = 0;   // pool capacity (constant once armed)
+volatile uint32_t g_chuck_swaps        = 0;   // completed patch swaps; pair with used_kb for per-swap growth
+
 // Override newlib's weak abort/__assert_func so a bare-metal assert/abort (which otherwise spins
 // silently in _exit - the dark-LED symptom) instead RECORDS its cause into g_chuck_init_error before
 // parking. This catches the failures the try/catch can't: a fired assert() in ChucK's compiler, or an
@@ -169,12 +181,12 @@ void abort(void)
 }
 
 // ---------------------------------------------------------------------------------------------
-// VM build (fresh instance per patch) + patch bank
+// VM build (one persistent instance) + compile-once cache + patch bank
 // ---------------------------------------------------------------------------------------------
-ChucK* ChuckEngine::build_vm(const char* text)
+ChucK* ChuckEngine::build_vm()
 {
 #if CHUCK_RUNTIME_LEVEL == 0
-    (void)text; return nullptr;                  // NOCHUCK: skip the runtime entirely
+    return nullptr;                              // NOCHUCK: skip the runtime entirely
 #else
     ChucK* ck = nullptr;
     try {
@@ -192,12 +204,8 @@ ChucK* ChuckEngine::build_vm(const char* text)
         // init() builds the type system + registers built-in UGens; start() before any run() (globals()
         // is NULL until vm->running(), and a lazy auto-start from the ISR would race the main loop on the
         // pool). Single-threaded here (main loop, gate held by the caller). See docs/dev/chuck-pod-poc.md.
+        // NB: no program compiled here - load_program() does that and caches the result.
         if (!ck->init() || !ck->start()) { delete ck; return nullptr; }
-        g_chuck_init_stage = 3;
-        // Spork the program (count=1, immediate=FALSE). A compile failure (bad SD patch) returns FALSE,
-        // not a throw, for ordinary syntax errors -> the caller falls back to the built-in.
-        if (!text || !ck->compileCode(text, "", 1)) { delete ck; return nullptr; }
-        g_chuck_init_stage = 9;
         return ck;
     } catch (const std::exception& e) {
         std::snprintf(g_chuck_init_error, sizeof(g_chuck_init_error), "%s: %s", typeid(e).name(), e.what());
@@ -209,19 +217,78 @@ ChucK* ChuckEngine::build_vm(const char* text)
 #endif
 }
 
-void ChuckEngine::reset_vm()
+bool ChuckEngine::compile_and_spork(const char* text)
 {
-    if (!_ck) return;
-    Chuck_VM* vm = _ck->vm();
-    if (!vm) return;
-    // CK_MSG_CLEARVM, processed SYNCHRONOUSLY by process_msg (we're gated, ISR silent, so direct VM
-    // mutation is safe): removeAll() shreds + clear_user_namespace() (the per-compileCode type/code
-    // accumulation - the leak) + cleanup_global_variables(). process_msg deletes the msg for us when
-    // reply_cb/reply_queue are null. This is the canonical ChucK reset (cf. chuck-max's `reset`).
-    Chuck_Msg* msg = new Chuck_Msg;
-    msg->type = CK_MSG_CLEARVM;
-    msg->reply_cb = (ck_msg_func)NULL;
-    vm->process_msg(msg);
+    if (!_ck || !text) return false;
+    try {
+        // compileCode parses + type-checks + emits + sporks one instance (count=1, immediate=FALSE). A
+        // syntax error returns FALSE (no throw) -> caller falls back. This is the ONLY path that compiles;
+        // it retains a context ChucK never frees, so load_program() gates it behind the cache.
+        g_chuck_init_stage = 3;
+        if (!_ck->compileCode(text, "", 1)) return false;
+        g_chuck_init_stage = 9;
+        return true;
+    } catch (const std::exception& e) {
+        std::snprintf(g_chuck_init_error, sizeof(g_chuck_init_error), "%s: %s", typeid(e).name(), e.what());
+    } catch (...) {
+        std::strncpy(g_chuck_init_error, "(non-std exception)", sizeof(g_chuck_init_error) - 1);
+    }
+    return false;
+}
+
+Chuck_VM_Code** ChuckEngine::cache_cell(int slot)
+{
+    if (slot < 0)               return &_builtin_code;          // the built-in
+    if (slot < kMaxChuckSlots)  return &_slot_code[slot];       // an SD slot
+    return nullptr;
+}
+
+int ChuckEngine::load_program(int target)
+{
+    if (!_ck) return -1;
+    if (target < 0 || target >= _avail_n) target = 0;
+    const int slot = _avail_slot[target];        // -1 = built-in, else the SD slot number
+
+    // 1) Cache hit -> re-spork the pinned bytecode. No recompile, no new context -> no leak. This is the
+    //    steady-state path once each distinct patch has been compiled once.
+    if (Chuck_VM_Code** cell = cache_cell(slot)) {
+        if (*cell && _ck->vm() && _ck->vm()->spork(*cell, NULL, TRUE)) {
+            _patch_loaded = (slot >= 0);
+            return target;
+        }
+    }
+
+    // 2) Cache miss -> read the program text, compile+spork once, then pin the emitted code. An SD read
+    //    failure makes program_for return the built-in (from_sd=false) -> cache under the built-in cell.
+    char* buf = (slot >= 0) ? static_cast<char*>(std::malloc(kPatchMax)) : nullptr;
+    bool  from_sd = false;
+    const char* text = program_for(target, buf, &from_sd);
+    int result = -1;
+    if (compile_and_spork(text)) {
+        const int eff_slot = from_sd ? slot : -1;            // what actually loaded (built-in on SD fallback)
+        if (Chuck_VM_Code** cell = cache_cell(eff_slot)) {
+            Chuck_VM_Code* code = _ck->compiler() ? _ck->compiler()->output() : nullptr;
+            if (code && !*cell) { code->add_ref(); *cell = code; }   // pin it for future swaps
+        }
+        _patch_loaded = from_sd;
+        result = from_sd ? target : 0;
+    }
+    if (buf) std::free(buf);
+    if (result >= 0) return result;
+
+    // 3) An SD slot failed to compile: fall back to the built-in (cached or freshly compiled) so a bad
+    //    patch never kills audio.
+    if (slot >= 0) {
+        if (_builtin_code && _ck->vm() && _ck->vm()->spork(_builtin_code, NULL, TRUE)) {
+            _patch_loaded = false; return 0;
+        }
+        if (compile_and_spork(kProgram)) {
+            Chuck_VM_Code* code = _ck->compiler() ? _ck->compiler()->output() : nullptr;
+            if (code && !_builtin_code) { code->add_ref(); _builtin_code = code; }
+            _patch_loaded = false; return 0;
+        }
+    }
+    return -1;
 }
 
 const char* ChuckEngine::program_for(int avail_index, char* buf, bool* from_sd)
@@ -262,35 +329,46 @@ void ChuckEngine::reseed_globals()
     }
 }
 
+void ChuckEngine::note_pool_usage()
+{
+    // Walk the pool for live bytes. Safe here ONLY because every caller invokes this with the audio path
+    // quiesced (do_reload between gate take()/publish(); init() before the first publish()), so the ISR
+    // is not allocating and the walk sees a stable heap. Never call this per-block or per-render.
+    _pool_used = chuck_pool_used();
+    if (_pool_cap == 0) _pool_cap = chuck_pool_capacity();
+    if (_pool_used > _pool_used_peak) _pool_used_peak = _pool_used;
+    g_chuck_pool_used_kb = static_cast<uint32_t>(_pool_used      >> 10);
+    g_chuck_pool_peak_kb = static_cast<uint32_t>(_pool_used_peak >> 10);
+    g_chuck_pool_cap_kb  = static_cast<uint32_t>(_pool_cap       >> 10);
+}
+
 void ChuckEngine::do_reload(int target)
 {
-    char* buf = static_cast<char*>(std::malloc(kPatchMax));
-    bool  from_sd = false;
-    const char* prog = program_for(target, buf, &from_sd);
+    // Take the ONE persistent VM out of the audio path (the ISR sees null -> silence) for the swap. The VM
+    // itself is NOT destroyed - destroying it would re-leak ChucK's built-in type system (its global
+    // namespace is never freed; see build_vm). _ck stays valid throughout (set_param null-guards anyway).
+    _gate.take();
 
-    // Take the live VM out of the audio path (the ISR sees null -> silence), reset it, then compile the
-    // new program onto it. reset_vm() (CK_MSG_CLEARVM) is the leak fix: it clears the user type system
-    // that compileCode accumulates - removeAllShreds() alone never freed it, so a few swaps exhausted the
-    // 12 MB pool and previously-fine patches began overrunning. We reset SYNCHRONOUSLY (under the gate)
-    // BEFORE compiling, so the new program's types survive (a queued CLEARVM would wipe them). One
-    // persistent VM is kept (the built-in type/UGen registration is expensive; only the user namespace
-    // is cleared) - far cheaper than tearing the VM down.
-    ChucK* vm = static_cast<ChucK*>(_gate.take());
-    if (!vm) { if (buf) std::free(buf); return; }          // boot never succeeded -> nothing to swap
+    if (_ck) {
+        // Stop the current patch synchronously. removeAllShreds() only flags the removal (enacted at the
+        // top of the next compute() tick), and free_shred() detaches the shred's UGens from dac. So flush
+        // it with a 1-frame run() NOW, BEFORE sporking the new patch - otherwise that deferred remove-all
+        // would also kill the shred load_program() is about to spork (and old dac-connected UGens would
+        // keep ticking = a CPU leak). One frame is enough: compute() checks the flag before running shreds.
+        _ck->removeAllShreds();
+        if (_inbuf && _outbuf) _ck->run(_inbuf, _outbuf, 1);
 
-    reset_vm();                                            // clear the old patch (shreds + types + globals)
-    bool ok = _ck->compileCode(prog, "", 1) ? true : false;
-    if (!ok && from_sd) {                                  // a bad SD patch must not kill audio: built-in
-        from_sd = false; target = 0;
-        ok = _ck->compileCode(kProgram, "", 1) ? true : false;
+        // Load the target: re-spork its cached bytecode (no recompile -> no leak) or compile+cache it once.
+        const int eff = load_program(target);
+        if (eff >= 0) _sel = eff;
     }
-    if (buf) std::free(buf);
 
-    reseed_globals();                                      // replay knob state into the fresh program
-    _panic = false;                                        // fresh chance: clear any prior overrun-mute
+    reseed_globals();                                     // replay knob state into the (re)sporked program
+    _panic = false;                                       // fresh chance: clear any prior overrun-mute
     _overrun_n = 0;
-    _gate.publish(vm);                                     // ISR resumes next block (runs the new shred)
-    if (ok) { _sel = target; _patch_loaded = from_sd; }
+    note_pool_usage();                                    // leak probe: sample now, ISR still gated off
+    g_chuck_swaps++;
+    _gate.publish(_ck);                                   // re-arm the ISR with the (same) VM
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -322,26 +400,23 @@ void ChuckEngine::init(const EngineContext& ctx)
     DWT->CTRL        |= DWT_CTRL_CYCCNTENA_Msk;
     _block_cycles = static_cast<uint32_t>(480000000.0f * _block / _sr);
 
-    // Boot: probe the SD bank, pick the boot slot, build the VM for that program. The card usually
-    // mounts ~1 s after this init(), so this typically builds the built-in and prepare()'s boot
-    // auto-load swaps in the first SD slot once it appears. build_vm() carries the try/catch +
-    // g_chuck_init_* bring-up capture; on failure (incl. NOCHUCK) it returns nullptr -> boot silent.
+    // Boot: create the one persistent VM, then load the boot program into it. The card usually mounts
+    // ~1 s after this init(), so this typically loads the built-in and prepare()'s boot auto-load swaps
+    // in the first SD slot once it appears. build_vm() carries the try/catch + g_chuck_init_* bring-up
+    // capture; on failure (incl. NOCHUCK) it returns nullptr -> boot silent. load_program() compiles +
+    // caches the boot program (and falls back to the built-in if the chosen SD slot won't compile).
     rescan_bank();
     _sel = (_avail_n > 1) ? 1 : 0;               // first SD patch if any, else the built-in
     _sel_preview = _sel;
 
-    char* buf = static_cast<char*>(std::malloc(kPatchMax));
-    bool  from_sd = false;
-    const char* prog = program_for(_sel, buf, &from_sd);
-    _ck = build_vm(prog);
-    if (!_ck && from_sd) {                        // a bad SD patch must not cost audio: use the built-in
-        from_sd = false; _sel = 0;
-        _ck = build_vm(kProgram);
-    }
-    if (buf) std::free(buf);
-    if (_ck) {                                    // publishing the VM is what makes run() live in the ISR
-        _patch_loaded = from_sd;
-        _gate.publish(_ck);                       // boot: _cache all 0, so no reseed needed
+    _ck = build_vm();
+    if (_ck) {
+        const int eff = load_program(_sel);       // compiles + caches + sporks the boot program
+        if (eff >= 0) {                           // publishing the VM is what makes run() live in the ISR
+            _sel = eff;
+            note_pool_usage();                    // baseline (swap 0): one VM + one program, ISR not yet live
+            _gate.publish(_ck);                   // boot: _cache all 0, so no reseed needed
+        }
     }
 }
 
@@ -438,21 +513,6 @@ void ChuckEngine::process(const float* const* in, float** out, size_t size)
     else                            { _overrun_n = 0; }
     _last_entry = entry;
 
-#ifdef METER
-    // Sample the live concurrent-shred count for the on-panel meter. Done HERE - after run() returned,
-    // on the audio thread - so the shreduler lists are stable (run() is the only mutator and it is the
-    // same thread), not racing a main-loop read. Throttled (~every 32 blocks) and into a reused vector
-    // so the per-block hot path (and the CPU figure we are metering) is barely perturbed.
-    if ((_meter_div++ & 0x1F) == 0) {
-        static std::vector<t_CKUINT> ids;     // reused scratch: clear+refill, no realloc after warmup
-        Chuck_VM* vm = ck->vm();
-        if (vm && vm->shreduler()) {
-            vm->shreduler()->get_all_shred_ids(ids);
-            _shreds = static_cast<int>(ids.size());
-        }
-    }
-#endif
-
     _gate.end_use();
 }
 
@@ -542,10 +602,12 @@ void ChuckEngine::render(DisplayModel& m)
     }
 
 #ifdef METER
-    // On-panel CPU + shred meter (build: make engine-chuck METER=1). Two rings, the two halves of the
-    // concurrency-headroom question: ring A = how hard the CPU is working, ring B = how many shreds are
-    // running. The same METER flag also streams max/avg/min load over USB CDC (app.cpp); this readout
-    // needs no host. See docs/dev/chuck-impl.md risk #1.
+    // On-panel CPU + pool meter (build: make engine-chuck METER=1) - the patch-swap leak readout for the
+    // cased unit (no SWD access). Ring A = CPU load (the overrun symptom). Ring B = SDRAM pool usage:
+    // arc = bytes live right after the last swap, dot = the high-water mark. Swap patches repeatedly and
+    // watch ring B: arc + dot climbing together and never recovering = the ChucK per-VM type-system leak;
+    // arc falling back while the dot stays high = used recovered (fragmentation, failure is elsewhere).
+    // The same METER flag also streams CPU load over USB CDC (app.cpp). See docs/dev/chuck-impl.md.
     {
         float avg = Meter::cpu().load.GetAvgCpuLoad();
         float pk  = Meter::cpu().load.GetMaxCpuLoad();
@@ -565,19 +627,22 @@ void ChuckEngine::render(DisplayModel& m)
         m.ring[0].add_point(pk, 1.f);
         m.ring[0].set_updated();
 
-        // Ring B (deck B) = concurrent-shred count: one cyan dot per live shred (count them), capped at
-        // the ring resolution for legibility. (A pool-memory arc was tried here but REMOVED: reading it
-        // walked the whole SDRAM pool with interrupts disabled every render, starving the audio ISR -
-        // worse as the pool filled - which itself triggered the overrun mute. Observer effect.)
-        constexpr int kMaxDots = 16;
-        int n = _shreds;
-        if (n > kMaxDots) n = kMaxDots;
+        // Ring B (deck B) = SDRAM pool usage as a fraction of capacity. Bright arc = bytes live right
+        // after the last swap (_pool_used); dot = the high-water mark (_pool_used_peak). Both are sampled
+        // once per swap by note_pool_usage() with the ISR gated - NOT walked here per render (that walk-
+        // under-PRIMASK was the old observer-effect bug). Colour by fill severity. A leak drives arc + dot
+        // up together every swap and they never fall; fragmentation drops the arc but leaves the dot high.
+        const float cap   = (_pool_cap > 0) ? static_cast<float>(_pool_cap) : 1.f;
+        float used_frac = static_cast<float>(_pool_used)      / cap;
+        float peak_frac = static_cast<float>(_pool_used_peak) / cap;
+        if (used_frac > 1.f) used_frac = 1.f;
+        if (peak_frac > 1.f) peak_frac = 1.f;
+        const uint32_t pcol = (used_frac > 0.85f) ? 0xff2000u : (used_frac > 0.60f) ? 0xffa000u : 0x00ff00u;
         m.play[1] = { running ? 0x00ff00u : 0x000000u, running ? 1.f : 0.f };
-        m.ring[1].set_hex_color(0x0a0a0a);                 // faint base so the ring scale is visible
+        m.ring[1].set_hex_color(0x0a0a0a);                 // faint base = full pool capacity (the scale)
         m.ring[1].set_segment(0.f, 0.999f);
-        m.ring[1].set_hex_color(0x00c0ff);                 // cyan = shred markers
-        for (int s = 0; s < n; s++)
-            m.ring[1].add_point(static_cast<float>(s) / static_cast<float>(kMaxDots), 1.f);
+        if (used_frac > 0.001f) { m.ring[1].set_hex_color(pcol); m.ring[1].set_segment(0.f, used_frac); }
+        m.ring[1].add_point(peak_frac, 1.f);               // high-water dot
         m.ring[1].set_updated();
 
         m.mode_center = { 0xff00ffu, 0.6f };               // magenta = meter mode (vs the source LED)

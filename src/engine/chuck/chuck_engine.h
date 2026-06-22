@@ -28,9 +28,12 @@
 // removeAllShreds/compileCode are processed inside run() and (under __DISABLE_THREADS__) the message
 // queues are not lock-protected against a concurrent run(). See chuck_engine.cpp do_reload.
 
-// ChucK's host class, forward-declared so the contract pulls in no ChucK headers (chuck.h is included
-// only in the .cpp, which exists only in the QSPI build).
+// ChucK's host class + compiled-code object, forward-declared so the contract pulls in no ChucK headers
+// (chuck.h is included only in the .cpp, which exists only in the QSPI build). Chuck_VM_Code is the
+// emitted bytecode for one compiled program; the engine pins (add-refs) one per distinct patch so swaps
+// re-spork it instead of recompiling (the compile-once cache - see do_reload / load_program).
 class ChucK;
+class Chuck_VM_Code;
 
 namespace spotykach {
 
@@ -56,25 +59,41 @@ public:
     void render(DisplayModel& m) override;
 
 private:
-    // Build the session's ChucK VM with `text` compiled into it (new ChucK / setParam / init / start /
-    // compileCode). Returns the instance, or nullptr on failure (compile error / throw - the partial VM
-    // is deleted). Called once at init(); a reload reuses this VM (reset_vm + recompile), not a rebuild.
-    ChucK* build_vm(const char* text);
-    // Reset the live VM between patches: CK_MSG_CLEARVM via Chuck_VM::process_msg (SYNCHRONOUS) - removes
-    // all shreds, clears the user type system (the per-compileCode accumulation), and clears globals.
-    // This is what reclaims the old patch's memory so swapping is leak-free (removeAllShreds alone does
-    // NOT free the compiled types/code). The canonical ChucK reset (cf. chuck-max's `reset`). Caller gates.
-    void reset_vm();
+    // Build the ONE persistent ChucK VM: new ChucK / setParam / init / start - NO program compiled yet
+    // (load_program does that). Returns the started instance, or nullptr on failure (throw - partial VM
+    // deleted, or NOCHUCK). Created once at init() and kept for the whole session: the VM (hence its
+    // built-in type system) is NEVER destroyed, because ChucK never frees its global namespace on teardown
+    // (chuck_type.cpp Chuck_Env::cleanup TODO) - so destroy+recreate leaked the whole type system per swap.
+    ChucK* build_vm();
+    // Compile `text` into the live VM and spork one instance (the host ChucK::compileCode path, wrapped in
+    // the g_chuck_init_* bring-up capture). Returns false on compile error / throw. Each call retains one
+    // compilation context in the type system (ChucK does not free it) - so load_program calls this AT MOST
+    // ONCE per distinct patch and caches the result; thereafter swaps re-spork the cached code.
+    bool compile_and_spork(const char* text);
+    // The compiled-code cache cell for a program slot (-1 = the built-in, else an SD slot number), or
+    // nullptr if out of range. Caching is keyed by slot (not availability index) so it survives rescans.
+    Chuck_VM_Code** cache_cell(int slot);
+    // Load the program for availability index `target` into the live VM: re-spork its cached Chuck_VM_Code
+    // if present (no recompile -> no leak), else read + compile_and_spork + cache. Falls back to the
+    // built-in when an SD slot can't be read/compiled. Sets _patch_loaded. Returns the availability index
+    // actually loaded (target, or 0 if it fell back to the built-in), or -1 if even the built-in failed.
+    int load_program(int target);
     // Program text for an availability index (built-in or an SD slot). SD reads go into `buf`.
     const char* program_for(int avail_index, char* buf, bool* from_sd);
     // Re-probe /chuck/<n>.ck existence and rebuild the [built-in, present slots...] selectable list.
     void rescan_bank();
-    // Gated swap for availability index `target` (main loop only): take the live VM, reset_vm() it (clear
-    // the old patch), compileCode the target, reseed, publish. Falls back to the built-in if an SD patch
-    // fails to compile. The reset_vm() clear is what makes sustained patch-swapping leak-free.
+    // Gated swap for availability index `target` (main loop only): take the VM out of the audio path,
+    // synchronously remove the current shreds (removeAllShreds + a 1-frame run() to flush the deferred
+    // removal), load_program(target) (re-spork cached or compile+cache), reseed, republish. ONE VM is
+    // kept alive across swaps - only the shreds change - so the type system is never re-leaked.
     void do_reload(int target);
     // Replay cached knob values into the freshly compiled program's globals (post-reload pickup).
     void reseed_globals();
+    // Sample live SDRAM pool usage into _pool_used/_pool_used_peak + the g_chuck_pool_* SWD globals.
+    // Call ONLY with the audio path quiesced (ISR not allocating) - i.e. between the ReloadGate take()
+    // and publish() in do_reload(), or before the init() publish. The patch-swap leak probe: a value
+    // that climbs monotonically across swaps is the ChucK per-VM type-system leak (chuck-impl.md).
+    void note_pool_usage();
 
     ReloadGate   _gate;             // owns the live VM pointer (handoff: main loop <-> audio ISR)
     ChucK* _ck    = nullptr;        // the persistent ChucK VM (one instance for the session)
@@ -86,6 +105,27 @@ private:
     float  _peak_l = 0.f, _peak_r = 0.f;  // per-channel output peak (fast attack, slow decay)
     float  _rms_l  = 0.f, _rms_r  = 0.f;  // per-channel output RMS (smoothed) - the loudness meter
     bool   _patch_loaded = false;   // true => running an SD slot; false => the built-in
+
+    // --- compile-once cache (the leak fix) -------------------------------------------------------
+    // One add-ref'd Chuck_VM_Code per distinct program, so a swap re-sporks cached bytecode instead of
+    // recompiling (each compile retains a context ChucK never frees). Keyed by slot: [built-in] + the SD
+    // slots. Session-lifetime (never evicted), so total compiles - hence total leaked contexts - are
+    // bounded by the number of distinct patches (<= kMaxChuckSlots + 1), NOT the number of swaps.
+    // CAVEAT: code is cached across SD rescans, so editing a slot's .ck file mid-session won't take effect
+    // until power-cycle; and because all patches share one user namespace (no per-swap reset), two patches
+    // defining the same top-level type name would collide on the second's compile. Fine for the bank model.
+    Chuck_VM_Code* _builtin_code = nullptr;
+    Chuck_VM_Code* _slot_code[kMaxChuckSlots] = {nullptr};
+
+    // --- patch-swap leak instrumentation (always built; the panel readout is METER-gated) ----------
+    // Live SDRAM pool usage, sampled once per swap by note_pool_usage() with the ISR quiesced (so the
+    // used_bytes() walk is race-free and off the hot path). render() (METER) draws _pool_used as ring B's
+    // arc and _pool_used_peak as a high-water dot: climbing together across swaps = a leak; arc falling
+    // back while the dot stays high = fragmentation (used recovered, the failure is elsewhere). Also
+    // mirrored to g_chuck_pool_* for SWD readout on the bare Pod.
+    size_t _pool_used      = 0;
+    size_t _pool_used_peak = 0;
+    size_t _pool_cap       = 0;
 
     // --- CPU-overrun safeguard (mute-and-wait) --------------------------------------------------
     // A patch whose ck->run() can't finish within the audio block would let the (highest-priority) audio
@@ -129,14 +169,6 @@ private:
     // Cached 0..1 knob values for param() pickup readback + post-reload reseed, per (ParamId, deck).
     static constexpr int kSlots = 16;     // 8 per deck
     float _cache[kSlots] = {0.f};
-
-#ifdef METER
-    // On-panel meter state (METER build only). _shreds is the live concurrent-shred count, sampled in
-    // process() (right after run(), on the VM's own thread, so no race with the shreduler) and read by
-    // render(); _meter_div throttles that (vector-building) poll off the per-block hot path.
-    int      _shreds    = 0;
-    uint16_t _meter_div = 0;
-#endif
 };
 
 } // namespace spotykach

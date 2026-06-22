@@ -70,6 +70,15 @@ void chuck_heap_arm() noexcept {
     g_alloc.init(g_pool, kPoolBytes);
     g_armed = true;
 }
+
+// SDRAM pool diagnostics for the patch-swap leak hunt (read by chuck_engine.cpp). used_bytes() is an
+// O(live-blocks) walk - call it ONLY off the audio hot path and with the audio path quiesced (e.g. once
+// per patch swap inside do_reload, where the ReloadGate is taken so the ISR isn't allocating), NEVER
+// per-block or per-render: a per-render walk under PRIMASK is what starved the ISR before (see the
+// chuck-impl.md "observer-effect meter bug"). No CritSec here - the caller guarantees no concurrent
+// pool mutation at the sample point.
+std::size_t chuck_pool_used()     noexcept { return g_alloc.used_bytes(); }
+std::size_t chuck_pool_capacity() noexcept { return g_alloc.capacity(); }
 }
 
 extern "C" {
