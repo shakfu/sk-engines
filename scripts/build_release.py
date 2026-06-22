@@ -46,6 +46,13 @@ from pathlib import Path
 
 # Curated "mature" engine set: the engines stable enough to publish prebuilt. Others stay
 # buildable but unlisted. Override per-invocation with args or the RELEASE_ENGINES env var.
+#
+# Deliberately NOT published (all still build via `make ENGINE=<name>`):
+#   - granular    : the stock/upstream spotykach firmware; releases ship engines NEW to sk-engines.
+#   - passthrough : the minimal reference engine, not a playable instrument.
+#   - chorus      : the simplest single-deck Faust demo (the dual-deck demos `filter`/`voice` ship instead).
+#   - gigaverb    : the lone gen~ demo - left out until it is tested / optimized further (it builds fine,
+#                   but sounded poor as a reverb voice and the better `reverb` engine covers reverb).
 DEFAULT_ENGINES = [
     "chuck",
     "csound",
