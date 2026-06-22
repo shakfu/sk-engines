@@ -6,7 +6,7 @@
 # needed to build or run the firmware.
 [dependency-groups]
 dev = [
-    "cyfaust>=0.1.3",
-    "gen-dsp>=0.1.19",
+    "cyfaust>=0.1.4",
+    "gen-dsp>=0.2.0",
     "pytest",
 ]

@@ -2,7 +2,7 @@
 
 The default way to build an engine: write the DSP **and** the `IEngine` wrapper directly in C++, with no code generation. It is the most code but the most control, and the only option for engines that are not a pure signal graph - sequencers, sample/SD streaming, dual-deck instruments, custom displays, or wrappers around an existing C++ DSP library.
 
-**Implementations:** [granular](../engines/granular.md) (the full instrument), [delay](../engines/delay.md), [edrums](../engines/edrums.md) (transport-sequenced), [reso](../engines/reso.md) (vendors Mutable Instruments Rings), [passthrough](../engines/passthrough.md) (the reference minimum). For the contract, transport, and knob grammar these all share, see [../engines/README.md](../engines/README.md).
+**Implementations:** [granular](../engines/granular.md) (the full instrument), [delay](../engines/delay.md), [edrums](../engines/edrums.md) (transport-sequenced), [reso](../engines/reso.md) (vendors Mutable Instruments Rings), [passthrough](../engines/passthrough.md) (the reference minimum), and the **runtime-compiler engines** [csound](../engines/csound.md) and [chuck](../engines/chuck.md) (vendor a whole audio language/VM; the patch defines the sound — see "Vendoring a runtime VM" below). For the contract, transport, and knob grammar these all share, see [../engines/README.md](../engines/README.md).
 
 ## The shape
 
@@ -41,6 +41,16 @@ When the DSP is an existing C++ library (reso/Rings), colocate it under `src/eng
 
 - **`OPT = -Os` per engine** - a large DSP (Rings ~30 KB) overflows the 186 KB `SRAM_EXEC` at `-O2`; scope `-Os` to that engine's branch so the others stay `-O2`.
 
+## Vendoring a runtime VM (csound, chuck)
+
+[csound](../engines/csound.md) and [chuck](../engines/chuck.md) are the extreme of the above: the vendored "library" is an entire audio **language + runtime compiler/VM**, and the engine is a thin hand-written `IEngine` wrapper that drives it. The **patch** - a `.csd` / `.ck` text loaded from the SD card - defines the sound, so the same firmware plays any program and switches between them live. They are still Native C++ engines (you write the wrapper), but they diverge from the in-binary DSP engines above in three structural ways, all because the runtime is ~1-2 MB of code:
+
+- **QSPI build, not `ENGINE=`.** The runtime's code is far over the 186 KB `SRAM_EXEC` budget, so these are `BOOT_QSPI` images that execute in place from QSPI flash (`alt_qspi*.lds` + a `SCB->VTOR` inject), built via a dedicated `make engine-csound` / `make engine-chuck` target rather than the plain `ENGINE=` path. Code size moves off the binding budget (it lives in 8 MB of flash); the cost is execute-in-place is slower than SRAM, so CPU headroom - not code size - becomes the limit.
+
+- **Own SDRAM heap, not the arena.** A runtime VM mallocs megabytes dynamically (compile, instantiate, free), so instead of placement-new into `ctx.arena` they route the C `malloc` family to a dedicated coalescing SDRAM pool via linker `--wrap` (`chuck_alloc.cpp` / the Csound equivalent over a `.sdram_bss` array), armed after `_hw.Init()`. `ctx.arena` is opted out (`-DSPK_NO_ENGINE_ARENA`). The platform heap stays in SRAM.
+
+- **Live recompile behind the reload gate.** Switching patches recompiles/swaps VM state, which races the audio ISR; both engines gate the live instance out of the audio path during the swap (the engine-agnostic `ReloadGate`) and stream patches from the SD bank (`-DSPK_USE_STREAM`). ChucK additionally keeps one persistent VM and caches compiled programs to bound memory across swaps (ChucK never frees its type system - see [`../dev/chuck-impl.md`](../dev/chuck-impl.md)); Csound destroys + recreates its instance. Internals: [`../dev/csound-impl.md`](../dev/csound-impl.md), [`../dev/chuck-impl.md`](../dev/chuck-impl.md).
+
 ## Registering and building
 
 Add the engine to the build in the usual places (see any engine's "Files" section):
@@ -66,3 +76,5 @@ make engine-myengine            # one-shot: clean + build + flash (device in DFU
 - **edrums** - subscribes to transport ticks, sequences four voices, `set_config` routing, two-drums-per-deck.
 
 - **reso** - PIMPL, vendored Rings, arena placement-new, `-Os`, block chunking, `CapAux` model select.
+
+- **csound / chuck** - the runtime-compiler pattern: a thin wrapper around a vendored audio VM, QSPI build, own SDRAM `--wrap` pool, SD patch bank + live recompile behind the `ReloadGate`. The patch defines the sound.

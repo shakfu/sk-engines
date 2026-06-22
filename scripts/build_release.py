@@ -47,6 +47,7 @@ from pathlib import Path
 # Curated "mature" engine set: the engines stable enough to publish prebuilt. Others stay
 # buildable but unlisted. Override per-invocation with args or the RELEASE_ENGINES env var.
 DEFAULT_ENGINES = [
+    "chuck",
     "csound",
     "delay",
     "dfilter",

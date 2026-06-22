@@ -476,10 +476,128 @@ the Alt+PITCH selector, document the available UGen set, and write the user-faci
 `docs/engines/chuck.md` + `examples/chuck/` programs (a drone, a bass, a poly MIDI lead — the
 templates that name the platform globals).
 
+**M6 — sample playback: `SndBuf` via a WAV-over-FatFs bridge (PLANNED).** Make `SndBuf` (and the read
+path of `WvIn`/`LiSa`) actually load a `.wav` from the SD card, so patches like `examples/chuck/5.ck`
+play samples instead of compiling-then-exiting on `!buf.ready()`. See the dedicated design section
+["Planned (M6): sample playback"](#planned-m6-sample-playback--sndbuf-via-a-wav-over-fatfs-bridge) below
+for the full scope, the threading argument, and the implementation plan. *Streaming reads (`WvIn` live),
+recording (`WvOut`), and a general newlib→FatFs virtual FS are explicitly out of scope — see that section.*
+
 **Host-testable off-target (no `libchuck`):** the patch bank scan/quantizer, the `ReloadGate`
 handoff, and the MIDI note→global mapping + SPSC ring — exactly the units Csound already host-tests
 (`make -C host test-csound-{patch,reload,midi,alloc}`). Mirror them as `test-chuck-*`. The
 `compileCode`/`run` calls are QSPI-only.
+
+---
+
+## Planned (M6): sample playback — `SndBuf` via a WAV-over-FatFs bridge
+
+**Goal.** Let `SndBuf` load a `.wav` from the SD card and play it, so sample-based patches
+(`examples/chuck/5.ck` is the motivating case) work instead of silently exiting. Today the file UGens
+are present-but-dead: `ugen_stk` is compiled, so `SndBuf` type-checks, but sound-file I/O is stubbed —
+`chuck_posix_stubs.c` defines `sf_open()`→`NULL`, `sf_readf_float()`→`0`, so `buf.ready()` is false and
+the patch hits `me.exit()`. Two layers are missing: the **codec** — libsndfile (`util_sndfile.c`) is
+excluded from the bare-metal source subset (it won't build), and its `sf_*` symbols are stubbed to fail;
+and the **filesystem** — ChucK/libsndfile reach files through POSIX file syscalls, which under
+`--specs=nosys.specs` are not wired to the SD's FatFs. (Both were inherited from the WebChucK no-filesystem
+template the port is modelled on.) This bridge supplies a minimal codec that reads via FatFs directly,
+sidestepping both.
+
+### The governing constraint: ChucK reads files on the audio thread
+
+`SndBuf buf(filename)` performs its read when the **shred executes the constructor**, which is inside
+`run()` — i.e. the audio ISR. That collides head-on with the platform's SD contract (`istreamdeck.h`):
+**FatFs I/O happens on the main loop only; the audio ISR touches only lock-free rings and never blocks.**
+A blocking, ms-scale SD read from inside the 2 ms audio block would overrun, and would race the
+platform's own main-loop FatFs use (Storage, the `.ck` bank, the tape/radio decks — FatFs is not safe
+across the two contexts). So the design must guarantee the actual SD read never happens in the ISR.
+
+**The lever (no new machinery): drive the load on the main loop during the swap.** ChucK time only
+advances when we call `run()`, and a shred runs all of its non-time-advancing code in a single compute
+tick (up to the first `... => now`). `do_reload` already calls `_ck->run(_inbuf,_outbuf,1)` **on the
+main loop, gate held**, to flush `removeAllShreds`. If — after `load_program()` sporks the new patch —
+we drive one more short `run()` there, the new shred executes its top-level code (including the `SndBuf`
+constructor, hence the FatFs read) **on the main loop**, where FatFs is legal and serialized against
+Storage. Playback thereafter reads from the in-RAM `SndBuf` entirely in the ISR, with zero file I/O.
+This makes whole-file `SndBuf` loads fit the platform contract with no async handshake.
+
+### Architecture
+
+1. **Real `sf_*` in a firmware TU (overrides the archive stubs, no `libchuck` rebuild).** The `sf_*`
+   stubs live in `chuck_posix_stubs.c`, folded into `libchuck.a`. A new firmware-side TU
+   `src/engine/chuck/chuck_sndfile.cpp` that *defines* the real `sf_open`/`sf_seek`/`sf_readf_float`/
+   `sf_close`/`sf_strerror`/… resolves those symbols from the firmware object, so the linker never pulls
+   the archive stubs (standard archive resolution — strong firmware symbol wins; no weak symbols, no
+   rebuild). Being firmware-side C++, it can call FatFs / the platform freely. Compiles only into the
+   `ENGINE=chuck` target.
+
+2. **Read via FatFs, not POSIX.** Implement the `sf_*` subset against FatFs (`f_open`/`f_read`/`f_lseek`/
+   `f_close`) directly — the same layer `chuck_patch.h`/`IStreamDeck` already use — so we never touch the
+   un-wired newlib file syscalls. Paths are relative (no leading slash), same FatFs gotcha as the bank.
+
+3. **Main-loop preload tick in `do_reload`.** After `load_program()`, drive a short `run()` on the main
+   loop (gate held) so the new shred's `SndBuf` constructor executes there. Add a one-shot guard so a
+   patch whose top-level code never blocks on time can't spin (cap the preload to a small frame budget).
+
+### `sf_*` subset to implement (read side only)
+
+ChucK's `SndBuf` uses the libsndfile read API. The minimum to satisfy it:
+- `SNDFILE* sf_open(const char* path, int mode, SF_INFO* info)` — `mode == SFM_READ` only; `f_open` +
+  parse the WAV header; fill `info->frames/samplerate/channels/format`; return an opaque handle (a small
+  heap struct holding the `FIL`, data-chunk offset/length, format, channel count) or `NULL` on any error.
+- `sf_count_t sf_seek(SNDFILE*, sf_count_t frames, int whence)` — `f_lseek` into the data chunk
+  (`data_off + frames*frame_bytes`); SEEK_SET/CUR/END.
+- `sf_count_t sf_readf_float(SNDFILE*, float*, sf_count_t frames)` — `f_read` raw frames, convert to
+  interleaved float in [-1,1], return frames read. (`sf_readf_double` similar if the build needs it.)
+- `int sf_close(SNDFILE*)` — `f_close` + free the handle.
+- `const char* sf_strerror(SNDFILE*)`, and whatever else `SndBuf`/`util_sndfile` reference at link
+  (audit the undefined-symbol set after dropping the stubs; e.g. `sf_open_fd`, `sf_command` may need
+  benign stubs that still fail).
+
+**WAV parsing (minimal, robust).** RIFF/`WAVE`; walk chunks for `fmt ` and `data` (don't assume order or
+adjacency; skip unknown chunks via their size; handle the pad byte on odd sizes). Support
+`WAVE_FORMAT_PCM` 16-bit and 24-bit and `WAVE_FORMAT_IEEE_FLOAT` 32-bit, mono and stereo. Convert PCM→
+float (`/32768`, sign-extend 24-bit). Reject (return `NULL`) anything else (compressed, >2ch, exotic
+bit-depths) — the patch then sees `!buf.ready()` and exits gracefully, same as today.
+
+### Memory & limits
+
+- `SndBuf` loads the **whole file into the SDRAM pool** (the 40 MB `--wrap` pool, shared with the VM and
+  the compile-once cache). Sample length is therefore bounded by pool headroom — a multi-MB sample is
+  fine; a multi-minute stereo file is not. Document the practical cap; consider a hard size guard in
+  `sf_open` that fails large files rather than exhausting the pool mid-load.
+- The bridge is read-only and one-shot-per-shred. It does **not** make ChucK's heap or file access
+  general — only the `SndBuf`/`WvIn`/`LiSa` *read* path.
+
+### Explicitly out of scope (and why)
+
+- **Streaming reads (`WvIn` reading continuously during playback).** Its reads land on arbitrary later
+  ISR ticks, not just at shred start, so the main-loop-preload trick doesn't cover it. The correct way to
+  stream from SD is through `IStreamDeck`'s deck rings (what tape/radio use), which is a much larger
+  restructuring — defer.
+- **Recording (`WvOut`).** Write side + continuous ISR I/O; same reason. Defer.
+- **A general newlib→FatFs virtual FS.** It would make any libc file call hit the SD, but (a) it doesn't
+  decode audio (SndBuf still needs a codec) and (b) it *invites* ISR file I/O, the exact thing the
+  platform forbids. Skip it; the targeted `sf_*` bridge is safer and sufficient.
+
+### Validation
+
+- **Host test (`host/test_chuck_sndfile.cpp`, `make -C host test-chuck-sndfile`).** The WAV parser +
+  PCM→float conversion are pure and `libchuck`-free: feed crafted byte buffers (PCM16/24, float32,
+  mono/stereo, chunks in odd order, a truncated/garbage header, an unsupported format) through the parse
+  + decode and assert frame counts, sample values, and graceful rejection. Factor the parser so the
+  FatFs `f_read` is behind a tiny "read N bytes" seam the host test fills from memory.
+- **On target:** flash with a card holding `chuck/5.ck` + `samples/snare.wav`; confirm it plays, confirm
+  the load happens without a dropout/overrun (it runs on the main loop), and confirm an
+  unsupported/missing file falls back to silence cleanly (not a hang).
+
+### Files
+
+- `src/engine/chuck/chuck_sndfile.cpp` — **new (M6).** Real `sf_*` over FatFs (overrides the
+  `libchuck.a` stubs); minimal WAV parse + PCM→float; the "read N bytes" seam for host testing.
+- `src/engine/chuck/chuck_engine.cpp` — `do_reload` gains the main-loop preload tick after
+  `load_program()`.
+- `host/test_chuck_sndfile.cpp` + the `test-chuck-sndfile` target — the parser/decoder unit test.
 
 ---
 

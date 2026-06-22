@@ -1,25 +1,17 @@
-// sound file to load; me.dir() returns location of this file
-me.dir() + "samples/snare.wav" => string filename;
-// if there is argument, use it as the filename
-if( me.args() ) me.arg(0) => filename;
+// basic FM synthesis using SinOsc (2 => .sync; also see fm3.ck)
 
-// the patch
-SndBuf buf(filename) => dac;
-// can also load the file this way
-// filename => buf.read;
+// modulator to carrier
+SinOsc m => SinOsc c => dac;
 
-// check if file successfully loaded
-if( !buf.ready() ) me.exit();
+// carrier frequency
+440 => c.freq;
+// modulator frequency
+110 => m.freq;
+// index of modulation
+300 => m.gain;
 
-// time loop
-while( true )
-{
-    // set playback position to beginning
-    0 => buf.pos;
-    // randomize gain
-    Math.random2f(.25,.5) => buf.gain;
-    // randomize rate
-    Math.random2f(.5,1.5) => buf.rate;
-    // advance time
-    100::ms => now;
-}
+// phase modulation is FM synthesis (sync is 2)
+2 => c.sync;
+
+// time-loop
+while( true ) 1::second => now;

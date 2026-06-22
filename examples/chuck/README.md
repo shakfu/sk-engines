@@ -16,8 +16,9 @@ Copy the files into a `chuck/` folder at the **root of the SD card**, keeping th
 
 Boot the unit (with the `chuck` firmware flashed): it auto-loads the lowest-numbered patch. **Hold Alt
 and turn PITCH** to scroll the selector (a dot per patch around the rings); **release** to switch live
-(the engine `removeAllShreds()` + recompiles). The centre mode LED is cyan for an SD patch, white for
-the built-in.
+(the engine swaps the patch inside one persistent VM — compiled the first time it's selected, then cached,
+so later switches are instant and memory stays flat). The centre mode LED is cyan for an SD patch, white
+for the built-in.
 
 - `0.ck` — clean two-saw "fifth" drone (calm baseline, knob-controlled).
 - `1.ck` — fat detuned super-saw with a sub-octave (obviously different, for testing live switching).

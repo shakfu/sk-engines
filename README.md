@@ -36,6 +36,8 @@ Current engines include:
 
 14. [csound](docs/engines/csound.md): a full [Csound](https://csound.com) 7 instance as a synth — the **patch** (a `.csd` orchestra) defines the sound. Load orchestras from the SD card and switch between them live with Alt+PITCH, and play them over MIDI. Unlike the other engines it is a **QSPI build** (Csound's ~2 MB of code is too big for SRAM) and needs a one-time `libcsound.a` cross-build (`scripts/fetch_csound.sh`)
 
+15. [chuck](docs/engines/chuck.md): the [ChucK](https://chuck.stanford.edu) language + VM as a synth — the **patch** (a `.ck` program) defines the sound, with strongly-timed concurrent voices. Load programs from the SD card and switch between them live with Alt+PITCH (memory-stable: each patch compiles once, then switches are instant). Like csound it is a **QSPI build** with a one-time `libchuck.a` cross-build (`scripts/fetch_chuck.sh`); MIDI is planned
+
 Engines can be authored in three ways:
 
 1. Using [C++](docs/engine-types/cpp.md) against `IEngine`
@@ -101,7 +103,9 @@ The firmware is a fixed hardware/UI **platform** that hosts a swappable DSP **en
 
 - `make -j8 ENGINE=passthrough` — a minimal stereo-passthrough variant.
 
-- `make engine-csound` — a full **[Csound](https://csound.com) 7** synth, where the **patch defines the sound**: load `.csd` orchestras from the SD card, switch between them live with Alt+PITCH, and play over MIDI. This one is special — a **QSPI** build (Csound's ~2 MB of code is too big for SRAM, so it executes from flash), built with its own one-shot target rather than `ENGINE=`. It needs a one-time `scripts/fetch_csound.sh` to fetch + cross-build `libcsound.a`. See [`docs/engines/csound.md`](docs/engines/csound.md).
+- `make engine-csound` — a full **[Csound](https://csound.com) 7** synth, where the **patch defines the sound**: load `.csd` orchestras from the SD card, switch between them live with Alt+PITCH, and play over MIDI. This one is special — a **QSPI** build (Csound's ~2 MB of code is too big for SRAM, so it executes from flash), built with its own one-shot target rather than `ENGINE=`. It needs a one-time `scripts/fetch_csound.sh` to fetch + cross-build `libcsound.a`. See [`docs/engines/csound.md`](docs/engines/csound.md). Ready-to-copy example orchestras are in [`examples/csound/`](examples/csound/).
+
+- `make engine-chuck` — the **[ChucK](https://chuck.stanford.edu)** language + VM as a synth, where the **patch defines the sound**: load `.ck` programs from the SD card and switch between them live with Alt+PITCH. Like csound it is a **QSPI** build with its own one-shot target and a one-time `scripts/fetch_chuck.sh` to cross-build `libchuck.a`. Patches compile once and are cached, so live switching is instant and memory-stable. See [`docs/engines/chuck.md`](docs/engines/chuck.md); example programs in [`examples/chuck/`](examples/chuck/).
 
 Switching `ENGINE` does not require `make clean`. Other build flags: `DEBUG=1` (enables UART logging) and `LOFI_INT16=1` (16-bit loop buffer, doubling record time). See [`docs/architecture.md`](docs/architecture.md) for the platform/engine design, [`docs/engines/`](docs/engines/) for a per-engine reference, and [`docs/engine-types/`](docs/engine-types/) for the three ways to author an engine (native C++, Faust, gen~).
 
@@ -129,7 +133,7 @@ The bootloader version used in this project enables USB DFU firmware updating fr
 
 `make program-dfu` flashes whatever is currently in `build/` (it does not rebuild). To flash a non-default engine, build it first in the same step, e.g. `make ENGINE=passthrough && make program-dfu`.
 
-For convenience there are one-shot targets that **clean + build + flash** a variant (put the device in DFU mode first, as in step 3): `make engine-granular` (the looper), `make engine-delay`, `make engine-edrums`, `make engine-reso`, `make engine-tape`, `make engine-shuttle`, `make engine-radio`, `make engine-reverb`, `make engine-chorus`, `make engine-dfilter`, `make engine-voice`, `make engine-gigaverb`, and `make engine-passthrough`. (`make engine-csound` also exists but is a QSPI build with a one-time `libcsound.a` prerequisite — see [`docs/engines/csound.md`](docs/engines/csound.md).)
+For convenience there are one-shot targets that **clean + build + flash** a variant (put the device in DFU mode first, as in step 3): `make engine-granular` (the looper), `make engine-delay`, `make engine-edrums`, `make engine-reso`, `make engine-tape`, `make engine-shuttle`, `make engine-radio`, `make engine-reverb`, `make engine-chorus`, `make engine-dfilter`, `make engine-voice`, `make engine-gigaverb`, and `make engine-passthrough`. (`make engine-csound` and `make engine-chuck` also exist but are QSPI builds with a one-time `libcsound.a` / `libchuck.a` prerequisite — see [`docs/engines/csound.md`](docs/engines/csound.md), [`docs/engines/chuck.md`](docs/engines/chuck.md).)
 
 Once finished, the device will automatically boot the new firmware. This can "brick" (temporarily) the device and require reinstallation of either the bootloader, the firmware binary, or both.
 

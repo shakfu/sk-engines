@@ -4,7 +4,7 @@ Spotykach hosts one swappable DSP **engine** behind a fixed platform (see `../en
 
 | Method | You write | Codegen | Examples | Doc |
 |---|---|---|---|---|
-| **Native C++** | the DSP *and* the `IEngine` wrapper, by hand | none | granular, delay, edrums, reso, passthrough | [cpp.md](cpp.md) |
+| **Native C++** | the DSP *and* the `IEngine` wrapper, by hand | none | granular, delay, edrums, reso, passthrough; csound + chuck (runtime VMs, QSPI) | [cpp.md](cpp.md) |
 | **Faust (cyfaust)** | DSP in a `.dsp`; the `IEngine` wrapper + knob binds by hand | `make faust-kernels` -> `faust_kernel_*.h` | reverb, tape (tapefx) | [faust.md](faust.md) |
 | **gen~ (gen-dsp)** | a Max/MSP `gen~` patch + a small JSON manifest (the knob map); no C++ | `make gen-engine` -> a whole engine dir | gigaverb | [gen.md](gen.md) |
 
@@ -20,7 +20,7 @@ All three end at the same place: a class implementing `IEngine` (`init`/`prepare
 
 ## Choosing a method
 
-- **Native C++** - maximum control and the only option for engines that are not a pure signal graph: sequencers (edrums subscribes to the transport), sample/SD streaming (tape), dual-deck instruments, custom displays, or vendoring an existing C++ DSP library (reso wraps Mutable Instruments Rings). Every capability-rich engine is native. Most code to write; no generator can express these.
+- **Native C++** - maximum control and the only option for engines that are not a pure signal graph: sequencers (edrums subscribes to the transport), sample/SD streaming (tape), dual-deck instruments, custom displays, or vendoring an existing C++ DSP library (reso wraps Mutable Instruments Rings). Its extreme is the **runtime-compiler engine**: vendoring a whole audio language/VM so the *patch* (not the firmware) defines the sound - csound and chuck, which run from QSPI flash with their own SDRAM heap and an SD patch bank (see [cpp.md](cpp.md) "Vendoring a runtime VM"). Every capability-rich engine is native. Most code to write; no generator can express these.
 
 - **Faust (cyfaust)** - closed-form signal-processing DSP you would rather write declaratively, especially with several interchangeable algorithms (reverb ships a plate + a hall). You still hand-write the wrapper, so you keep full control of knob mapping, selection, and display. The generated kernel is pure DSP; you bind it.
 
