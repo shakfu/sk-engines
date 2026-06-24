@@ -89,6 +89,23 @@ else
 fi
 [ -f "$core/chuck.h" ] || die "$core/chuck.h missing - $tp does not look like a ChucK source tree"
 
+# --- 1b) Daisy MIDI patch ----------------------------------------------------------------------
+# Re-introduce ChucK's MidiIn/MidiOut device classes over the UART: strip midiio_rtmidi's RtMidi
+# backend (no OS MIDI API / callback thread on bare metal; rtmidi.cpp is not compiled) and add
+# MidiInManager::inject() so the host feeds bytes into the VM (a shred's `min => now` wakes via the
+# existing per-VM event buffer). Pairs with dropping __DISABLE_MIDI__ from DEFS above. Idempotent:
+# detect the already-applied marker so re-runs (source kept) don't double-apply. See
+# docs/dev/chuck-midi-in-porting.md. Pinned to CHUCK_REF; a ref bump may require refreshing the patch.
+midi_patch="$repo_root/scripts/patches/midi_daisy.patch"
+[ -f "$midi_patch" ] || die "missing $midi_patch (needed to re-enable ChucK MidiIn on the Daisy build)"
+if grep -q "MidiInManager::inject" "$core/midiio_rtmidi.cpp" 2>/dev/null; then
+    echo "==> Daisy MIDI patch already applied (skipping)"
+else
+    echo "==> applying Daisy MIDI patch -> $core"
+    patch -p1 -d "$core" < "$midi_patch" \
+        || die "failed to apply $midi_patch (CHUCK_REF=$CHUCK_REF may have drifted from the patch)"
+fi
+
 # --- 2) shim sysroot + prelude (the bare-metal port surface) -----------------------------------
 # ChucK's core #includes a hosted POSIX userland that newlib lacks. We satisfy the *includes* with
 # minimal shim headers and the *symbols* with the stubs TU below. The prelude is force-included
@@ -271,7 +288,7 @@ MCU="-mcpu=cortex-m7 -mthumb -mfpu=fpv5-d16 -mfloat-abi=hard"
 #   CPU_IS_LITTLE_ENDIAN / sndfile count types: satisfy the vendored util_sndfile.h (we stub sf_*).
 DEFS="-D__PLATFORM_LINUX__ -D__USE_CHUCK_YACC__ \
  -DCPU_IS_LITTLE_ENDIAN=1 -DCPU_IS_BIG_ENDIAN=0 -DTYPEOF_SF_COUNT_T=__INT64_TYPE__ -DSIZEOF_SF_COUNT_T=8 \
- -D__DISABLE_MIDI__ -D__DISABLE_WATCHDOG__ -D__DISABLE_NETWORK__ -D__DISABLE_OTF_SERVER__ \
+ -D__DISABLE_WATCHDOG__ -D__DISABLE_NETWORK__ -D__DISABLE_OTF_SERVER__ \
  -D__ALTER_HID__ -D__DISABLE_HID__ -D__DISABLE_SERIAL__ -D__DISABLE_ASYNCH_IO__ -D__DISABLE_THREADS__ \
  -D__DISABLE_KBHIT__ -D__DISABLE_PROMPTER__ -D__DISABLE_SHELL__ -D__OLDSCHOOL_RANDOM__"
 INC="-I$core -I$shim"
@@ -280,9 +297,13 @@ CXXFLAGS="$MCU -Os -std=c++17 -fdata-sections -ffunction-sections $DEFS $INC $PR
 CFLAGS="$MCU -Os -fdata-sections -ffunction-sections $DEFS $INC"
 
 # The compiled source subset = WebChucK's EMSCRIPTENSRCS, minus host-web/chuck_emscripten.cpp (we
-# provide our own host glue) and minus util_sndfile.c (won't build bare-metal; sf_* stubbed instead).
+# provide our own host glue) and minus util_sndfile.c (won't build bare-metal; sf_* stubbed instead),
+# PLUS midiio_rtmidi (the ChucK MidiIn/MidiOut device classes). MIDI is no longer __DISABLE_MIDI__'d:
+# the patch step below strips midiio_rtmidi's RtMidi backend (no OS MIDI API / callback thread on bare
+# metal) and adds MidiInManager::inject(), so the host feeds the UART into the VM. rtmidi.cpp itself is
+# deliberately NOT compiled (the 166 KB OS backend stays out). See docs/dev/chuck-midi-in-porting.md.
 CPP_SRCS="chuck chuck_absyn chuck_carrier chuck_compile chuck_dl chuck_emit chuck_errmsg chuck_frame \
- chuck_globals chuck_instr chuck_io chuck_lang chuck_oo chuck_parse chuck_scan chuck_stats chuck_symbol \
+ chuck_globals chuck_instr chuck_io chuck_lang chuck_oo chuck_parse chuck_scan chuck_stats chuck_symbol midiio_rtmidi \
  chuck_table chuck_type chuck_ugen chuck_vm uana_extract uana_xform ugen_filter ugen_osc ugen_stk \
  ugen_xxx ulib_ai ulib_doc ulib_machine ulib_math ulib_std util_buffers util_math util_platforms util_string"
 C_SRCS="util_raw util_xforms chuck_yacc"

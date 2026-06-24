@@ -7,6 +7,7 @@
 
 #include "engine/chuck/chuck_engine.h"
 #include "engine/chuck/chuck_patch.h"   // chuck_path / scan_chuck_patches / aux_to_index / read_program
+#include "config.h"                     // Config::dynamic() midi_channel_a/b for the channel->deck map
 
 // NOTE: we deliberately do NOT pull in the shim's ck_prelude.h here. That force-include exists so
 // ChucK's *source* (compiled into libchuck.a) finds the POSIX functions it calls without including
@@ -472,6 +473,21 @@ void ChuckEngine::process(const float* const* in, float** out, size_t size)
         _inbuf[i * 2 + 1] = ir ? ir[i] : 0.f;
     }
 
+    // Deliver this block's MIDI notes to the re-introduced ChucK MidiIn device (virtual UART = device 0)
+    // here, on the run() thread, right before run() - so a shred blocked on `min => now` is woken by this
+    // run() (no ChucK threads on this build; the wake rides the per-VM event buffer that ck->run()
+    // services). NoteOn only with a fixed velocity (the note ring carries none); status NoteOn|deck lets
+    // a patch tell the decks apart. A patch using `MidiIn min; min.recv(msg);` sees these. See
+    // docs/dev/chuck-midi-in-porting.md.
+    {
+        MidiNoteEvent ev;
+        while (_notes.pop(ev)) {
+            const int d = (ev.deck == 0) ? 0 : 1;
+            MidiInManager::inject(0, static_cast<t_CKBYTE>(MIDI_NOTEON | d),
+                                  static_cast<t_CKBYTE>(ev.note), static_cast<t_CKBYTE>(100));
+        }
+    }
+
     // One VM compute call: consumes _inbuf, advances every shred sample-accurately across n frames,
     // fills _outbuf interleaved (numFrames * _out_ch). SAMPLE == float, so no double marshalling.
     const uint32_t run0 = DWT->CYCCNT;
@@ -563,6 +579,24 @@ void ChuckEngine::set_aux_active(DeckRef::Ref d, bool held)
         if (_sel_preview != _sel) { _reload_target = _sel_preview; _reload_pending = true; }
     }
     _aux_held = held;
+}
+
+DeckRef::Ref ChuckEngine::handle_midi_note(uint8_t channel, uint8_t note)
+{
+    if (!_gate.current()) return DeckRef::Count;   // no VM yet -> not playable; tell the UI not to flash
+
+    // Channel -> deck, matching the platform's configured MIDI channels (same map as CsoundEngine).
+    const Config& c = Config::dynamic();
+    DeckRef::Ref ref = DeckRef::Count;
+    if      (channel == c.midi_channel_a()) ref = DeckRef::A;
+    else if (channel == c.midi_channel_b()) ref = DeckRef::B;
+    if (ref == DeckRef::Count) return DeckRef::Count;
+
+    // Main loop: only enqueue. process() (the audio ISR) drains and injects into the ChucK MidiIn device
+    // right before run(), so the buffer fill + event wake happen on the run() thread. A full ring drops
+    // the note; still return the deck so the gate-in flashes (the NoteOn was received).
+    _notes.push({ note, static_cast<uint8_t>(ref == DeckRef::A ? 0 : 1) });
+    return ref;
 }
 
 void ChuckEngine::render(DisplayModel& m)

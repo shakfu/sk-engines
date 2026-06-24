@@ -1,0 +1,403 @@
+--- a/midiio_rtmidi.h
++++ b/midiio_rtmidi.h
+@@ -35,9 +35,11 @@
+ #define __MIDI_IO_H__
+ 
+ #include "chuck_def.h"
+-#ifndef __DISABLE_MIDI__
+-#include "rtmidi.h"
+-#endif
++// Daisy bare-metal port: the RtMidi backend (rtmidi.cpp) is NOT compiled - there is no OS MIDI API
++// and no callback thread on bare metal. MidiIn/MidiOut keep their RtMidiIn*/RtMidiOut* members as
++// opaque forward-declared pointers that are never dereferenced; the host feeds bytes via
++// MidiInManager::inject(). So rtmidi.h is intentionally NOT included even with MIDI enabled.
++// (Upstream included it here under #ifndef __DISABLE_MIDI__.) See docs/dev/chuck-midi-in.md.
+ #include "util_buffers.h"
+ 
+ 
+@@ -70,9 +72,14 @@
+ 
+ 
+ 
+-// forward reference
+-class RtMidiOut;
+-class RtMidiIn;
++// Daisy: minimal stand-ins for RtMidi's device classes (the real rtmidi.cpp is NOT compiled - no OS
++// MIDI API on bare metal). Upstream forward-declared RtMidiIn/RtMidiOut here and used the full classes
++// from rtmidi.h. On this build the only method ever called is getPortName() (by MidiIn.name() /
++// MidiOut.name() in chuck_io.cpp); all actual input routes through MidiInManager::inject(). A single
++// static instance backs the virtual UART device. See docs/dev/chuck-midi-in.md.
++#include <string>
++class RtMidiOut { public: std::string getPortName( unsigned int /*port*/ = 0 ) { return std::string(); } };
++class RtMidiIn  { public: std::string getPortName( unsigned int /*port*/ = 0 ) { return std::string( "UART (virtual)" ); } };
+ 
+ 
+ 
+@@ -186,6 +193,13 @@
+ 
+     static void cb_midi_input( double deltatime, std::vector<unsigned char> * msg,
+                                void *userData );
++
++    // Daisy: feed one parsed MIDI message into device `device_num`'s buffers from the host (no RtMidi
++    // backend / callback thread on bare metal). Reuses cb_midi_input -> CBufferAdvance::put, which both
++    // fills the per-VM buffer that MidiIn::recv() drains AND queues the wake on the VM event buffer, so
++    // a shred blocked on `min => now` resumes. Call from the same thread as the VM run() (the audio ISR).
++    static void inject( t_CKINT device_num, t_CKBYTE status, t_CKBYTE data1, t_CKBYTE data2 );
++
+ protected:
+     MidiInManager();
+     ~MidiInManager();
+--- a/midiio_rtmidi.cpp
++++ b/midiio_rtmidi.cpp
+@@ -54,9 +54,13 @@
+ std::vector<RtMidiOut *> MidiOutManager::the_mouts;
+ std::map< Chuck_VM *, CBufferSimple * > MidiInManager::m_event_buffers;
+ 
++// Daisy: a single stand-in device that backs the virtual UART (no RtMidi). the_mins[device] points at
++// this so MidiIn::min is a valid object for MidiIn.name(); it performs no real I/O. See inject().
++static RtMidiIn g_daisy_virtual_min;
+ 
+ 
+ 
++
+ //-----------------------------------------------------------------------------
+ // name: MidiOut()
+ // desc: constructor
+@@ -115,7 +119,8 @@
+     m_msg.push_back( status );
+     m_msg.push_back( data1 );
+ 
+-    mout->sendMessage( &m_msg );
++    // Daisy: no RtMidi backend (MidiOut is not wired to the UART). Unreachable - m_valid is never
++    // TRUE because MidiOutManager::open() always fails on this build. See docs/dev/chuck-midi-in.md.
+ 
+     return 2;
+ }
+@@ -138,7 +143,7 @@
+     m_msg.push_back( data1 );
+     m_msg.push_back( data2 );
+ 
+-    mout->sendMessage( &m_msg );
++    // Daisy: no RtMidi backend - unreachable (m_valid never TRUE). See docs/dev/chuck-midi-in.md.
+ 
+     return 3;
+ }
+@@ -161,7 +166,7 @@
+     m_msg.push_back( msg->data[1] );
+     m_msg.push_back( msg->data[2] );
+ 
+-    mout->sendMessage( &m_msg );
++    // Daisy: no RtMidi backend - unreachable (m_valid never TRUE). See docs/dev/chuck-midi-in.md.
+ 
+     return 3;
+ }
+@@ -395,6 +400,8 @@
+ 
+ t_CKBOOL MidiInManager::open( MidiIn * min, Chuck_VM * vm, t_CKINT device_num )
+ {
++    if( device_num < 0 ) return FALSE;
++
+     // see if port not already open
+     if( device_num >= (t_CKINT)the_mins.capacity() || !the_mins[device_num] )
+     {
+@@ -403,27 +410,9 @@
+             m_event_buffers[vm] = vm->create_event_buffer();
+         }
+ 
+-        // allocate
+-        RtMidiIn * rtmin = new RtMidiIn;
+-        try {
+-            rtmin->openPort( (unsigned int) device_num );
+-            // callback, userData. first cast device num to unsigned int, then to void *
+-            rtmin->setCallback( cb_midi_input, (void *) ( (t_CKUINT)device_num ) );
+-        } catch( RtMidiError & err ) {
+-            if( !min->m_suppress_output )
+-            {
+-                // print it
+-                EM_error2( 0, "MidiIn: couldn't open MIDI port %i...", device_num );
+-                err.getMessage();
+-                // const char * e = err.getMessage().c_str();
+-                // EM_error2( 0, "...(%s)", err.getMessage().c_str() );
+-            }
+-            return FALSE;
+-        }
+-
+-        // clear ignore types | 1.4.1.0 (mariobuoninfante)
+-        rtmin->ignoreTypes( false, false, false );
+-
++        // Daisy: no RtMidi backend. Register a single virtual UART device - the host drives bytes in
++        // via MidiInManager::inject() instead of an RtMidi callback thread. Mark the slot open with a
++        // non-null sentinel (min->min is never dereferenced; only used as an "is open" flag).
+         // resize?
+         if( device_num >= (t_CKINT)the_mins.capacity() )
+         {
+@@ -433,8 +422,8 @@
+             the_bufs.resize( size );
+         }
+ 
+-        // put rtmin in vector for future generations
+-        the_mins[device_num] = rtmin;
++        // mark the device open: point at the shared stand-in (no real RtMidiIn instance on bare metal)
++        the_mins[device_num] = &g_daisy_virtual_min;
+     }
+     // if it doesn't exist already, allocate the buffer and put it in the_bufs
+     if( !add_vm( vm, device_num, min->m_suppress_output ) )
+@@ -463,59 +452,9 @@
+ 
+ t_CKBOOL MidiInManager::open( MidiIn * min, Chuck_VM * vm, const std::string & name )
+ {
+-    t_CKINT device_num = -1;
+-
+-    try
+-    {
+-        RtMidiIn * rtmin = new RtMidiIn;
+-
+-        t_CKINT count = rtmin->getPortCount();
+-        for(t_CKINT i = 0; i < count; i++)
+-        {
+-            std::string port_name = rtmin->getPortName( (unsigned int) i );
+-            if( port_name == name)
+-            {
+-                device_num = i;
+-                break;
+-            }
+-        }
+-
+-        if( device_num == -1 )
+-        {
+-            // search by substring
+-            for(t_CKINT i = 0; i < count; i++)
+-            {
+-                std::string port_name = rtmin->getPortName( (unsigned int) i );
+-                if( port_name.find( name ) != std::string::npos )
+-                {
+-                    device_num = i;
+-                    break;
+-                }
+-            }
+-        }
+-    }
+-    catch( RtMidiError & err )
+-    {
+-        if( !min->m_suppress_output )
+-        {
+-            // print it
+-            EM_error2( 0, "MidiOut: error locating MIDI port named %s", name.c_str() );
+-            err.getMessage();
+-            // const char * e = err.getMessage().c_str();
+-            // EM_error2( 0, "...(%s)", err.getMessage().c_str() );
+-        }
+-        return FALSE;
+-    }
+-
+-    if(device_num == -1)
+-    {
+-        EM_error2( 0, "MidiOut: error locating MIDI port named %s", name.c_str() );
+-        return FALSE;
+-    }
+-
+-    t_CKBOOL result = open( min, vm, device_num );
+-
+-    return result;
++    // Daisy: a single virtual UART device, no enumeration by name. Map any name to device 0.
++    (void)name;
++    return open( min, vm, (t_CKINT)0 );
+ }
+ 
+ 
+@@ -675,35 +614,33 @@
+ 
+ 
+ //-----------------------------------------------------------------------------
+-// name: probeMidiIn()
+-// desc: ...
++// name: inject()
++// desc: Daisy - host-driven MIDI input (replaces the RtMidi callback thread). Build a 3-byte message
++//       and route it through cb_midi_input, which fills every registered VM's buffer and queues the
++//       wake. Call from the VM run() thread (the audio ISR) so it can't race a shred's min.open().
+ //-----------------------------------------------------------------------------
+-void probeMidiIn()
++void MidiInManager::inject( t_CKINT device_num, t_CKBYTE status, t_CKBYTE data1, t_CKBYTE data2 )
+ {
+-    RtMidiIn * min = NULL;
++    std::vector<unsigned char> m;
++    m.push_back( (unsigned char)status );
++    m.push_back( (unsigned char)data1 );
++    m.push_back( (unsigned char)data2 );
++    cb_midi_input( 0.0, &m, (void *)( (t_CKUINT)device_num ) );
++}
+ 
+-    try {
+-        min = new RtMidiIn;;
+-    } catch( RtMidiError & err ) {
+-        EM_error2b( 0, "%s", err.getMessage().c_str() );
+-        return;
+-    }
+ 
+-    // get num
+-    t_CKUINT num = min->getPortCount();
+-    EM_print2blue( "------( %i MIDI input%s  )------", num, num > 1 ? "s" : "" );
+-    EM_reset_msg();
+ 
+-    std::string s;
+-    for( t_CKUINT i = 0; i < num; i++ )
+-    {
+-        try { s = min->getPortName( (unsigned int) i ); }
+-        catch( RtMidiError & err )
+-        { err.printMessage(); return; }
+-        EM_error2b( 0, "    [%i] : \"%s\"", i, s.c_str() );
+ 
+-        EM_reset_msg();
+-    }
++//-----------------------------------------------------------------------------
++// name: probeMidiIn()
++// desc: ...
++//-----------------------------------------------------------------------------
++void probeMidiIn()
++{
++    // Daisy: no RtMidi backend / device enumeration. A single virtual UART device (device 0) is
++    // available; bytes arrive via MidiInManager::inject(). See docs/dev/chuck-midi-in.md.
++    EM_print2blue( "------( 1 MIDI input : UART (virtual) )------" );
++    EM_reset_msg();
+ }
+ 
+ 
+@@ -715,26 +652,9 @@
+ //-----------------------------------------------------------------------------
+ void probeMidiOut()
+ {
+-    RtMidiOut * mout =  NULL;
+-
+-    try {
+-        mout = new RtMidiOut;
+-    } catch( RtMidiError & err ) {
+-        EM_error2b( 0, "%s", err.getMessage().c_str() );
+-        return;
+-    }
+-
+-    // get num
+-    t_CKUINT num = mout->getPortCount();
+-    EM_print2blue( "------( %i MIDI output%s )-----", num, num > 1 ? "s" : "" );
+-    std::string s;
+-    for( t_CKUINT i = 0; i < num; i++ )
+-    {
+-        try { s = mout->getPortName( (unsigned int) i ); }
+-        catch( RtMidiError & err )
+-        { err.printMessage(); return; }
+-        EM_error2b( 0, "    [%i] : \"%s\"", i, s.c_str() );
+-    }
++    // Daisy: MidiOut is not wired to the UART on this build (no RtMidi backend). No output devices.
++    EM_print2blue( "------( 0 MIDI outputs )-----" );
++    EM_reset_msg();
+ }
+ 
+ 
+@@ -752,100 +672,18 @@
+ 
+ t_CKBOOL MidiOutManager::open( MidiOut * mout, t_CKINT device_num )
+ {
+-    // see if port not already open
+-    if( device_num >= (t_CKINT)the_mouts.capacity() || !the_mouts[device_num] )
+-    {
+-        // allocate
+-        RtMidiOut * rtmout = new RtMidiOut;
+-        try {
+-            rtmout->openPort( (unsigned int) device_num );
+-        } catch( RtMidiError & err ) {
+-            if( !mout->m_suppress_output )
+-            {
+-                // print it
+-                EM_error2( 0, "MidiOut: couldn't open MIDI port %i...", device_num );
+-                err.getMessage();
+-                // const char * e = err.getMessage().c_str();
+-                // EM_error2( 0, "...(%s)", err.getMessage().c_str() );
+-            }
+-            return FALSE;
+-        }
+-
+-        // resize?
+-        if( device_num >= (t_CKINT)the_mouts.capacity() )
+-        {
+-            t_CKINT size = the_mouts.capacity() * 2;
+-            if( device_num >= size ) size = device_num + 1;
+-            the_mouts.resize( size );
+-        }
+-
+-        // put rtmout in vector for future generations
+-        the_mouts[device_num] = rtmout;
+-    }
+-
+-    // found (always) (except when it doesn't get here)
+-    mout->mout = the_mouts[device_num];
+-    mout->m_device_num = (t_CKUINT)device_num;
+-
+-    // done
+-    return TRUE;
++    // Daisy: no RtMidi backend. MidiOut is registered in the type system (so patches that reference it
++    // still compile) but is not wired to the UART - opening always fails, so every MidiOut.send() is a
++    // no-op (guarded by m_valid). Add an inject-style UART writer here if MIDI output is ever needed.
++    (void)mout; (void)device_num;
++    return FALSE;
+ }
+ 
+ t_CKBOOL MidiOutManager::open( MidiOut * mout, const std::string & name )
+ {
+-    t_CKINT device_num = -1;
+-
+-    try
+-    {
+-        RtMidiOut * rtmout = new RtMidiOut;
+-
+-        t_CKINT count = rtmout->getPortCount();
+-        for(t_CKINT i = 0; i < count; i++)
+-        {
+-            std::string port_name = rtmout->getPortName( (unsigned int) i );
+-            if( port_name == name )
+-            {
+-                device_num = i;
+-                break;
+-            }
+-        }
+-
+-        if( device_num == -1 )
+-        {
+-            // search by substring
+-            for(t_CKINT i = 0; i < count; i++)
+-            {
+-                std::string port_name = rtmout->getPortName( (unsigned int) i );
+-                if( port_name.find( name ) != std::string::npos )
+-                {
+-                    device_num = i;
+-                    break;
+-                }
+-            }
+-        }
+-    }
+-    catch( RtMidiError & err )
+-    {
+-        if( !mout->m_suppress_output )
+-        {
+-            // print it
+-            EM_error2( 0, "MidiOut: error locating MIDI port named %s", name.c_str() );
+-            err.getMessage();
+-            // const char * e = err.getMessage().c_str();
+-            // EM_error2( 0, "...(%s)", err.getMessage().c_str() );
+-        }
+-        return FALSE;
+-    }
+-
+-    if(device_num == -1)
+-    {
+-        EM_error2( 0, "MidiOut: error locating MIDI port named %s", name.c_str() );
+-        return FALSE;
+-    }
+-
+-    t_CKBOOL result = open( mout, device_num );
+-
+-    return result;
++    // Daisy: no RtMidi backend / device enumeration (see the device_num overload).
++    (void)mout; (void)name;
++    return FALSE;
+ }
+ 
+ 
