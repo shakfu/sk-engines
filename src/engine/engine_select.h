@@ -22,6 +22,9 @@
 #elif defined(SPK_ENGINE_RESO)
   #include "engine/reso/reso_engine.h"
   namespace spotykach { using ActiveEngine = ResoEngine; }
+#elif defined(SPK_ENGINE_MOSC)
+  #include "engine/mosc/mosc_engine.h"
+  namespace spotykach { using ActiveEngine = MoscEngine; }
 #elif defined(SPK_ENGINE_GRAINCLOUD)
   #include "engine/graincloud/graincloud_engine.h"
   namespace spotykach { using ActiveEngine = GraincloudEngine; }

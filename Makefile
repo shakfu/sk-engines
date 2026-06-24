@@ -13,6 +13,14 @@ endif
 # Swappable DSP engine selected at build time (item 3b). Default = the granular looper.
 # `make ENGINE=passthrough` builds the minimal passthrough variant. The define drives
 # src/engine/engine_select.h (-> ActiveEngine); ENGINE_SOURCES compiles only the chosen engine.
+
+# Shared stmlib (Mutable Instruments support library), trimmed to the union of the reso (Rings) and
+# mosc (Plaits) closures and vendored ONCE here instead of per engine. Both engines add $(STMLIB_INC)
+# to their include scope and pull the three .cc from $(STMLIB_TP). The files are byte-identical to the
+# old per-engine copies (same upstream, unchanged for years), so this is a dedup, not a version bump.
+STMLIB_TP  = src/engine/common/thirdparty/stmlib
+STMLIB_INC = -Isrc/engine/common/thirdparty
+
 ENGINE ?= granular
 ifeq ($(ENGINE), granular)
 C_DEFS += -DSPK_ENGINE_GRANULAR
@@ -74,17 +82,49 @@ C_DEFS += -DM_PI=3.14159265358979323846
 # The Rings DSP (~30K of code+tables) overflows the 186K execution SRAM at -O2. Build reso at -Os to
 # fit; the M7 at 480 MHz has ample headroom (Rings shipped on a 168 MHz F4). Scoped to this engine.
 OPT = -Os
-# reso's DSP is the Mutable Instruments Rings engine + its stmlib support library, vendored (trimmed to
-# the used closure) under src/engine/reso/thirdparty/. RESO_INC scopes that include to the reso build
-# (referenced from C_INCLUDES below; empty for other engines). The .cc files compile on-target WITHOUT
-# -DTEST, so stmlib uses its Cortex-M ssat/usat fast paths.
+# reso's DSP is the Mutable Instruments Rings engine, vendored under src/engine/reso/thirdparty/; its
+# stmlib support library now comes from the shared $(STMLIB_TP) (see top). RESO_INC scopes both includes
+# to the reso build (empty for other engines). The .cc files compile on-target WITHOUT -DTEST, so stmlib
+# uses its Cortex-M ssat/usat fast paths.
 RESO_TP  = src/engine/reso/thirdparty
-RESO_INC = -I$(RESO_TP)
+RESO_INC = -I$(RESO_TP) $(STMLIB_INC)
 ENGINE_SOURCES = src/engine/reso/reso_engine.cpp \
 	$(RESO_TP)/rings/dsp/part.cc $(RESO_TP)/rings/dsp/string.cc \
 	$(RESO_TP)/rings/dsp/resonator.cc $(RESO_TP)/rings/dsp/fm_voice.cc \
 	$(RESO_TP)/rings/resources.cc \
-	$(RESO_TP)/stmlib/dsp/units.cc $(RESO_TP)/stmlib/utils/random.cc $(RESO_TP)/stmlib/dsp/atan.cc
+	$(STMLIB_TP)/dsp/units.cc $(STMLIB_TP)/utils/random.cc $(STMLIB_TP)/dsp/atan.cc
+else ifeq ($(ENGINE), mosc)
+C_DEFS += -DSPK_ENGINE_MOSC
+# stmlib's filters use M_PI, which strict -std=c++17 does not expose from <cmath> on arm-none-eabi.
+C_DEFS += -DM_PI=3.14159265358979323846
+# Plaits' user_data.h normally pulls the original STM32F37x flash header for on-device patch storage;
+# this firmware has none, so stub it (UserData::ptr() -> NULL, Voice uses the built-in fm_patches_table).
+C_DEFS += -DPLAITS_USER_DATA_STUB
+# The Plaits DSP (full 24-engine voice + ~370 KB of LUTs) overflows the 186K execution SRAM at -O2;
+# build at -Os to fit (as reso does). The M7 @ 480 MHz has ample headroom (Plaits shipped on an F37x).
+OPT = -Os
+# The full 24-engine voice is ~292 KB of .text - it overflows the 186 KB SRAM_EXEC, so mosc is a
+# QSPI-EXECUTE target (like csound): build BOOT_QSPI with the QSPI linker script:
+#   make ENGINE=mosc APP_TYPE=BOOT_QSPI LDSCRIPT=alt_qspi.lds   (or just: make engine-mosc)
+# UNLIKE csound/chuck, mosc still synthesises from the platform engine arena (it placement-news its two
+# plaits::Voice + scratch into ctx.arena), so it does NOT set SPK_NO_ENGINE_ARENA - the 48 MB arena stays.
+# It reuses the csound engine's VTOR inject (engine-agnostic BOOT_QSPI vector-table fix).
+# mosc's DSP is the Mutable Instruments Plaits voice, vendored under src/engine/mosc/thirdparty/; its
+# stmlib support library now comes from the shared $(STMLIB_TP) (see top). MOSC_INC scopes both includes
+# to the mosc build (the plaits root holds `plaits/`, the shared root holds `stmlib/`). The .cc files
+# compile on-target WITHOUT -DTEST, so stmlib uses its Cortex-M ssat/usat fast paths.
+MOSC_TP  = src/engine/mosc/thirdparty
+MOSC_INC = -I$(MOSC_TP) $(STMLIB_INC)
+ENGINE_SOURCES = src/engine/mosc/mosc_engine.cpp src/engine/csound/spotykach_qspi_vtor.cpp \
+	$(MOSC_TP)/plaits/dsp/voice.cc \
+	$(wildcard $(MOSC_TP)/plaits/dsp/engine/*.cc) \
+	$(wildcard $(MOSC_TP)/plaits/dsp/engine2/*.cc) \
+	$(wildcard $(MOSC_TP)/plaits/dsp/physical_modelling/*.cc) \
+	$(wildcard $(MOSC_TP)/plaits/dsp/speech/*.cc) \
+	$(MOSC_TP)/plaits/dsp/chords/chord_bank.cc \
+	$(MOSC_TP)/plaits/dsp/fm/algorithms.cc $(MOSC_TP)/plaits/dsp/fm/dx_units.cc \
+	$(MOSC_TP)/plaits/resources.cc \
+	$(STMLIB_TP)/dsp/units.cc $(STMLIB_TP)/utils/random.cc $(STMLIB_TP)/dsp/atan.cc
 else ifeq ($(ENGINE), graincloud)
 # graincloud is a self-contained variant of the granular engine (a copy under src/engine/graincloud/)
 # with its grain DSP replaced by a GrainflowLib cloud (gf_cloud.*). Its vendored GrainflowLib lives in
@@ -199,7 +239,7 @@ LDFLAGS += -u _printf_float
 # Route ChucK's C-malloc family to the SDRAM pool (chuck_alloc.cpp); the platform heap stays in SRAM.
 LDFLAGS += -Wl,--wrap=malloc,--wrap=free,--wrap=calloc,--wrap=realloc
 else
-$(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', 'edrums', 'reso', 'graincloud', 'tape', 'reverb', 'shuttle', 'radio', 'chorus', 'filter', 'voice', 'csound', or 'chuck')
+$(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', 'edrums', 'reso', 'mosc', 'graincloud', 'tape', 'reverb', 'shuttle', 'radio', 'chorus', 'filter', 'voice', 'csound', or 'chuck')
 endif
 
 # Opt-in (make ... METER=1): enable the on-device CPU load meter (app.cpp's CpuLoadMeter). It writes
@@ -254,7 +294,7 @@ APP_TYPE = BOOT_SRAM
 LDSCRIPT = alt_sram.lds
 BOOT_BIN = bootloader-spotykach-v2.bin
 
-C_INCLUDES = -Isrc/ -Ilib/ $(RESO_INC) $(GRAINCLOUD_INC) $(GEN_INC) $(CSOUND_INC) $(CHUCK_INC)
+C_INCLUDES = -Isrc/ -Ilib/ $(RESO_INC) $(MOSC_INC) $(GRAINCLOUD_INC) $(GEN_INC) $(CSOUND_INC) $(CHUCK_INC)
 # NOTE: there used to be `C_USR_FLAGS = -ffast-math -funroll-loops` here, but the core Makefile reads
 # C_USER_FLAGS (with the E), so it was dead - those flags never reached the compiler and the shipping
 # firmware was built without them. Removed to stop it reading as active. The device meets its CPU/SRAM
@@ -331,7 +371,7 @@ all: check-boundary
 
 # One-shot variant flash: clean -> build -> flash over DFU. Put the device in DFU mode first
 # (hold Reset ~3s until the bottom pad LEDs breathe white), then `make granular` / `make passthrough`.
-.PHONY: engine-granular engine-passthrough engine-delay engine-edrums engine-reso engine-graincloud engine-tape engine-shuttle engine-reverb engine-radio engine-chorus engine-filter engine-voice engine-gigaverb engine-csound program-csound engine-chuck program-chuck
+.PHONY: engine-granular engine-passthrough engine-delay engine-edrums engine-reso engine-mosc program-mosc engine-graincloud engine-tape engine-shuttle engine-reverb engine-radio engine-chorus engine-filter engine-voice engine-gigaverb engine-csound program-csound engine-chuck program-chuck
 engine-granular:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=granular
@@ -356,6 +396,19 @@ engine-reso:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=reso
 	$(MAKE) ENGINE=reso program-dfu
+
+# mosc is QSPI-execute (BOOT_QSPI + alt_qspi.lds): the full 24-engine Plaits voice is ~292 KB of .text,
+# too big for the 186 KB SRAM_EXEC. Same recipe as csound but it KEEPS the engine arena (no own pool).
+# The leading `-` on program-dfu ignores the benign get_status error on the QSPI `:leave`.
+MOSC_FLAGS = ENGINE=mosc APP_TYPE=BOOT_QSPI LDSCRIPT=alt_qspi.lds
+engine-mosc:
+	$(MAKE) clean
+	$(MAKE) -j8 $(MOSC_FLAGS)
+	-$(MAKE) $(MOSC_FLAGS) program-dfu
+
+# Re-flash the last mosc build without rebuilding (board in DFU).
+program-mosc:
+	-$(MAKE) $(MOSC_FLAGS) program-dfu
 
 engine-graincloud:
 	$(MAKE) clean

@@ -1,0 +1,38 @@
+{
+  "engine": "mosc",
+  "title": "Mosc - dual macro-oscillator (Plaits)",
+  "subtitle": "full 24-engine Plaits voice per deck",
+
+  "knobs": {
+    "Pitch": "note pitch (+V/Oct, MIDI); Alt = engine select (24)",
+    "Position": "timbre",
+    "Size": "harmonics",
+    "Envelope": "morph",
+    "Mix (SOS)": "output level",
+    "Cycle": "LPG colour",
+    "Glow": "LPG decay"
+  },
+
+  "pads": {
+    "Play": "trigger (strike)",
+    "Reverse": "-",
+    "Grit": "-",
+    "Flux": "-",
+    "Seq": "trigger"
+  },
+
+  "ring": "energy meter + pitch dot; engine dot (Alt)",
+  "crossfade": "A/B blend",
+
+  "switches": {
+    "Mode (L/C/R)": "trigger: gate / drone (per deck)",
+    "Routing (L/C/R)": "stereo / double-mono / generative (out+aux)",
+    "CV target (U/C/D)": "-",
+    "Out trims A/B": "output trims"
+  },
+
+  "transport": { "Tap": "-", "Spot": "-" },
+  "cv":   { "Size/Pos A/B": "harmonics mod", "Mix A/B": "timbre mod", "V/Oct A/B": "pitch (1V/oct)", "Crossfade CV": "A/B blend" },
+  "gates": { "Gate in A/B": "trigger", "Gate out A/B": "-" },
+  "mod_midi": { "Mod CV out A/B": "-" }
+}

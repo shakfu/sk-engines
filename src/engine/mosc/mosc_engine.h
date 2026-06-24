@@ -1,0 +1,71 @@
+// SYNTHUX ACADEMY /////////////////////////////////////////
+// SPOTYKACH ///////////////////////////////////////////////
+#pragma once
+
+#include "engine/iengine.h"
+#include "engine/engine_params.h"
+#include "engine/display_model.h"
+#include "nocopy.h"
+
+#include <cstddef>
+#include <cstdint>
+
+namespace spotykach {
+
+// mosc - a dual macro-oscillator, built on the Mutable Instruments *Plaits* DSP (thirdparty/plaits) -
+// the full 24-engine synthesis voice (virtual analog, waveshaping, FM, grain, additive, wavetable,
+// chord, speech, swarm, noise, particle, string, modal, drums + the engine2 set: VA-VCF, phase
+// distortion, 6-op FM, wave terrain, string machine, chiptune). Each deck wraps one plaits::Voice
+// (mono out + aux), so the two decks are two independent macro-oscillators. Sibling of the reso engine
+// (MI Rings); both are placement-new'd into the injected SDRAM arena and share the vendored stmlib.
+//
+// Knob map (per deck): PITCH = note, Alt+PITCH (Aux) = engine/model select, SIZE = harmonics,
+// POS = timbre, ENV = morph, MOD_AMT = decay, MODFREQ = LPG colour, SOS/Mix = output level.
+// CV map (per deck): V/Oct = note, CV_SIZE_POS = harmonics mod, CV_MIX = timbre mod (signed,
+// ~0 when nothing patched, so the knobs rule until a cable is inserted).
+// The Mode switch picks the trigger behaviour: Gate (pad/gate/MIDI strikes the LPG envelope) vs
+// Drone (LPG bypassed, the engine runs open/continuous).
+//
+// PIMPL: all Plaits/stmlib types live in mosc_engine.cpp. The header must stay free of them because the
+// composition root (app.cpp, via engine_select.h) includes it, and stmlib.h declares a global
+// `namespace impl` that collides with app.cpp's `impl` instance (see reso_engine.h for the same trap).
+// The Impl object (and the two plaits::Voice + their 16 KB scratch arenas) is placement-new'd in the
+// injected SDRAM arena at init().
+class MoscEngine : public IEngine {
+public:
+    MoscEngine() = default;
+    ~MoscEngine() override = default;
+
+    void init(const EngineContext& ctx) override;
+    void prepare() override {}
+    void process(const float* const* in, float** out, size_t size) override;
+
+    Capabilities capabilities() const override {
+        return CapOwnDisplay | CapDualDeck | CapAux;
+    }
+
+    void  set_param(ParamId id, DeckRef::Ref deck, float value) override;
+    float param(ParamId id, DeckRef::Ref deck) const override;
+    void  set_mod_speed(DeckRef::Ref deck, float value, bool sync) override;
+    void  set_aux_active(DeckRef::Ref deck, bool active) override;
+    bool  set_config(ConfigId id, DeckRef::Ref deck, int value) override;
+    Route route() const override;   // global A/B->L/R routing (Stereo / DoubleMono / GenerativeStereo)
+
+    DeckRef::Ref handle_midi_note(uint8_t channel, uint8_t note) override;
+    void  cv_mix(DeckRef::Ref deck, float value) override;       // -> timbre modulation
+    void  cv_size_pos(DeckRef::Ref deck, float value) override;  // -> harmonics modulation
+    void  cv_voct(DeckRef::Ref deck, float value) override;
+    void  on_gate_trigger(DeckRef::Ref deck) override;
+    bool  on_play_pad(DeckRef::Ref deck, bool reverse) override;
+    void  on_seq_trigger(DeckRef::Ref deck) override;
+
+    void render(DisplayModel& m) override;
+
+private:
+    NOCOPY(MoscEngine)
+
+    struct Impl;        // defined in mosc_engine.cpp (owns the Plaits DSP)
+    Impl* _p = nullptr; // placement-new'd in the arena at init()
+};
+
+};
