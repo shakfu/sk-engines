@@ -87,6 +87,10 @@ public:
     // --- MIDI meaning ------------------------------------------------------------------------
     virtual DeckRef::Ref handle_midi_note(uint8_t channel, uint8_t note) { return DeckRef::Count; }
     virtual void      handle_midi_transport(bool start) {}
+    // Raw 3-byte MIDI message (status incl. channel, data1, data2) for engines that consume the full
+    // MIDI vocabulary rather than just NoteOn - e.g. ChucK delivers these to a patch's MidiIn. Default
+    // no-op: engines using only handle_midi_note ignore it. Called on the main loop (the UI MIDI poll).
+    virtual void      handle_midi_message(uint8_t status, uint8_t data1, uint8_t data2) {}
 
     // --- FX pads -----------------------------------------------------------------------------
     virtual void set_fx(DeckRef::Ref, FxKind, bool on) {}

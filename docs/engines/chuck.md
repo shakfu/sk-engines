@@ -35,7 +35,7 @@ With the built-in program (used when no SD patch is loaded — a `SawOsc => LPF 
 | **Alt + PITCH** | patch selector (see below) |
 | **centre mode LED** | white = built-in program, cyan = an SD patch is loaded |
 
-What each knob actually does is up to the patch (it reads named global variables) — the table above is the convention the bundled patches follow. MIDI input is not available yet (planned).
+What each knob actually does is up to the patch (it reads named global variables) — the table above is the convention the bundled patches follow. Patches can also be played from a **MIDI keyboard**: MIDI *input* is supported through ChucK's standard `MidiIn` (see [Limitations → MIDI](#limitations)).
 
 ## Loading patches from the SD card
 
@@ -109,9 +109,30 @@ make engine-chuck METER=1
 
 ## Limitations
 
-- **UGens:** this is a bare-metal, **core-only** ChucK build. *Available:* the oscillators (`SinOsc`/`SawOsc`/`SqrOsc`/`TriOsc`/`PulseOsc`/`Noise`), filters (`LPF`/`HPF`/`BPF`/`ResonZ`/…), envelopes (`ADSR`/`Envelope`), `Gain`, delays, the reverbs (`JCRev`/`NRev`/`PRCRev`), the FFT/analysis UAnae, and the **STK instruments** (`Rhodey`, `Wurley`, `TubeBell`, `Mandolin`, `Moog`, …), plus `Math`/`Std`, sporked shreds, events, and global variables. *Excluded:* **chugins** (no dynamic loading), **sound-file I/O** (`SndBuf`/`WvIn`/`WvOut` — no filesystem audio), and the **MIDI/OSC/HID/serial** device UGens (the host owns I/O).
+- **UGens:** this is a bare-metal, **core-only** ChucK build. *Available:* the oscillators (`SinOsc`/`SawOsc`/`SqrOsc`/`TriOsc`/`PulseOsc`/`Noise`), filters (`LPF`/`HPF`/`BPF`/`ResonZ`/…), envelopes (`ADSR`/`Envelope`), `Gain`, delays, the reverbs (`JCRev`/`NRev`/`PRCRev`), the FFT/analysis UAnae, and the **STK instruments** (`Rhodey`, `Wurley`, `TubeBell`, `Mandolin`, `Moog`, …), plus `Math`/`Std`, sporked shreds, events, and global variables. *Excluded:* **chugins** (no dynamic loading), **sound-file I/O** (`SndBuf`/`WvIn`/`WvOut` — no filesystem audio), and the **OSC/HID/serial** device UGens (the host owns I/O). **`MidiIn` is the exception** — it has been re-introduced over the UART (the host feeds it; see MIDI below), though **`MidiOut` is inert**.
 
-- **MIDI:** not available yet (planned). The bundled patches are all self-running.
+- **MIDI:** MIDI **input** is supported. A patch uses ChucK's standard API unchanged —
+  `MidiIn min; min.open(0); MidiMsg msg; min => now; while( min.recv(msg) ) { /* msg.data1/2/3 */ }` —
+  and receives the **full channel-voice stream** (NoteOn/NoteOff with real velocity, control change,
+  pitch-bend, aftertouch, program change) plus system realtime (clock/start/continue/stop), exactly as a
+  desktop ChucK patch would. The host owns the UART and feeds bytes into ChucK's own MIDI buffer (there is
+  no RtMidi backend on bare metal), so the language semantics are unchanged: `min => now` wakes on a
+  message, `recv()` drains the queue, and `data1` is the status byte (incl. channel), `data2`/`data3` the
+  data bytes. A ready example is [`examples/chuck/midi_in.ck`](../../examples/chuck/midi_in.ck); the design
+  and how-to are in [`docs/dev/chuck-midi-in-porting.md`](../dev/chuck-midi-in-porting.md).
+
+  **Remaining incompatibilities with desktop ChucK** (all are limitations of the bare-metal port, not
+  changes to the language API):
+  - **No MIDI output.** `MidiOut` is registered so patches that reference it still compile, but `open()`
+    always fails — `send()`/`noteOn()`/etc. are silent no-ops. Nothing is sent out the UART.
+  - **One virtual device, no enumeration.** There is a single input device (device 0). `MidiIn.open(n)`
+    opens that one UART regardless of `n`, `open("name")` maps to device 0, and `MidiIn.name()` returns
+    `"UART (virtual)"` — patches that enumerate or pick devices by name won't find a list.
+  - **3-byte messages only.** `MidiMsg` carries `data1`/`data2`/`data3` as usual, but **SysEx and MIDI
+    system-common messages are not delivered** (they don't fit the 3-byte model).
+  - **Wake path pending on-hardware sign-off.** The re-introduction is build-verified (library + firmware
+    link with matching ABI); confirming that a shred blocked on `min => now` actually resumes on the
+    threadless build is the one step still to be checked on a device.
 
 - **CPU:** code executes from QSPI flash, so heavy or dense patches can glitch or trip the mute-and-recover safeguard. Watch ring A on a `METER=1` build.
 

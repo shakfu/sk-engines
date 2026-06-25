@@ -473,18 +473,17 @@ void ChuckEngine::process(const float* const* in, float** out, size_t size)
         _inbuf[i * 2 + 1] = ir ? ir[i] : 0.f;
     }
 
-    // Deliver this block's MIDI notes to the re-introduced ChucK MidiIn device (virtual UART = device 0)
-    // here, on the run() thread, right before run() - so a shred blocked on `min => now` is woken by this
-    // run() (no ChucK threads on this build; the wake rides the per-VM event buffer that ck->run()
-    // services). NoteOn only with a fixed velocity (the note ring carries none); status NoteOn|deck lets
-    // a patch tell the decks apart. A patch using `MidiIn min; min.recv(msg);` sees these. See
-    // docs/dev/chuck-midi-in-porting.md.
+    // Deliver this block's MIDI to the re-introduced ChucK MidiIn device (virtual UART = device 0) here,
+    // on the run() thread, right before run() - so a shred blocked on `min => now` is woken by this run()
+    // (no ChucK threads on this build; the wake rides the per-VM event buffer that ck->run() services).
+    // The full raw stream is forwarded (real velocity, NoteOff, CC, pitch-bend, aftertouch, program
+    // change, system realtime), so a patch using `MidiIn min; min.recv(msg);` reads data1/data2/data3
+    // exactly as on the desktop. See docs/dev/chuck-midi-in-porting.md.
     {
-        MidiNoteEvent ev;
-        while (_notes.pop(ev)) {
-            const int d = (ev.deck == 0) ? 0 : 1;
-            MidiInManager::inject(0, static_cast<t_CKBYTE>(MIDI_NOTEON | d),
-                                  static_cast<t_CKBYTE>(ev.note), static_cast<t_CKBYTE>(100));
+        MidiMessage m;
+        while (_midi.pop(m)) {
+            MidiInManager::inject(0, static_cast<t_CKBYTE>(m.status),
+                                  static_cast<t_CKBYTE>(m.data1), static_cast<t_CKBYTE>(m.data2));
         }
     }
 
@@ -583,20 +582,26 @@ void ChuckEngine::set_aux_active(DeckRef::Ref d, bool held)
 
 DeckRef::Ref ChuckEngine::handle_midi_note(uint8_t channel, uint8_t note)
 {
+    // ChucK gets the note via handle_midi_message (the full stream); this override exists ONLY to map
+    // channel -> deck so the UI can flash the right gate-in LED on a NoteOn. It does NOT enqueue (that
+    // would double-deliver the note). Note (unused here) kept for the IEngine signature.
+    (void)note;
     if (!_gate.current()) return DeckRef::Count;   // no VM yet -> not playable; tell the UI not to flash
 
-    // Channel -> deck, matching the platform's configured MIDI channels (same map as CsoundEngine).
-    const Config& c = Config::dynamic();
-    DeckRef::Ref ref = DeckRef::Count;
-    if      (channel == c.midi_channel_a()) ref = DeckRef::A;
-    else if (channel == c.midi_channel_b()) ref = DeckRef::B;
-    if (ref == DeckRef::Count) return DeckRef::Count;
+    const Config& c = Config::dynamic();           // configured MIDI channels (same map as CsoundEngine)
+    if      (channel == c.midi_channel_a()) return DeckRef::A;
+    else if (channel == c.midi_channel_b()) return DeckRef::B;
+    return DeckRef::Count;
+}
 
-    // Main loop: only enqueue. process() (the audio ISR) drains and injects into the ChucK MidiIn device
-    // right before run(), so the buffer fill + event wake happen on the run() thread. A full ring drops
-    // the note; still return the deck so the gate-in flashes (the NoteOn was received).
-    _notes.push({ note, static_cast<uint8_t>(ref == DeckRef::A ? 0 : 1) });
-    return ref;
+void ChuckEngine::handle_midi_message(uint8_t status, uint8_t data1, uint8_t data2)
+{
+    // Main loop: only enqueue the raw message. process() (the audio ISR) drains the ring and injects into
+    // the ChucK MidiIn device (device 0) right before run(), so the buffer fill + shred wake happen on the
+    // run() thread. No channel filtering - a patch sees the whole stream and routes by status/channel
+    // itself (the desktop MidiIn contract). A full ring drops the newest message.
+    if (!_gate.current()) return;                  // no VM yet -> nowhere to deliver
+    _midi.push({ status, data1, data2 });
 }
 
 void ChuckEngine::render(DisplayModel& m)

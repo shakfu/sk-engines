@@ -2,14 +2,16 @@
 // numbered bank slot). Unlike midi.ck (which uses the host "global bridge" convention), this patch
 // uses real ChucK MIDI: it opens a MidiIn device and drains MidiMsg with min.recv(), exactly as an
 // unmodified desktop ChucK patch would. On this firmware the device is a single virtual UART (device
-// 0); the host injects each incoming NoteOn into it (see chuck_engine.cpp / docs/dev/chuck-midi-in.md).
+// 0); the host forwards the full MIDI stream into it (see chuck_engine.cpp + core.ui.midi.cpp /
+// docs/dev/chuck-midi-in-porting.md).
 //
 // To try it, copy this over any numbered slot on the card, e.g.:
 //     cp examples/chuck/midi_in.ck <card>/chuck/3.ck
 // then select that slot and play. Chords work (each NoteOn sporks its own voice). MIX sets the level.
 //
-// NOTE: the host currently injects NoteOn only, with a fixed velocity (the note bridge carries no
-// velocity). Once the host forwards full MIDI, CC / pitch-bend / real velocity arrive here unchanged.
+// The full channel-voice stream arrives here with REAL velocity (msg.data3), plus NoteOff, CC,
+// pitch-bend, aftertouch and program change - read them off msg.data1/data2/data3 as on the desktop.
+// This example only reacts to NoteOn; extend the recv loop to handle CC / pitch-bend as you like.
 
 global float mixA;        // MIX knob -> level (same vocabulary as the other examples)
 

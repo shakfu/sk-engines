@@ -5,7 +5,7 @@
 #include "engine/iengine.h"
 #include "engine/chuck/chuck_patch.h"        // kMaxChuckSlots (bank size) + the SD .ck selector
 #include "engine/csound/csound_reload.h"     // ReloadGate: lock-free VM<->ISR handoff for live swap
-#include "engine/csound/csound_midi.h"       // NoteQueue / MidiNoteEvent: the lock-free pending-note ring
+#include "engine/chuck/chuck_midi_in.h"      // MidiMessage / MidiMsgQueue: lock-free raw-MIDI ring (MIDI-in)
 
 // SKETCH (2026-06, M2): ChuckEngine wraps a ChucK runtime (the language/VM/UGens) behind IEngine,
 // modelled directly on CsoundEngine. Like Csound, it builds ONLY in the QSPI firmware target - the
@@ -54,11 +54,15 @@ public:
     // selector display + (on the held->release edge) commits a live recompile in prepare().
     void         set_aux_active(DeckRef::Ref d, bool active) override;
 
-    // MIDI NoteOn -> the re-introduced ChucK MidiIn device (channel -> deck). NoteOn only (no NoteOff /
-    // velocity): enqueued on the lock-free ring here (main loop) and injected into the VM in process()
-    // (audio ISR) right before run(), where a shred blocked on `min => now` is woken. See
-    // chuck_engine.cpp and docs/dev/chuck-midi-in-porting.md.
+    // MIDI -> the re-introduced ChucK MidiIn device. handle_midi_message() carries the FULL channel-voice
+    // stream (real velocity, NoteOff, CC, pitch-bend, aftertouch, program change) plus system realtime;
+    // it enqueues raw bytes on the lock-free ring here (main loop), drained + injected into the VM in
+    // process() (audio ISR) right before run(), where a shred blocked on `min => now` is woken. So a patch
+    // uses `MidiIn min; min.recv(msg);` exactly as on the desktop. handle_midi_note() is kept ONLY to map
+    // channel->deck for the panel gate-in LED (it no longer feeds the VM). See chuck_engine.cpp and
+    // docs/dev/chuck-midi-in-porting.md.
     DeckRef::Ref handle_midi_note(uint8_t channel, uint8_t note) override;
+    void         handle_midi_message(uint8_t status, uint8_t data1, uint8_t data2) override;
 
     // --- panel feedback -------------------------------------------------------------------------
     // Rings show the output level meter (or, while Alt is held, the patch selector); Play LEDs show
@@ -177,9 +181,10 @@ private:
     static constexpr int kSlots = 16;     // 8 per deck
     float _cache[kSlots] = {0.f};
 
-    // Pending MIDI notes: handle_midi_note() (main loop) pushes, process() (audio ISR) drains and
-    // injects into the ChucK MidiIn device right before run(). Reuses csound_midi.h's lock-free ring.
-    NoteQueue<32> _notes;
+    // Pending raw MIDI messages: handle_midi_message() (main loop) pushes, process() (audio ISR) drains
+    // and injects into the ChucK MidiIn device right before run(). Sized for a dense block (CC sweeps +
+    // notes); a full ring drops the newest message.
+    MidiMsgQueue<64> _midi;
 };
 
 } // namespace spotykach
