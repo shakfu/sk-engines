@@ -60,6 +60,7 @@ DEFAULT_ENGINES = [
     "filter",
     "edrums",
     "graincloud",
+    "mosc",
     "radio",
     "reso",
     "reverb",
@@ -71,14 +72,17 @@ DEFAULT_ENGINES = [
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # Engines that aren't a plain `ENGINE=<name>` build need extra make flags (the same ones their
-# `make engine-<name>` one-shot target wraps). csound and chuck are QSPI apps: their ~2 MB / ~1.1 MB of
-# runtime code can't fit the 186 KB SRAM_EXEC budget, so they execute in place from QSPI flash (BOOT_QSPI
-# + a QSPI linker script) and link against a pre-built static lib (scripts/fetch_{csound,chuck}.sh).
-# These mirror the Makefile's CSOUND_FLAGS / CHUCK_FLAGS exactly; chuck uses its OWN linker script
-# (alt_qspi_chuck.lds reclaims the unused SRAM_EXEC region for .bss), so it is NOT the same as csound's.
+# `make engine-<name>` one-shot target wraps). csound, chuck and mosc are QSPI apps: their code can't
+# fit the 186 KB SRAM_EXEC budget, so they execute in place from QSPI flash (BOOT_QSPI + a QSPI linker
+# script). csound/chuck link a pre-built static lib (scripts/fetch_{csound,chuck}.sh) for their ~2 MB /
+# ~1.1 MB language runtimes; mosc has no prebuilt lib - it compiles the full 24-engine Plaits voice
+# (~292 KB .text) from source and KEEPS the engine arena. These mirror the Makefile's CSOUND_FLAGS /
+# CHUCK_FLAGS / MOSC_FLAGS exactly; chuck uses its OWN linker script (alt_qspi_chuck.lds reclaims the
+# unused SRAM_EXEC region for .bss), while csound and mosc use the stock alt_qspi.lds.
 ENGINE_MAKE_FLAGS = {
     "csound": ["APP_TYPE=BOOT_QSPI", "LDSCRIPT=alt_qspi.lds"],
     "chuck":  ["APP_TYPE=BOOT_QSPI", "LDSCRIPT=alt_qspi_chuck.lds"],
+    "mosc":   ["APP_TYPE=BOOT_QSPI", "LDSCRIPT=alt_qspi.lds"],
 }
 # Files that must already exist for an engine to build (clear error vs a cryptic link failure).
 ENGINE_PREREQUISITES = {
@@ -235,9 +239,9 @@ def changelog_section(version: str, changelog: Path | None = None) -> str | None
 
 def flashing_section(version: str, engines: list[str]) -> str:
     """The `## Flashing ...` section of the release notes (markdown)."""
-    # csound and chuck are QSPI apps in the set (they execute from flash rather than being copied to
-    # SRAM), which adds two flashing wrinkles the generic steps don't cover.
-    qspi_engines = [e for e in ("csound", "chuck") if e in engines]
+    # csound, chuck and mosc are QSPI apps in the set (they execute from flash rather than being copied
+    # to SRAM), which adds two flashing wrinkles the generic steps don't cover.
+    qspi_engines = [e for e in ("csound", "chuck", "mosc") if e in engines]
     qspi_note = ("""
 ### Note for the {names} engine{plural}
 
