@@ -43,7 +43,9 @@ struct FakeClock : ITimeSource {
 // play_consume; slots_a/_b model which slot files exist for the boot-preload probe.
 struct FakeStream : IStreamDeck {
     std::vector<float> file[2];
+    std::vector<float> recorded[2];        // captured save stream (record_produce)
     bool     playing[2] = { false, false };
+    bool     recording[2] = { false, false };
     uint32_t pos[2]     = { 0, 0 };
     uint8_t  slots_a = 0, slots_b = 0;
     static int di(DeckRef::Ref d) { return (d == DeckRef::A) ? 0 : 1; }
@@ -56,12 +58,19 @@ struct FakeStream : IStreamDeck {
         pos[i] += k;
         return k * sizeof(float);
     }
-    uint32_t record_produce(DeckRef::Ref, const uint8_t*, uint32_t n) override { return n; }
+    uint32_t record_produce(DeckRef::Ref d, const uint8_t* src, uint32_t n) override {
+        const int i = di(d);
+        if (!recording[i]) return 0;
+        const uint32_t frames = n / sizeof(float);
+        const float* f = reinterpret_cast<const float*>(src);
+        for (uint32_t k = 0; k < frames; k++) recorded[i].push_back(f[k]);
+        return n;                          // accept everything (no ring backpressure in the fake)
+    }
     bool is_playing(DeckRef::Ref d)   const override { return playing[di(d)]; }
-    bool is_recording(DeckRef::Ref) const override { return false; }
+    bool is_recording(DeckRef::Ref d) const override { return recording[di(d)]; }
     bool start_play(DeckRef::Ref d, const char*)   override { const int i = di(d); playing[i] = true; pos[i] = 0; return true; }
-    bool start_record(DeckRef::Ref, const char*) override { return false; }
-    void stop(DeckRef::Ref d)         override { playing[di(d)] = false; }
+    bool start_record(DeckRef::Ref d, const char*) override { const int i = di(d); recording[i] = true; recorded[i].clear(); return true; }
+    void stop(DeckRef::Ref d)         override { const int i = di(d); playing[i] = false; recording[i] = false; }
     void set_loop(DeckRef::Ref, bool) override {}
     uint32_t loop_frames(DeckRef::Ref d) const override { const int i = di(d); return playing[i] ? static_cast<uint32_t>(file[i].size()) : 0; }
     bool exists(const char* p) const override {            // path is "softcut/loop_<a|b>_<N>.wav", N = slot+1
@@ -281,6 +290,68 @@ int main() {
         e.on_seq_trigger(DeckRef::A);                           // realign all voices (crossfaded cut)
         const Stat s = collect(e, 6000);
         check(s.finite, "output stays finite after a Seq realign");
+    }
+
+    // ---- 10. Save to SD: Alt+Seq = full take, Alt+Rev = trimmed loop window -------------------
+    {
+        FakeStream fs;
+        EngineContext ctx = base; ctx.time = &clock; ctx.stream = &fs; SoftcutEngine e; e.init(ctx);
+        // Record a fresh loop on deck A (closes at the take length, SIZE = full).
+        clock.ms += 500; e.on_record_pad(DeckRef::A, false);    // start fresh take
+        feed(e, 6000);
+        clock.ms += 500; e.on_record_pad(DeckRef::A, false);    // close -> loop sized to the take
+        const uint32_t take = static_cast<uint32_t>(e.loop_len_sec(DeckRef::A, 0) * host::kSampleRate);
+        check(take > 1000, "recorded a loop to save");
+
+        auto near = [](uint32_t a, uint32_t b) { return (a > b ? a - b : b - a) <= 2; }; // float-round slack
+        auto pump = [&]() {
+            float il[host::kBlock] = {0}, ir[host::kBlock] = {0}, ol[host::kBlock], orr[host::kBlock];
+            const float* in[2] = { il, ir }; float* out[2] = { ol, orr };
+            for (int b = 0; b < 400 && e.is_saving(DeckRef::A); b++) { e.process(in, out, host::kBlock); e.prepare(); }
+        };
+
+        // Alt+Seq -> arms a DEFERRED full save (Option B); commits after the ~1.5s hold window.
+        clock.ms += 500; e.on_seq_toggle_arm(DeckRef::A);
+        check(!e.is_saving(DeckRef::A), "Alt+Seq tap defers the save (no immediate write)");
+        clock.ms += 1700; e.prepare();
+        check(e.is_saving(DeckRef::A), "deferred full save commits after the hold window");
+        pump();
+        check(!e.is_saving(DeckRef::A), "the save completes");
+        check(near(static_cast<uint32_t>(fs.recorded[0].size()), take), "Alt+Seq saves the full take");
+
+        // Alt+Rev -> save the TRIMMED loop window. Shrink SIZE to half first.
+        e.set_param(ParamId::Size, DeckRef::A, 0.5f);
+        const uint32_t trimmed = static_cast<uint32_t>(e.loop_len_sec(DeckRef::A, 0) * host::kSampleRate);
+        check(trimmed < take, "SIZE trims the loop window below the full take");
+        clock.ms += 500; e.on_record_pad(DeckRef::A, true);    // Alt+Rev
+        check(e.is_saving(DeckRef::A), "Alt+Rev starts a save");
+        pump();
+        check(near(static_cast<uint32_t>(fs.recorded[0].size()), trimmed), "Alt+Rev saves the trimmed loop window");
+        bool nonsilent = false, fin = true;
+        for (float x : fs.recorded[0]) { if (std::fabs(x) > 1e-4f) nonsilent = true; if (!std::isfinite(x)) fin = false; }
+        check(nonsilent && fin, "saved loop audio is non-silent and finite");
+    }
+
+    // ---- 11. Erase via Alt+Seq hold (clear_sequence), clean discard (Option B) ----------------
+    {
+        FakeStream fs;
+        EngineContext ctx = base; ctx.time = &clock; ctx.stream = &fs; SoftcutEngine e; e.init(ctx);
+        clock.ms += 500; e.on_record_pad(DeckRef::A, false); feed(e, 6000);
+        clock.ms += 500; e.on_record_pad(DeckRef::A, false);
+        check(!e.is_empty(DeckRef::A, 0), "voice has content after recording");
+
+        // Alt+Seq tap arms a deferred save; the hold (clear_sequence) erases AND cancels it.
+        clock.ms += 500; e.on_seq_toggle_arm(DeckRef::A);
+        e.clear_sequence(DeckRef::A);
+        check(e.is_empty(DeckRef::A, 0), "Alt+Seq hold erases the voice");
+        check(!e.is_rolling(DeckRef::A, 0), "erased voice is stopped");
+        clock.ms += 1700; e.prepare();
+        check(!e.is_saving(DeckRef::A), "erase cancels the deferred save (clean discard, no write)");
+
+        // The now-empty voice records a FRESH take on Alt+Play (record-defines-loop, not overdub).
+        clock.ms += 500; e.on_record_pad(DeckRef::A, false);
+        check(e.is_overdubbing(DeckRef::A, 0), "a fresh take begins on the erased voice");
+        check(!e.is_empty(DeckRef::A, 0) || e.is_overdubbing(DeckRef::A, 0), "recording into the empty voice");
     }
 
     if (g_failures == 0) std::printf("  OK\n");

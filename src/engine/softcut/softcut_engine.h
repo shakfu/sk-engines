@@ -67,8 +67,10 @@ public:
     bool  take_param_reseed(DeckRef::Ref d) override;                    // Play-snap / Rev-swap takeover
 
     bool  on_play_pad(DeckRef::Ref d, bool reverse) override;            // Play: roll+snap; Rev: swap track
-    void  on_record_pad(DeckRef::Ref d, bool reverse) override;          // Alt+Play: arm/disarm overdub
+    void  on_record_pad(DeckRef::Ref d, bool reverse) override;          // Alt+Play: record/overdub; Alt+Rev: save trimmed loop
     void  on_seq_trigger(DeckRef::Ref d) override;                       // Seq: realign ALL voices (sync)
+    void  on_seq_toggle_arm(DeckRef::Ref d) override;                    // Alt+Seq (tap): save the full take to SD
+    void  clear_sequence(DeckRef::Ref d) override;                       // Alt+Seq (hold ~1.5s): erase the voice
 
     void render(DisplayModel& m) override;
 
@@ -78,6 +80,8 @@ public:
     int      active_track(DeckRef::Ref d) const;
     bool     is_rolling(DeckRef::Ref d, int track) const;
     bool     is_overdubbing(DeckRef::Ref d, int track) const;
+    bool     is_saving(DeckRef::Ref d) const;
+    bool     is_empty(DeckRef::Ref d, int track) const;
     float    track_rate(DeckRef::Ref d, int track) const;
     float    loop_start_sec(DeckRef::Ref d, int track) const;
     float    loop_len_sec(DeckRef::Ref d, int track) const;
@@ -97,6 +101,7 @@ private:
     void  _recompute_pan();
     void  _roll_random_pans();
     void  _request_load(DeckRef::Ref d, int s);
+    void  _start_save(DeckRef::Ref d, bool full);  // full = whole take [0,_len]; else the POS/SIZE window
     const char* _path(DeckRef::Ref d, int slot);
 
     static float rate_from_knob(float v);          // knob 0..1 -> signed rate [-kMaxSpeed..+kMaxSpeed]
@@ -122,6 +127,8 @@ private:
     static constexpr int      kTapeSlots  = 8;
     static constexpr int      kRingLeds   = 32;
     static constexpr uint32_t kLoadChunk  = 8192;
+    static constexpr uint32_t kSaveChunk  = 4096;       // frames the ISR offers the record ring per block
+    static constexpr uint32_t kSaveArmMs  = 1600;       // Alt+Seq tap-save commit delay (> the 1500ms hold)
     static constexpr uint32_t kPreloadDeadlineMs = 3000;
 
     IStreamDeck*       _stream = nullptr;
@@ -162,6 +169,17 @@ private:
     bool     _preload_armed   = true;
     bool     _preload_mounted = false;
     uint8_t  _preload_next[2] = { 0, 0 };
+
+    // ---- SD save (loop buffer -> card via the streamed record path; per deck, like load) ----------
+    enum class Save : uint8_t { Idle, Writing, Finalize };
+    Save     _save[2]       = {};
+    int      _save_voice[2] = { -1, -1 };   // which voice's loop is being written
+    uint32_t _save_pos[2]   = {};           // next buffer frame to push
+    uint32_t _save_end[2]   = {};           // one past the loop's last frame
+    // Alt+Seq full-save is DEFERRED (Option B): armed on the tap, committed in prepare() once the
+    // ~1.5s hold window has passed without an erase, so a hold-to-erase cancels it before it writes.
+    bool     _save_arm[2]    = {};
+    uint32_t _save_arm_ms[2] = {};
 
     // ---- Per-deck ---------------------------------------------------------------------------------
     int  _active[2]      = { 0, 0 };                    // focused track per deck (Rev swaps it)

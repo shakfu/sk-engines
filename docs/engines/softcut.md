@@ -30,6 +30,11 @@ Each deck edits one **focused** voice at a time; the Rev pad swaps which one, an
   - **Voice with content (SD-loaded or already recorded):** arms / disarms **overdub** on top (sound-on-sound).
 - **Rev** - swap the deck's focused voice.
 - **Seq** - realign **all** voices to their loop start at once: softcut's `cutToPos` does a click-free crossfaded jump, so drifted free-running loops snap back to a common downbeat (the voice-sync gesture).
+- **Alt+Seq (tap)** - **save the full take** (the whole recording, lossless) to the focused voice's currently-selected SD slot.
+- **Alt+Rev** - **save the trimmed loop** (exactly the POS/SIZE window - "bounce what you hear") to the same slot.
+- **Alt+Seq (hold ~1.5 s)** - **erase** the focused voice (clean discard - nothing is written). It empties the buffer so the next Alt+Play records a fresh take. Holding cancels the tap's pending save, so an erase never touches the card.
+
+Both saves write a float32-mono WAV; pick the destination slot with Alt+PITCH first (use an empty slot so you don't overwrite a boot loop). The ring flashes amber while it writes (~1 s, non-blocking - the loop keeps playing). Save and load share the same slot files, so a captured loop reloads on the next boot or via Alt+PITCH. Alt+Seq is the safe everyday save (SIZE/POS stay non-destructive); Alt+Rev prints exactly the loop you hear. Note the Alt+Seq save commits a moment (~1.5 s) after the tap so a hold can turn it into an erase instead; Alt+Rev saves immediately.
 
 The audio input is summed to mono (both input jacks), so a loop records whichever input the source is patched to.
 
@@ -48,15 +53,14 @@ Each voice's buffer is **~10.9 s** (2^19 frames @ 48 kHz, 2 MB), so a single tak
 ## Build / flash
 
 ```
-make ENGINE=softcut            # normal SRAM build (-O2, ~88% SRAM_EXEC)
+make ENGINE=softcut            # normal SRAM build (-O2, ~89% SRAM_EXEC)
 make ENGINE=softcut METER=1    # + on-device CPU load meter over USB serial / ring A
 make program-dfu               # flash (enter DFU first)
 ```
 
-Loop clips are headerless float `.wav` at `softcut/loop_<a|b>_<1..8>.wav` on the SD card.
+Loop clips are **32-bit float, mono, 48 kHz** WAVs at `softcut/loop_<a|b>_<1..8>.wav` on the SD card - the same format Alt+Seq/Alt+Rev save, so saved loops reload directly.
 
 ## Not in v1
 
-- **SD save** (dumping a captured loop back to the card) - load works; save needs the record-ring plumbing and is a fast-follow.
 - **Phase-quantised voice sync** - the Seq-pad realign covers the musical case; locked phase-quant is a later add.
 - **6 voices** - gated on the `std::function`-per-sample removal in the vendored core (see the spike doc).

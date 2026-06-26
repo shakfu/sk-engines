@@ -389,7 +389,7 @@ all: check-boundary
 
 # One-shot variant flash: clean -> build -> flash over DFU. Put the device in DFU mode first
 # (hold Reset ~3s until the bottom pad LEDs breathe white), then `make granular` / `make passthrough`.
-.PHONY: engine-granular engine-passthrough engine-delay engine-edrums engine-reso engine-mosc program-mosc engine-graincloud engine-tape engine-shuttle engine-reverb engine-radio engine-chorus engine-filter engine-voice engine-gigaverb engine-csound program-csound engine-chuck program-chuck
+.PHONY: engine-granular engine-passthrough engine-delay engine-edrums engine-reso engine-mosc program-mosc engine-graincloud engine-tape engine-shuttle engine-softcut engine-reverb engine-radio engine-chorus engine-filter engine-voice engine-gigaverb engine-csound program-csound engine-chuck program-chuck
 engine-granular:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=granular
@@ -442,6 +442,11 @@ engine-shuttle:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=shuttle
 	$(MAKE) ENGINE=shuttle program-dfu
+
+engine-softcut:
+	$(MAKE) clean
+	$(MAKE) -j8 ENGINE=softcut
+	$(MAKE) ENGINE=softcut program-dfu
 
 engine-radio:
 	$(MAKE) clean

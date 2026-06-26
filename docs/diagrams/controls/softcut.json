@@ -1,0 +1,40 @@
+{
+  "engine": "softcut",
+  "title": "Softcut - dual-deck crossfaded overdub looper (4 voices)",
+  "subtitle": "two softcut voices per deck; Rev focuses one. Record-defines-loop",
+
+  "knobs": {
+    "Pitch": "rate +/-2x (noon=stop, CCW=reverse); Alt = SD slot",
+    "Position": "loop start; Alt = pan",
+    "Size": "loop length (trims the take)",
+    "Envelope": "overdub feedback (1=infinite layering, 0=overwrite)",
+    "Mix (SOS)": "voice volume",
+    "Cycle": "rate slew time",
+    "Glow": "loop crossfade (fade) time"
+  },
+
+  "pads": {
+    "Play": "roll / unity snap",
+    "Reverse": "swap focused voice; Alt+Rev = save trimmed loop",
+    "Grit": "-",
+    "Flux": "post filter: +PITCH cutoff, +MIX reso",
+    "Seq": "re-align all voices (sync); Alt+Seq = save full, hold = erase voice"
+  },
+
+  "alt_play": "record / overdub (fresh take on an empty voice, sound-on-sound on a full one)",
+
+  "ring": "voice transport (red rec / green fwd / cyan rev); focused-voice hue idle; amber while saving",
+  "crossfade": "deck A/B blend",
+
+  "switches": {
+    "Mode (L/C/R)": "-",
+    "Routing (L/C/R)": "pan: manual / spread / random",
+    "CV target (U/C/D)": "-",
+    "Out trims A/B": "output trims"
+  },
+
+  "transport": { "Tap": "-", "Spot": "-" },
+  "cv":   { "Size/Pos A/B": "-", "Mix A/B": "-", "V/Oct A/B": "-", "Crossfade CV": "deck A/B blend" },
+  "gates": { "Gate in A/B": "-", "Gate out A/B": "-" },
+  "mod_midi": { "Mod CV out A/B": "-" }
+}

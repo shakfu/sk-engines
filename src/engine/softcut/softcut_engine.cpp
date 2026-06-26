@@ -131,6 +131,25 @@ void SoftcutEngine::_request_load(DeckRef::Ref d, int s) {
 void SoftcutEngine::prepare() {
     if (!_stream) return;
 
+    // Finalize any completed save: the ISR has pushed the whole loop, so stop() patches the WAV header
+    // (the record tail drains over the next stream.process() passes) and the slot is refreshed.
+    for (int dd = 0; dd < 2; dd++) {
+        if (_save[dd] == Save::Finalize) {
+            _stream->stop((dd == 0) ? DeckRef::A : DeckRef::B);
+            _save[dd] = Save::Idle; _save_voice[dd] = -1; _rescan[dd] = true;
+        }
+    }
+
+    // Commit a deferred Alt+Seq full-save once its hold window has passed (no erase cancelled it).
+    {
+        const uint32_t now = _time ? _time->now_ms() : 0;
+        for (int dd = 0; dd < 2; dd++)
+            if (_save_arm[dd] && now - _save_arm_ms[dd] >= kSaveArmMs) {
+                _save_arm[dd] = false;
+                _start_save((dd == 0) ? DeckRef::A : DeckRef::B, /*full=*/true);
+            }
+    }
+
     if (_preload_armed) {
         if (!_preload_mounted) {
             for (DeckRef::Ref d : { DeckRef::A, DeckRef::B })
@@ -254,6 +273,21 @@ void SoftcutEngine::process(const float* const* in, float** out, size_t size) {
         if (any_overdub) { out[0][k] = soft(l); out[1][k] = soft(r); }
         else             { out[0][k] = clamp1(l); out[1][k] = clamp1(r); }
     }
+
+    // SD save: push the focused loop's frames into the per-deck record ring (the main loop drains them
+    // to the card). Honor the ring's accepted byte count and resume next block - never block the ISR.
+    for (int dd = 0; dd < 2; dd++) {
+        if (_save[dd] != Save::Writing || _save_voice[dd] < 0 || !_stream) continue;
+        const int sv = _save_voice[dd];
+        const uint32_t remain = _save_end[dd] - _save_pos[dd];
+        const uint32_t want   = remain < kSaveChunk ? remain : kSaveChunk;
+        const DeckRef::Ref dref = (dd == 0) ? DeckRef::A : DeckRef::B;
+        const uint32_t got = _stream->record_produce(
+            dref, reinterpret_cast<const uint8_t*>(_buf[dd][sv] + _save_pos[dd]),
+            want * sizeof(float)) / sizeof(float);
+        _save_pos[dd] += got;
+        if (_save_pos[dd] >= _save_end[dd]) _save[dd] = Save::Finalize;   // main loop will stop()/finalize
+    }
 }
 
 void SoftcutEngine::set_param(ParamId id, DeckRef::Ref d, float v) {
@@ -261,8 +295,11 @@ void SoftcutEngine::set_param(ParamId id, DeckRef::Ref d, float v) {
     const int s = _active[i];                                 // knobs address the FOCUSED track
     switch (id) {
         case ParamId::Speed:  _rate_n[i][s] = v; _voice[i][s].setRate(rate_from_knob(v)); break;
-        case ParamId::Pos:    _pos_n[i][s]  = v; _apply_window(i, s); break;
-        case ParamId::Size:   _size_n[i][s] = v; _apply_window(i, s); break;
+        // While a fresh take is recording (defining), the loop is held open at the full buffer so the
+        // take can run the whole 10.9 s - don't let the live POS/SIZE knobs reshape it mid-record (they
+        // would cap the take early). The knob values are still cached and applied once the loop closes.
+        case ParamId::Pos:    _pos_n[i][s]  = v; if (!_defining[i][s]) _apply_window(i, s); break;
+        case ParamId::Size:   _size_n[i][s] = v; if (!_defining[i][s]) _apply_window(i, s); break;
         case ParamId::Mix:    _gain[i][s]   = v; break;
         case ParamId::Env:    _fb_n[i][s]   = v; _voice[i][s].setPreLevel(v); break;   // overdub feedback
         case ParamId::AltPos: _pan[i][s]    = v; _recompute_pan(); break;
@@ -354,7 +391,7 @@ bool SoftcutEngine::on_play_pad(DeckRef::Ref d, bool reverse) {
 // top. softcut needs a defined, head-aligned loop to record into, so a fresh take must size its own loop
 // rather than overdub into an undefined window (the empty-buffer record bug).
 void SoftcutEngine::on_record_pad(DeckRef::Ref d, bool reverse) {
-    if (reverse) return;
+    if (reverse) { _start_save(d, /*full=*/false); return; }   // Alt+Rev: save the trimmed loop window
     const int i = idx(d);
     const int s = _active[i];
     const uint32_t now = _time ? _time->now_ms() : 0;
@@ -411,6 +448,59 @@ void SoftcutEngine::on_seq_trigger(DeckRef::Ref /*d*/) {
     for (int d = 0; d < 2; d++)
         for (int s = 0; s < kTracks; s++)
             if (_rolling[d][s]) _voice[d][s].cutToPos(_loop_start_sec(d, s));
+}
+
+// Save the focused voice's loop to its currently-selected SD slot (float32 mono WAV, the format load
+// reads). `full` = the whole recorded take [0,_len]; else the POS/SIZE loop window (what you hear).
+// Streamed via the platform record path: here we open the file and arm the write; process() (ISR)
+// pushes the frames into the record ring, the main loop drains them to the card, prepare() finalizes.
+// Pick the destination with Alt+PITCH first.
+void SoftcutEngine::_start_save(DeckRef::Ref d, bool full) {
+    const int i = idx(d);
+    const int s = _active[i];
+    const uint32_t now = _time ? _time->now_ms() : 0;
+    if (!_stream || !_cap) return;
+    if (_save[i] != Save::Idle || _load[i][0] != Load::Idle || _load[i][1] != Load::Idle) return; // deck busy
+    uint32_t start, end;
+    if (full) {
+        start = 0; end = _len[i][s];                                          // the whole take
+    } else {
+        start = static_cast<uint32_t>(_loop_start_sec(i, s) * _sr);
+        end   = start + static_cast<uint32_t>(loop_len_sec(d, s) * _sr);      // the POS/SIZE window
+    }
+    if (_len[i][s] == 0 || end <= start || end > _cap) { _err_until[i] = now + kErrFlashMs; return; }
+    if (_stream->start_record(d, _path(d, _tape_slot[i][s]))) {
+        if (_overdub[i][s]) { _overdub[i][s] = false; _voice[i][s].setRecFlag(false); } // clean snapshot
+        _save[i] = Save::Writing; _save_voice[i] = s; _save_pos[i] = start; _save_end[i] = end;
+    } else {
+        _err_until[i] = now + kErrFlashMs;
+    }
+}
+
+// Alt+Seq (tap): arm a DEFERRED save of the whole take. prepare() commits it once the ~1.5s hold
+// window has elapsed without an erase (Option B), so holding Alt+Seq cancels it and erases instead.
+void SoftcutEngine::on_seq_toggle_arm(DeckRef::Ref d) {
+    if (!_stream) return;
+    const int i = idx(d);
+    _save_arm[i]    = true;
+    _save_arm_ms[i] = _time ? _time->now_ms() : 0;
+}
+
+// Alt+Seq (hold ~1.5s): clean-discard erase of the focused voice. Cancels the pending tap-save and
+// empties the buffer so the next Alt+Play records a fresh take. Runs on the main loop (UI tick), so the
+// buffer clear is safe; setPlayFlag(false) stops the audio read within a block (a tiny click on wipe is
+// fine). _len = 0 marks the voice empty.
+void SoftcutEngine::clear_sequence(DeckRef::Ref d) {
+    const int i = idx(d);
+    const int s = _active[i];
+    _save_arm[i] = false;                                   // a hold cancels the pending tap-save
+    _rolling[i][s] = false; _overdub[i][s] = false; _defining[i][s] = false;
+    _voice[i][s].setPlayFlag(false); _voice[i][s].setRecFlag(false); _voice[i][s].stop();
+    _len[i][s] = 0; _wpos[i][s] = 0;
+    if (_buf[i][s]) std::memset(_buf[i][s], 0, _cap * sizeof(float));
+    _pos_n[i][s] = 0.f; _size_n[i][s] = 0.5f;               // back to the boot loop window
+    _apply_window(i, s);
+    _want_reseed[i] = true;
 }
 
 void SoftcutEngine::_recompute_blend() {
@@ -473,6 +563,14 @@ void SoftcutEngine::render(DisplayModel& m) {
     for (DeckRef::Ref dk : { DeckRef::A, DeckRef::B }) {
         const int  i   = idx(dk);
         const int  s   = _active[i];
+        if (_save[i] != Save::Idle) {              // saving a loop to SD: solid amber ring + indicator
+            m.play[i] = DisplayModel::Indicator{ 0xffaa00, 1.f };
+            m.ring[i].set_brightness(1.f);
+            m.ring[i].set_hex_color(0xffaa00);
+            m.ring[i].set_segment(0.f, 0.999f);
+            m.ring[i].set_updated();
+            continue;
+        }
         const bool err = _time && now < _err_until[i];
         const float rr = rate_from_knob(_rate_n[i][s]);
         // Transport color of the focused track: overdub red, forward green, reverse cyan, frozen white.
@@ -539,6 +637,8 @@ const char* SoftcutEngine::_path(DeckRef::Ref d, int slot) {
 int   SoftcutEngine::active_track(DeckRef::Ref d) const { return _active[idx(d)]; }
 bool  SoftcutEngine::is_rolling(DeckRef::Ref d, int t) const { return _rolling[idx(d)][t]; }
 bool  SoftcutEngine::is_overdubbing(DeckRef::Ref d, int t) const { return _overdub[idx(d)][t] || _defining[idx(d)][t]; }
+bool  SoftcutEngine::is_saving(DeckRef::Ref d) const { return _save[idx(d)] != Save::Idle; }
+bool  SoftcutEngine::is_empty(DeckRef::Ref d, int t) const { return _len[idx(d)][t] == 0; }
 float SoftcutEngine::track_rate(DeckRef::Ref d, int t) const { return rate_from_knob(_rate_n[idx(d)][t]); }
 float SoftcutEngine::loop_start_sec(DeckRef::Ref d, int t) const { return _loop_start_sec(idx(d), t); }
 float SoftcutEngine::loop_len_sec(DeckRef::Ref d, int t) const {
