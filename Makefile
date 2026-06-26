@@ -75,6 +75,24 @@ C_DEFS += -DSPK_ENGINE_SHUTTLE
 # constructs/pumps/injects the StreamDeck and ctx.stream is live on target.
 C_DEFS += -DSPK_USE_STREAM
 ENGINE_SOURCES = src/engine/shuttle/shuttle_engine.cpp
+else ifeq ($(ENGINE), softcut)
+C_DEFS += -DSPK_ENGINE_SOFTCUT
+# Optional extra defines for diagnostics (e.g. SOFTCUT_EXTRA=-DSOFTCUT_DIAG_PASSTHROUGH). Empty by default.
+C_DEFS += $(SOFTCUT_EXTRA)
+# softcut's ReadWriteHead uses M_PI/M_PI_2, which strict -std=c++17 does not expose from <cmath> on
+# arm-none-eabi (the same idiom reso/mosc use for M_PI). Define them for this build.
+C_DEFS += -DM_PI=3.14159265358979323846 -DM_PI_2=1.57079632679489661923
+# Dual-deck overdub looper loads loops from SD (Alt+PITCH slot select + boot preload), so it opts into
+# the platform streaming service (stream_deck.cpp + fat_file.cpp), the same flag tape/shuttle/radio set.
+C_DEFS += -DSPK_USE_STREAM
+# Vendored monome softcut-lib core (5 .cpp: Voice/ReadWriteHead/SubHead/Svf/FadeCurves), under
+# src/engine/softcut/vendor. SOFTCUT_INC scopes its public headers to this build. The DSP is tiny
+# (~10 KB SRAM_EXEC) so this is a normal -O2 SRAM build, not QSPI. Feasibility scaffold: pair with
+# METER=1 and flip the Mode switch (Slice/Reel/Drift -> 2/4/6 voices) to read on-device load.
+SOFTCUT_TP  = src/engine/softcut/vendor
+SOFTCUT_INC = -I$(SOFTCUT_TP)/include
+ENGINE_SOURCES = src/engine/softcut/softcut_engine.cpp \
+	$(wildcard $(SOFTCUT_TP)/src/*.cpp)
 else ifeq ($(ENGINE), reso)
 C_DEFS += -DSPK_ENGINE_RESO
 # stmlib's filters use M_PI, which strict -std=c++17 does not expose from <cmath> on arm-none-eabi.
@@ -294,7 +312,7 @@ APP_TYPE = BOOT_SRAM
 LDSCRIPT = alt_sram.lds
 BOOT_BIN = bootloader-spotykach-v2.bin
 
-C_INCLUDES = -Isrc/ -Ilib/ $(RESO_INC) $(MOSC_INC) $(GRAINCLOUD_INC) $(GEN_INC) $(CSOUND_INC) $(CHUCK_INC)
+C_INCLUDES = -Isrc/ -Ilib/ $(RESO_INC) $(MOSC_INC) $(GRAINCLOUD_INC) $(SOFTCUT_INC) $(GEN_INC) $(CSOUND_INC) $(CHUCK_INC)
 # NOTE: there used to be `C_USR_FLAGS = -ffast-math -funroll-loops` here, but the core Makefile reads
 # C_USER_FLAGS (with the E), so it was dead - those flags never reached the compiler and the shipping
 # firmware was built without them. Removed to stop it reading as active. The device meets its CPU/SRAM

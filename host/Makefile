@@ -19,7 +19,7 @@ DAISYSP   = $(ROOT)/lib/DaisySP/Source
 # must be on the include path. src/transport/ headers (transport.h) likewise pull siblings
 # (synclock.h/tempo.h) by bare name, so that dir is on the path too for TUs that include the transport.
 DAISYSP_INC = $(addprefix -I,$(wildcard $(DAISYSP)/*/))
-INCLUDES  = -Ishim -I$(ROOT)/src -I$(ROOT)/src/transport -I$(RESO_TP) -I$(GRAINCLOUD_TP) -I. -I$(DAISYSP) $(DAISYSP_INC)
+INCLUDES  = -Ishim -I$(ROOT)/src -I$(ROOT)/src/transport -I$(RESO_TP) -I$(GRAINCLOUD_TP) -I$(ROOT)/src/engine/softcut/vendor/include -I. -I$(DAISYSP) $(DAISYSP_INC)
 # -DTEST selects stmlib's portable C paths (the ARM ssat/usat asm is gated behind #ifndef TEST), so
 # the Rings DSP (under $(RESO_TP)) compiles on the desktop. Unused elsewhere in this repo.
 CXXFLAGS  = -std=c++17 -O2 -DTEST -Wall -Wno-unused-variable -Wno-unused-but-set-variable $(INCLUDES)
@@ -53,6 +53,8 @@ REVERB_SRC  = $(ROOT)/src/engine/reverb/reverb_engine.cpp
 TAPE_SRC    = $(ROOT)/src/engine/tape/tape_engine.cpp
 # The buffer-based shuttle engine (4 in-RAM tape tracks; bipolar/reverse varispeed). Self-contained.
 SHUTTLE_SRC = $(ROOT)/src/engine/shuttle/shuttle_engine.cpp
+# The dual-deck softcut overdub looper: engine wrapper + the vendored monome softcut core (5 .cpp).
+SOFTCUT_SRC = $(ROOT)/src/engine/softcut/softcut_engine.cpp $(wildcard $(ROOT)/src/engine/softcut/vendor/src/*.cpp)
 RADIO_SRC   = $(ROOT)/src/engine/radio/radio_engine.cpp
 # reso's DSP is the Mutable Instruments Rings engine + its stmlib support library (under $(RESO_TP)).
 RINGS_SRC   = $(RESO_TP)/rings/dsp/part.cc $(RESO_TP)/rings/dsp/string.cc \
@@ -69,6 +71,7 @@ TEST_REVERB  = $(BUILD)/test_reverb
 TEST_TAPE    = $(BUILD)/test_tape
 TEST_STREAM  = $(BUILD)/test_stream
 TEST_SHUTTLE = $(BUILD)/test_shuttle
+TEST_SOFTCUT = $(BUILD)/test_softcut
 TEST_RADIO   = $(BUILD)/test_radio
 TEST_CHORUS  = $(BUILD)/test_chorus
 TEST_FILTER = $(BUILD)/test_filter
@@ -163,6 +166,11 @@ $(TEST_DELAY): test_delay.cpp $(LIB_SRC) $(DELAY_SRC) $(ROOT)/src/engine/delay/d
 $(TEST_SHUTTLE): test_shuttle.cpp $(LIB_SRC) $(SHUTTLE_SRC) $(ROOT)/src/engine/shuttle/shuttle_engine.h | $(BUILD)
 	$(CXX) $(CXXFLAGS) test_shuttle.cpp $(LIB_SRC) $(SHUTTLE_SRC) -o $@
 
+# softcut overdub looper. M_PI/M_PI_2 for the vendored core (macOS clang exposes them, but be explicit
+# for portability), as the firmware Makefile does.
+$(TEST_SOFTCUT): test_softcut.cpp $(LIB_SRC) $(SOFTCUT_SRC) $(ROOT)/src/engine/softcut/softcut_engine.h | $(BUILD)
+	$(CXX) $(CXXFLAGS) -DM_PI=3.14159265358979323846 -DM_PI_2=1.57079632679489661923 test_softcut.cpp $(LIB_SRC) $(SOFTCUT_SRC) -o $@
+
 # Radio engine + the headerless raw-stream codec (raw_stream.h, header pulled by the test).
 $(TEST_RADIO): test_radio.cpp $(LIB_SRC) $(RADIO_SRC) $(ROOT)/src/engine/radio/radio_engine.h \
                $(ROOT)/src/memory/raw_stream.h | $(BUILD)
@@ -207,7 +215,7 @@ run: $(TARGET)
 
 # `test` runs both engine harnesses. Both inject the transport via EngineContext (granular drives the
 # real platform Transport; edrums uses a small stub ITransport) - the post-transport-decoupling way.
-test: test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-tape test-stream test-shuttle test-radio test-chorus test-filter test-voice test-csound-alloc test-csound-patch test-csound-midi test-csound-reload test-chuck-patch
+test: test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-tape test-stream test-shuttle test-softcut test-radio test-chorus test-filter test-voice test-csound-alloc test-csound-patch test-csound-midi test-csound-reload test-chuck-patch
 
 test-granular: $(TEST)
 	./$(TEST)
@@ -238,6 +246,9 @@ test-stream: $(TEST_STREAM)
 
 test-shuttle: $(TEST_SHUTTLE)
 	./$(TEST_SHUTTLE)
+
+test-softcut: $(TEST_SOFTCUT)
+	./$(TEST_SOFTCUT)
 
 test-radio: $(TEST_RADIO)
 	./$(TEST_RADIO)
