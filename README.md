@@ -10,7 +10,7 @@ Current engines include:
 
 1. [granular](docs/engines/granular.md): dual-deck granular looper (the original reference spotykach firmware as an engine)
 
-2. [delay](docs/engines/delay.md): tempo-synchronized stereo delay with switchable characters (Clean / Tape / Shimmer on the Reel/Slice/Drift switch) and stereo topologies (Stereo / DoubleMono / Ping-pong on the route switch), plus a feedback tone control, a modulation LFO (chorus/flange/vibrato), and a Play-pad freeze
+2. [delay](docs/engines/delay.md): tempo-synchronized stereo delay with switchable characters (Clean / Tape / Shimmer on the Reel/Slice/Drift switch) and stereo topologies (Stereo / DoubleMono / Ping-pong on the route switch), plus a feedback tone control, a modulation LFO (chorus/flange/vibrato), a Play-pad freeze, and a Rev-pad reverse
 
 3. [edrums](docs/engines/edrums.md): four-voice Euclidean drum machine with tweakable synthesized drums
 
@@ -41,6 +41,8 @@ Current engines include:
 16. [mosc](docs/engines/mosc.md): a dual **macro-oscillator** giving each deck a full 24-engine [Mutable Instruments Plaits](https://github.com/pichenettes/eurorack/tree/master/plaits) voice (virtual analog, FM, wavetable, granular, additive, chord, speech, modal, drums, …). PITCH = note, Alt+PITCH = engine select (24 models), SIZE/POS/ENV = harmonics/timbre/morph, MOD_AMT/MODFREQ = LPG decay/colour; the Mode switch picks Gate vs Drone and the Routing switch combines the two voices (Stereo / DoubleMono / a GenerativeStereo out+aux spread). A **QSPI build** (the 24-engine voice is too big for SRAM) but it needs no SD card or external library — the Plaits DSP is vendored in-tree. Cloned from the reso engine (same author, shared `stmlib`)
 
 17. [softcut](docs/engines/softcut.md): a dual-deck crossfaded **overdub looper** on monome's [softcut-lib](https://github.com/monome/softcut-lib) (4 voices, 2 per deck). Unlike the buffer-tape engines, softcut plays and records the same loop at once with subsample-accurate click-free crossfades and **interpolated overdub** — layering live input onto a running loop with an ENV-knob feedback control (sound-on-sound). It's a **record-defines-loop** looper: on an empty voice the first Alt+Play records a fresh take and the second closes the loop at the length you played; a voice with content overdubs on top. PITCH = bipolar varispeed/reverse, POS/SIZE = loop window, ENV = overdub feedback, the FLUX pad = a sweepable filter, MOD_AMT/MODFREQ = loop crossfade time / rate slew; Seq realigns all voices (click-free `cutToPos` sync), Alt+PITCH loads loop clips from SD, and **Alt+Seq / Alt+Rev save** the full take / trimmed loop back to the card. A normal **SRAM build** (the softcut DSP is tiny); 4 voices is the hardware-measured CPU budget, with 10.9 s buffers per voice. The vendored core lives in `src/engine/softcut/vendor`
+
+18. [qdelay](docs/engines/qdelay.md): a dub/ambient **flavor of the delay** (inspired by [qdelay](https://github.com/tiagolr/qdelay)) — the same delay grammar (tempo-synced divisions, feedback, mix, PITCH, ENV tone, mod LFO, Freeze/Reverse pads, Stereo/DoubleMono/Ping-pong) with the character palette swapped to **Clean / Diffuse / Duck** (Reel/Slice/Drift switch). Diffuse runs the feedback through an 8-stage allpass diffuser (a JUCE-free port of qdelay's `Diffusor`) for a dense reverb-like wash; Duck attenuates the wet under the dry input so repeats bloom in the gaps. A normal **SRAM build** (the diffuser's buffers live in SDRAM)
 
 Engines can be authored in three ways:
 
@@ -87,7 +89,9 @@ The firmware is a fixed hardware/UI **platform** that hosts a swappable DSP **en
 
 - `make -j8` — the granular looper (default; `ENGINE=granular`).
 
-- `make -j8 ENGINE=delay` — a tempo-synced stereo delay (musical divisions, feedback, pitch-shifted taps) with **Clean / Tape / Shimmer** characters (Reel/Slice/Drift switch), **Stereo / DoubleMono / Ping-pong** topologies (route switch), a feedback tone control on ENV, a delay-time **modulation LFO** (MODFREQ/MOD_AMT → chorus/flange/vibrato), and a **Freeze** hold on the Play pad.
+- `make -j8 ENGINE=delay` — a tempo-synced stereo delay (musical divisions, feedback, pitch-shifted taps) with **Clean / Tape / Shimmer** characters (Reel/Slice/Drift switch), **Stereo / DoubleMono / Ping-pong** topologies (route switch), a feedback tone control on ENV, a delay-time **modulation LFO** (MODFREQ/MOD_AMT → chorus/flange/vibrato), a **Freeze** hold on the Play pad, and a **Reverse** on the Rev pad.
+
+- `make -j8 ENGINE=qdelay` — a dub/ambient **flavor of the delay** (inspired by [qdelay](https://github.com/tiagolr/qdelay)): the same control grammar with the character palette swapped to **Clean / Diffuse / Duck** (Reel/Slice/Drift switch). **Diffuse** runs the feedback through an 8-stage allpass diffuser (a JUCE-free port of qdelay's `Diffusor`) for a dense, reverb-like wash; **Duck** attenuates the wet under the dry input so the repeats bloom in the gaps. Reuses the delay's tempo sync, PITCH transpose, ENV tone, mod LFO, Freeze/Reverse pads and the three topologies. A normal SRAM build (the diffuser's buffers live in SDRAM).
 
 - `make -j8 ENGINE=edrums` — a four-drum Euclidean drum machine (two drums per deck, Rev-pad swaps the editable one; polymeter, live model select) with **synthesized voices you shape live**: per-drum gain, decay, and grit/flux macros for drive, pitch-sweep, brightness, and body↔noise balance.
 
@@ -139,10 +143,14 @@ The bootloader version used in this project enables USB DFU firmware updating fr
 
 `make program-dfu` flashes whatever is currently in `build/` (it does not rebuild). To flash a non-default engine, build it first in the same step, e.g. `make ENGINE=passthrough && make program-dfu`.
 
-For convenience there are one-shot targets that **clean + build + flash** a variant (put the device in DFU mode first, as in step 3): `make engine-granular` (the looper), `make engine-delay`, `make engine-edrums`, `make engine-reso`, `make engine-tape`, `make engine-shuttle`, `make engine-radio`, `make engine-reverb`, `make engine-chorus`, `make engine-filter`, `make engine-voice`, `make engine-gigaverb`, and `make engine-passthrough`. (`make engine-csound`, `make engine-chuck`, and `make engine-mosc` also exist but are QSPI builds — csound/chuck need a one-time `libcsound.a` / `libchuck.a` prerequisite, mosc needs none — see [`docs/engines/csound.md`](docs/engines/csound.md), [`docs/engines/chuck.md`](docs/engines/chuck.md), [`docs/engines/mosc.md`](docs/engines/mosc.md).)
+For convenience there are one-shot targets that **clean + build + flash** a variant (put the device in DFU mode first, as in step 3): `make engine-granular` (the looper), `make engine-delay`, `make engine-qdelay`, `make engine-edrums`, `make engine-reso`, `make engine-tape`, `make engine-shuttle`, `make engine-radio`, `make engine-reverb`, `make engine-chorus`, `make engine-filter`, `make engine-voice`, `make engine-gigaverb`, and `make engine-passthrough`. (`make engine-csound`, `make engine-chuck`, and `make engine-mosc` also exist but are QSPI builds — csound/chuck need a one-time `libcsound.a` / `libchuck.a` prerequisite, mosc needs none — see [`docs/engines/csound.md`](docs/engines/csound.md), [`docs/engines/chuck.md`](docs/engines/chuck.md), [`docs/engines/mosc.md`](docs/engines/mosc.md).)
 
 Once finished, the device will automatically boot the new firmware. This can "brick" (temporarily) the device and require reinstallation of either the bootloader, the firmware binary, or both.
 
 ## Architecture & developer docs
 
 Firmware internals are documented under [`docs/`](docs/) — start with [`docs/architecture.md`](docs/architecture.md), which covers the hardware platform, the platform/engine seam (`IEngine`), and how to slot in a new engine. [`docs/engines/`](docs/engines/) documents each engine in detail plus the shared transport and knob-routing model, and [`docs/engine-types/`](docs/engine-types/) covers the three engine-authoring methods (native C++, Faust/cyfaust, gen~/gen-dsp). Notable changes are tracked in [`CHANGELOG.md`](CHANGELOG.md).
+
+## License
+
+This project is **MIT** (see [`LICENSE`](LICENSE)), **except the `qdelay` engine**, which is **GPLv3**: `src/dsp/diffuser.h` is a port of [qdelay](https://github.com/tiagolr/qdelay)'s GPLv3 `Diffusor`, so that file and `src/engine/qdelay/` (and any firmware built with `ENGINE=qdelay`) are distributed under GPLv3 — see [`src/engine/qdelay/NOTICE.md`](src/engine/qdelay/NOTICE.md) and [`src/engine/qdelay/LICENSE`](src/engine/qdelay/LICENSE). Every other engine and the platform itself remain MIT and do not link the GPLv3 code. Vendored third-party DSP keeps its own upstream license alongside the code (e.g. `stmlib`).

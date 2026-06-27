@@ -33,6 +33,11 @@ ENGINE_SOURCES =
 else ifeq ($(ENGINE), delay)
 C_DEFS += -DSPK_ENGINE_DELAY
 ENGINE_SOURCES = src/engine/delay/delay_engine.cpp
+else ifeq ($(ENGINE), qdelay)
+C_DEFS += -DSPK_ENGINE_QDELAY
+# QDelay flavor: the delay grammar with a Clean/Diffuse/Duck character palette. Its feedback diffuser
+# is the header-only src/dsp/diffuser.h (no extra source); the engine .cpp is the only unit to compile.
+ENGINE_SOURCES = src/engine/qdelay/qdelay_engine.cpp
 else ifeq ($(ENGINE), edrums)
 C_DEFS += -DSPK_ENGINE_EDRUMS
 ENGINE_SOURCES = src/engine/edrums/edrums_engine.cpp
@@ -257,7 +262,7 @@ LDFLAGS += -u _printf_float
 # Route ChucK's C-malloc family to the SDRAM pool (chuck_alloc.cpp); the platform heap stays in SRAM.
 LDFLAGS += -Wl,--wrap=malloc,--wrap=free,--wrap=calloc,--wrap=realloc
 else
-$(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', 'edrums', 'reso', 'mosc', 'graincloud', 'tape', 'reverb', 'shuttle', 'radio', 'chorus', 'filter', 'voice', 'csound', or 'chuck')
+$(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', 'qdelay', 'edrums', 'reso', 'mosc', 'graincloud', 'tape', 'reverb', 'shuttle', 'radio', 'chorus', 'filter', 'voice', 'csound', or 'chuck')
 endif
 
 # Opt-in (make ... METER=1): enable the on-device CPU load meter (app.cpp's CpuLoadMeter). It writes
@@ -389,7 +394,7 @@ all: check-boundary
 
 # One-shot variant flash: clean -> build -> flash over DFU. Put the device in DFU mode first
 # (hold Reset ~3s until the bottom pad LEDs breathe white), then `make granular` / `make passthrough`.
-.PHONY: engine-granular engine-passthrough engine-delay engine-edrums engine-reso engine-mosc program-mosc engine-graincloud engine-tape engine-shuttle engine-softcut engine-reverb engine-radio engine-chorus engine-filter engine-voice engine-gigaverb engine-csound program-csound engine-chuck program-chuck
+.PHONY: engine-granular engine-passthrough engine-delay engine-qdelay engine-edrums engine-reso engine-mosc program-mosc engine-graincloud engine-tape engine-shuttle engine-softcut engine-reverb engine-radio engine-chorus engine-filter engine-voice engine-gigaverb engine-csound program-csound engine-chuck program-chuck
 engine-granular:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=granular
@@ -404,6 +409,11 @@ engine-delay:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=delay
 	$(MAKE) ENGINE=delay program-dfu
+
+engine-qdelay:
+	$(MAKE) clean
+	$(MAKE) -j8 ENGINE=qdelay
+	$(MAKE) ENGINE=qdelay program-dfu
 
 engine-edrums:
 	$(MAKE) clean

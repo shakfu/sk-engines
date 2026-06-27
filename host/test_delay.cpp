@@ -162,6 +162,32 @@ int main() {
         check(fz > nf * 5.0f, "Freeze sustains far longer than an unfrozen (decaying) delay");
     }
 
+    // --- 8. Reverse (Rev pad): backward read differs from forward, stays finite/bounded ---------
+    {
+        // A forward delay and a reversed one, primed from the same noise burst. The Rev pad is toggled
+        // on the reversed instance before the silent tail; their tails must diverge but both behave.
+        auto run_rev = [&](bool rev) {
+            DelayEngine e; cfg(e, ctx, 0.6f, 1.0f, DelayEngine::Clean, 1); // wet only, moderate feedback
+            if (rev) { e.on_play_pad(DeckRef::A, true); e.on_play_pad(DeckRef::B, true); }
+            return run(e);
+        };
+        const auto fwd = run_rev(false), rev = run_rev(true);
+        std::printf("reverse: SAD(fwd,rev)=%.2f tail(rev)=%.2f maxabs(rev)=%.3f\n",
+                    sad(fwd.l, rev.l), tail(rev.l), maxabs(rev.l));
+        check(finite(rev.l) && finite(rev.r), "reverse output finite");
+        check(tail(rev.l) > 1.0f, "a reversed delay still rings out");
+        check(sad(fwd.l, rev.l) > 1.0f, "reverse read differs from forward");
+        check(maxabs(rev.l) < 8.0f, "reverse output stays bounded");
+
+        // Toggling the Rev pad twice returns to forward behaviour (idempotent gesture).
+        DelayEngine e; cfg(e, ctx, 0.6f, 1.0f, DelayEngine::Clean, 1);
+        e.on_play_pad(DeckRef::A, true); e.on_play_pad(DeckRef::A, true);
+        e.on_play_pad(DeckRef::B, true); e.on_play_pad(DeckRef::B, true);
+        const auto back = run(e);
+        std::printf("reverse: SAD(fwd,toggled-back)=%.4f\n", sad(fwd.l, back.l));
+        check(sad(fwd.l, back.l) < 1e-3f, "Rev toggled twice == forward");
+    }
+
     if (g_failures == 0) { std::printf("OK: all delay checks passed\n"); return 0; }
     std::printf("FAILED: %d check(s)\n", g_failures);
     return 1;

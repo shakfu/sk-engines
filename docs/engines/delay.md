@@ -10,7 +10,7 @@ Two delay lines (deck A → left, deck B → right) whose delay time **locks to 
 
 A single delay line over borrowed SDRAM (sub-allocated from the engine arena, sized to hold the longest division at the slowest tempo, ~6 s). Per sample, split into `read_color()` then `write_out()` (so ping-pong can cross the two taps' feedback):
 
-1. Fractional read `s_delay` samples behind the write head (Tape adds a wow/flutter LFO to the read time).
+1. Fractional read `s_delay` samples behind the write head (Tape adds a wow/flutter LFO to the read time). When the deck is **reversed** (Rev pad), the read instead walks *backwards* over a delay-length window, with two heads half a window apart raised-cosine crossfaded so the wrap is click-free (the same seamless-wrap trick the pitch shifter uses).
 
 2. **Colorize the feedback signal:** a one-pole low-pass (the ENV tone control), then — by character — Tape soft-saturates it, or Shimmer pitch-shifts it +12.
 
@@ -40,6 +40,7 @@ _Generated from [`docs/diagrams/controls/delay.json`](../diagrams/controls/delay
 | **MODFREQ** | `set_mod_speed` | mod-LFO rate (~0.05 .. 12 Hz) — chorus/flange/vibrato when paired with MOD_AMT |
 | **MOD_AMT** | `ModAmp` | mod-LFO depth — modulates the delay time 0 .. ~12 ms (all characters; Tape keeps a small floor) |
 | **Play pad** | `on_play_pad` | **Freeze** (per deck): loop the buffer at unity feedback; the input still passes dry so you can play over it |
+| **Rev pad** | `on_play_pad` (reverse) | **Reverse** (per deck): read the buffer backwards over a delay-length window — repeats play in reverse |
 | **Reel/Slice/Drift switch** | `ConfigId::Mode` (per deck) | **character**: Clean / Tape / Shimmer |
 | **Route switch** | `ConfigId::Route` | **topology**: Stereo / DoubleMono / Ping-pong |
 
@@ -61,4 +62,4 @@ Knob meanings are fixed across characters — the mode only changes the feedback
 
 - **Ping-pong** — linked + **cross-feedback**: each deck's colored feedback feeds the *other*, so echoes bounce L↔R.
 
-`capabilities()` = `CapOwnDisplay | CapDualDeck`; `route()` reports the topology for the route LED. The engine renders its own display (a division arc tinted by character + an input-level play indicator); the platform composites the clock indicators over it.
+`capabilities()` = `CapOwnDisplay | CapDualDeck`; `route()` reports the topology for the route LED. The engine renders its own display (a division arc tinted by character + a play indicator: white when frozen, cyan when reversed, else green lit by the input); the platform composites the clock indicators over it.

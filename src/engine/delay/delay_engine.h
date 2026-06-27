@@ -84,6 +84,8 @@ private:
         float   tone_lp = 0.f;   // one-pole state for the feedback tone filter
         float   mod_ph = 0.f, mod_rate = 0.f, mod_depth = 0.f; // delay-time mod LFO (MODFREQ/MOD_AMT; Tape adds a floor)
         bool    frozen = false;  // Play-pad freeze: loop the buffer at unity feedback, ignoring new input
+        bool    reversed = false; // Rev-pad: read the buffer backwards over a delay-length window
+        float   rev_ph = 0.f;    // reverse-read phase (0..window), two heads crossfaded at the wrap
         float   peak = 0.f;
         float   _x = 0.f, _wet = 0.f; // stashed input + read wet (for the read/write split)
         Shifter out_shift;       // PITCH output transpose
@@ -93,6 +95,8 @@ private:
         void  set_div(float norm);   // SIZE 0..1 -> musical-division index + beats
         void  set_tone(float env);   // ENV 0..1 -> feedback low-pass coefficient
         void  set_target(float bpm); // recompute target_d from bpm (per block)
+        float read_buf(float off) const; // linear-interpolated read `off` samples behind the write head
+        float read_rev(float win);   // crossfaded backward read over a `win`-sample window (reverse delay)
         float read_color(float x_in); // smooth + read the tap + colorize -> the feedback signal (pre *fb)
         float write_out(float fbsig); // write x + fb*fbsig, return the wet/dry-mixed (PITCH-transposed) output
     };
@@ -105,6 +109,7 @@ private:
     uint8_t _mode[DeckRef::Count]  = { Clean, Clean }; // per-deck character (ConfigId::Mode)
     float   _mod_rate[DeckRef::Count] = { 0.f, 0.f };  // per-deck mod LFO rate in Hz (MODFREQ)
     bool    _freeze[DeckRef::Count]   = { false, false }; // per-deck Freeze (Play pad)
+    bool    _reverse[DeckRef::Count]  = { false, false }; // per-deck Reverse (Rev pad)
     Route   _route = Route::Stereo;                    // ConfigId::Route topology
     float   _param[static_cast<size_t>(ParamId::Count)][DeckRef::Count] = {};
 };

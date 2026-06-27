@@ -68,6 +68,7 @@ void DelayEngine::Tap::init(void* mem, float sample_rate, size_t length)
     fb = 0.f; mix = 0.f; ratio = 1.f; tone_coef = 1.f;
     tone_lp = 0.f; peak = 0.f; _x = 0.f; _wet = 0.f;
     mod_ph = 0.f; mod_rate = 0.f; mod_depth = 0.f; frozen = false;
+    reversed = false; rev_ph = 0.f;
     out_shift.clear(); fb_shift.clear();
     if (buf) for (size_t i = 0; i < len; i++) buf[i] = 0.f;
 }
@@ -91,6 +92,33 @@ void DelayEngine::Tap::set_target(float bpm)
 {
     const float d = sr * (60.f / bpm) * beats;
     target_d = std::clamp(d, min_d, max_d);
+}
+
+// Linear-interpolated read `off` samples behind the write head (wraps the circular buffer).
+float DelayEngine::Tap::read_buf(float off) const
+{
+    float rp = static_cast<float>(w) - off;
+    while (rp < 0.f) rp += static_cast<float>(len);
+    const size_t i0 = static_cast<size_t>(rp);
+    const float  frac = rp - static_cast<float>(i0);
+    const size_t i1 = (i0 + 1 >= len) ? 0 : i0 + 1;
+    return buf[i0] * (1.f - frac) + buf[i1] * frac;
+}
+
+// Reverse delay: play the most recent `win` samples backwards. A phase walks forward 0..win while the
+// read offset (= win - phase) shrinks from the oldest sample toward the write head, so time runs in
+// reverse; at the wrap the offset would jump win->0 (a click), so two heads half a window apart are
+// raised-cosine crossfaded (gains sum to 1, zero at the wrap). Mirrors the Shifter's seamless-wrap trick.
+float DelayEngine::Tap::read_rev(float win)
+{
+    if (win < 2.f) win = 2.f;
+    rev_ph += 1.f;
+    while (rev_ph >= win) rev_ph -= win;
+    float p2 = rev_ph + win * 0.5f;
+    if (p2 >= win) p2 -= win;
+    const float g1 = 0.5f * (1.f - std::cos(kTwoPi * rev_ph / win));
+    const float g2 = 0.5f * (1.f - std::cos(kTwoPi * p2     / win));
+    return read_buf(win - rev_ph) * g1 + read_buf(win - p2) * g2;
 }
 
 // Smooth controls, read the (optionally wow-modulated) fractional tap, and colorize the signal that
@@ -117,12 +145,9 @@ float DelayEngine::Tap::read_color(float x_in)
         d += std::sin(mod_ph) * depth;
         if (d < min_d) d = min_d;
     }
-    float rp = static_cast<float>(w) - d;
-    while (rp < 0.f) rp += static_cast<float>(len);
-    const size_t i0 = static_cast<size_t>(rp);
-    const float  frac = rp - static_cast<float>(i0);
-    const size_t i1 = (i0 + 1 >= len) ? 0 : i0 + 1;
-    _wet = buf[i0] * (1.f - frac) + buf[i1] * frac;
+    // Reverse: read the smoothed-delay-length window backwards (the mod LFO still wobbles the window in
+    // Tape). Otherwise the normal forward tap `d` samples behind the write head.
+    _wet = reversed ? read_rev(d) : read_buf(d);
 
     float s = _wet;
     tone_lp += (s - tone_lp) * tone_coef;        // feedback tone (ENV); transparent when tone_coef == 1
@@ -187,6 +212,7 @@ void DelayEngine::apply_params(Tap& t, DeckRef::Ref src)
     t.mod_rate  = _mod_rate[s];
     t.mod_depth = _param[static_cast<size_t>(ParamId::ModAmp)][s] * 0.012f * t.sr; // MOD_AMT -> 0..12 ms
     t.frozen    = _freeze[s];
+    t.reversed  = _reverse[s];
 }
 
 void DelayEngine::process(const float* const* in, float** out, size_t size)
@@ -231,11 +257,14 @@ void DelayEngine::set_mod_speed(DeckRef::Ref deck, float value, bool /*sync*/)
     _mod_rate[_safe(deck)] = 0.05f * std::exp2(value * 8.f);
 }
 
-// Play pad toggles Freeze for that deck (loop the buffer at unity feedback). The Rev variant (reverse)
-// is left for a future gesture. Returns false (no "empty" concept for a delay).
+// Play pad toggles Freeze for that deck (loop the buffer at unity feedback). The Rev pad toggles
+// Reverse for that deck (read the buffer backwards over a delay-length window). Returns false (no
+// "empty" concept for a delay).
 bool DelayEngine::on_play_pad(DeckRef::Ref deck, bool reverse)
 {
-    if (!reverse) { const auto d = _safe(deck); _freeze[d] = !_freeze[d]; }
+    const auto d = _safe(deck);
+    if (reverse) _reverse[d] = !_reverse[d];
+    else         _freeze[d]  = !_freeze[d];
     return false;
 }
 
@@ -277,8 +306,9 @@ void DelayEngine::render(DisplayModel& m)
         m.ring[c].set_hex_color(kModeColor[md]);
         m.ring[c].set_segment(0.f, static_cast<float>(_tap[c].div + 1) / kDivCount); // division arc, stepped by SIZE
         m.ring[c].set_updated();
-        // Play pad: white when frozen, else green lit by the input signal.
-        m.play[c] = _freeze[src] ? DisplayModel::Indicator{ 0xffffffu, 1.f }
-                                 : DisplayModel::Indicator{ 0x00ff00u, _tap[c].peak > 1e-3f ? 1.f : 0.15f };
+        // Play pad: white when frozen, cyan when reversed, else green lit by the input signal.
+        m.play[c] = _freeze[src]  ? DisplayModel::Indicator{ 0xffffffu, 1.f }
+                  : _reverse[src] ? DisplayModel::Indicator{ 0x00ffffu, 1.f }
+                                  : DisplayModel::Indicator{ 0x00ff00u, _tap[c].peak > 1e-3f ? 1.f : 0.15f };
     }
 }

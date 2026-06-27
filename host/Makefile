@@ -42,6 +42,8 @@ GC_CORE_SRC = $(wildcard $(ROOT)/src/engine/graincloud/*.cpp)
 GC_LIB_SRC  = $(GC_CORE_SRC) $(DSP_SRC) $(TRANSPORT_SRC) $(ENGINE_SRC) $(DAISYSP_SRC)
 # The edrums/reso/reverb engines live under src/engine/<name>/ (outside the wildcards above); add for tests.
 DELAY_SRC   = $(ROOT)/src/engine/delay/delay_engine.cpp
+# qdelay flavor: its feedback diffuser is the header-only src/dsp/diffuser.h, so just the engine .cpp.
+QDELAY_SRC  = $(ROOT)/src/engine/qdelay/qdelay_engine.cpp
 EDRUMS_SRC  = $(ROOT)/src/engine/edrums/edrums_engine.cpp
 RESO_SRC    = $(ROOT)/src/engine/reso/reso_engine.cpp
 # graincloud is the granular engine built with SPK_GRAIN_GF (gf_cloud.cpp swaps the grain DSP); there is
@@ -77,6 +79,8 @@ TEST_CHORUS  = $(BUILD)/test_chorus
 TEST_FILTER = $(BUILD)/test_filter
 TEST_VOICE   = $(BUILD)/test_voice
 TEST_DELAY   = $(BUILD)/test_delay
+TEST_QDELAY  = $(BUILD)/test_qdelay
+TEST_DIFFUSER = $(BUILD)/test_diffuser
 TEST_GRAINCLOUD_KERNEL = $(BUILD)/test_graincloud_kernel
 TEST_CSOUND_ALLOC = $(BUILD)/test_csound_alloc
 TEST_CSOUND_PATCH = $(BUILD)/test_csound_patch
@@ -86,7 +90,7 @@ TEST_CHUCK_PATCH = $(BUILD)/test_chuck_patch
 BENCH_REVERB     = $(BUILD)/bench_reverb
 BENCH_GRAINCLOUD = $(BUILD)/bench_graincloud
 
-.PHONY: all clean run test test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-tape test-stream test-shuttle test-radio test-chorus test-filter test-voice test-csound-alloc test-csound-patch test-csound-midi test-csound-reload test-chuck-patch bench-reverb bench-graincloud
+.PHONY: all clean run test test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-qdelay test-diffuser test-tape test-stream test-shuttle test-radio test-chorus test-filter test-voice test-csound-alloc test-csound-patch test-csound-midi test-csound-reload test-chuck-patch bench-reverb bench-graincloud
 all: $(TARGET)
 
 $(TARGET): $(SRC) | $(BUILD)
@@ -163,6 +167,14 @@ $(TEST_TAPE): test_tape.cpp $(LIB_SRC) $(TAPE_SRC) $(ROOT)/src/engine/tape/faust
 $(TEST_DELAY): test_delay.cpp $(LIB_SRC) $(DELAY_SRC) $(ROOT)/src/engine/delay/delay_engine.h | $(BUILD)
 	$(CXX) $(CXXFLAGS) test_delay.cpp $(LIB_SRC) $(DELAY_SRC) -o $@
 
+$(TEST_QDELAY): test_qdelay.cpp $(LIB_SRC) $(QDELAY_SRC) $(ROOT)/src/engine/qdelay/qdelay_engine.h $(ROOT)/src/dsp/diffuser.h | $(BUILD)
+	$(CXX) $(CXXFLAGS) test_qdelay.cpp $(LIB_SRC) $(QDELAY_SRC) -o $@
+
+# The diffuser is header-only (src/dsp/diffuser.h, no JUCE, no heap in the audio path), so its test
+# needs no other sources - just the include path.
+$(TEST_DIFFUSER): test_diffuser.cpp $(ROOT)/src/dsp/diffuser.h | $(BUILD)
+	$(CXX) $(CXXFLAGS) test_diffuser.cpp -o $@
+
 $(TEST_SHUTTLE): test_shuttle.cpp $(LIB_SRC) $(SHUTTLE_SRC) $(ROOT)/src/engine/shuttle/shuttle_engine.h | $(BUILD)
 	$(CXX) $(CXXFLAGS) test_shuttle.cpp $(LIB_SRC) $(SHUTTLE_SRC) -o $@
 
@@ -215,7 +227,7 @@ run: $(TARGET)
 
 # `test` runs both engine harnesses. Both inject the transport via EngineContext (granular drives the
 # real platform Transport; edrums uses a small stub ITransport) - the post-transport-decoupling way.
-test: test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-tape test-stream test-shuttle test-softcut test-radio test-chorus test-filter test-voice test-csound-alloc test-csound-patch test-csound-midi test-csound-reload test-chuck-patch
+test: test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-qdelay test-diffuser test-tape test-stream test-shuttle test-softcut test-radio test-chorus test-filter test-voice test-csound-alloc test-csound-patch test-csound-midi test-csound-reload test-chuck-patch
 
 test-granular: $(TEST)
 	./$(TEST)
@@ -237,6 +249,12 @@ test-reverb: $(TEST_REVERB)
 
 test-delay: $(TEST_DELAY)
 	./$(TEST_DELAY)
+
+test-qdelay: $(TEST_QDELAY)
+	./$(TEST_QDELAY)
+
+test-diffuser: $(TEST_DIFFUSER)
+	./$(TEST_DIFFUSER)
 
 test-tape: $(TEST_TAPE)
 	./$(TEST_TAPE)

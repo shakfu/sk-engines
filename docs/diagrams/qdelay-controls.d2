@@ -1,5 +1,5 @@
 # GENERATED from controls-template.d2 by scripts/gen_controls_diagram.py.
-# Edit the JSON spec (delay.json), not this file; then re-run / `make diagrams`.
+# Edit the JSON spec (qdelay.json), not this file; then re-run / `make diagrams`.
 
 direction: up
 
@@ -11,8 +11,8 @@ vars: {
 }
 
 title: |md
-  # Delay - tempo-synced stereo delay
-  _characters, topologies, modulation, freeze_
+  # QDelay - dub/ambient flavor of the delay
+  _Clean / Diffuse / Duck characters, topologies, freeze, reverse_
 | {
   near: top-center
   style.font-size: 26
@@ -39,7 +39,7 @@ panel: Front panel {
       shape: sql_table
       Pitch: "transpose wet +/-1 oct"
       Position: "feedback"
-      Size: "musical division (stepped)"
+      Size: "musical division (also Diffuse smear)"
       Envelope: "feedback tone (low-pass)"
       "Mix (SOS)": "wet/dry mix"
       Cycle: "mod-LFO rate"
@@ -76,7 +76,7 @@ panel: Front panel {
     switches: Switches (74HC165) {
       class: shared
       shape: sql_table
-      "Mode (L/C/R)": "character: Clean / Tape / Shimmer"
+      "Mode (L/C/R)": "character: Clean / Diffuse / Duck"
       "Routing (L/C/R)": "topology: Stereo / DblMono / Ping-pong"
       "CV target (U/C/D)": "-"
       "Out trims A/B": "output trims"
@@ -106,7 +106,7 @@ panel: Front panel {
       shape: sql_table
       Pitch: "transpose wet +/-1 oct"
       Position: "feedback"
-      Size: "musical division (stepped)"
+      Size: "musical division (also Diffuse smear)"
       Envelope: "feedback tone (low-pass)"
       "Mix (SOS)": "wet/dry mix"
       Cycle: "mod-LFO rate"
