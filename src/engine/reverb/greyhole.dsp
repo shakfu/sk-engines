@@ -3,7 +3,7 @@
 //
 // Greyhole (re.greyhole): a diffusion network of modulated allpasses with a pitch-shifter in the
 // feedback path - a lush, evolving, ambient reverb (originally a SuperCollider plugin by Nick Collins /
-// Julian Parker). Much more "alive" than the static plate/hall/freeverb. It has no internal dry/wet, so
+// Julian Parker). Much more "alive" than the static plate/hall. It has no internal dry/wet, so
 // the .dsp adds the crossfade. Stereo in/out. Control labels for the reverb engine's CaptureUI:
 //   "Feedback", "Size", "Damp", "Diffusion", "ModDepth", "Mix".
 declare name "greyhole";

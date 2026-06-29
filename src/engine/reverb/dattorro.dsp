@@ -4,7 +4,7 @@
 // Jon Dattorro's plate reverb (JAES 1997, "Effect Design Part 1"), via Faust's reverbs.lib
 // dattorro_rev demo wrapper. A modulated figure-8 tank: input pre-filter -> input diffusers ->
 // decay-diffusion allpasses with LFO excursion -> damped feedback. The tank modulation is what gives
-// the lush, non-metallic tail freeverb lacks. Stereo in / stereo out.
+// the lush, non-metallic tail a static comb reverb lacks. Stereo in / stereo out.
 //
 // The dattorro_rev demo is MIT-licensed (author: Jakob Zerbian); the maths.lib it pulls is LGPL with
 // the standard Faust runtime exception. Control labels consumed by the reverb engine's CaptureUI:

@@ -47,13 +47,43 @@ struct GigaverbEngineWrap {
         }
     }
 
+    // SIZE -> gigaverb "roomsize" scales the lengths of the reverb tank's delay lines, so a
+    // raw write makes the delay taps jump and crackle on every knob step (and ADC jitter
+    // passes straight through). Slew roomsize toward its target once per audio block (tick())
+    // so it glides instead of stepping. set_param only stores the target; tick() does the write.
+    static inline float s_room_cur    = 0.f;
+    static inline float s_room_target = 0.f;
+    static inline bool  s_room_primed = false;
+    static constexpr float kRoomSlew  = 0.05f;   // per-block one-pole coefficient (~40 ms glide)
+
     static void set_param(void* st, ParamId id, DeckRef::Ref deck, float v01) {
         if (deck == DeckRef::B) return;  // single stereo effect: ignore deck B
         const int i = index_of(id);
         if (i < 0) return;
         const float lo = gigaverb_daisy::wrapper_param_min(st, i);
         const float hi = gigaverb_daisy::wrapper_param_max(st, i);
-        gigaverb_daisy::wrapper_set_param(st, i, lo + v01 * (hi - lo));
+        const float val = lo + v01 * (hi - lo);
+        if (id == ParamId::Size) {
+            s_room_target = val;
+            if (s_room_primed) return;        // tick() writes the slewed value
+            s_room_cur = val; s_room_primed = true;  // snap on first set (boot/pickup seed)
+        }
+        gigaverb_daisy::wrapper_set_param(st, i, val);
+    }
+
+    // Called once per audio block by GenEngine: advance the slewed roomsize toward its target.
+    static void tick(void* st) {
+        if (!s_room_primed) return;
+        const float d = s_room_target - s_room_cur;
+        if (d > -1e-3f && d < 1e-3f) {       // close enough: snap and stop writing
+            if (s_room_cur != s_room_target) {
+                s_room_cur = s_room_target;
+                gigaverb_daisy::wrapper_set_param(st, index_of(ParamId::Size), s_room_cur);
+            }
+            return;
+        }
+        s_room_cur += d * kRoomSlew;
+        gigaverb_daisy::wrapper_set_param(st, index_of(ParamId::Size), s_room_cur);
     }
 
     static float get_param(void* st, ParamId id, DeckRef::Ref /*deck*/) {

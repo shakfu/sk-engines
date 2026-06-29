@@ -23,8 +23,20 @@
 #include "engine/gen/genlib_arena.h"
 
 #include <cstring>
+#include <type_traits>
+#include <utility>
 
 namespace spotykach {
+
+// Detect an optional static W::tick(void* st) hook. A wrap defines it when it needs to
+// advance a parameter once per audio block independently of knob events - e.g. gigaverb
+// slews its roomsize so the delay tank glides instead of stepping. Wraps without it are
+// unaffected (the call is dropped at compile time).
+template <class T, class = void>
+struct gen_has_tick : std::false_type {};
+template <class T>
+struct gen_has_tick<T, std::void_t<decltype(T::tick(std::declval<void*>()))>>
+    : std::true_type {};
 
 // Max gen~ channels we marshal. gen-dsp caps buffers at 8; real exports are
 // small. The first two channels map to the platform stereo bus; any extras are
@@ -57,6 +69,9 @@ public:
             std::memset(out[1], 0, size * sizeof(float));
             return;
         }
+
+        // Per-block parameter slew (optional; compiled away for wraps without tick()).
+        if constexpr (gen_has_tick<W>::value) W::tick(_state);
 
         const float* gin[kGenMaxChannels];
         float* gout[kGenMaxChannels];

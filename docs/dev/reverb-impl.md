@@ -38,7 +38,7 @@ Greyhole (modulated diffusion + a feedback pitch-shifter) is the heaviest voice;
 
 ## Files
 
-- `src/engine/reverb/dattorro.dsp`, `zita.dsp`, `greyhole.dsp` - the three active reverb sources. `freeverb.dsp` - a kept alternative third voice (Freeverb; not built unless wired back in). `voice.dsp` - the retained spike voice (not built).
+- `src/engine/reverb/dattorro.dsp`, `zita.dsp`, `greyhole.dsp` - the three active reverb sources. `voice.dsp` - the retained spike voice (not built).
 
 - `src/engine/reverb/faust_kernel_<name>.h` - **generated** (do not hand-edit), one `class mydsp` per namespace `rv_<name>`. Regenerate with `make faust-kernels`.
 
