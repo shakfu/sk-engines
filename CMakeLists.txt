@@ -305,6 +305,8 @@ include(DaisyProject)
 # so defining it lib-wide changes nothing else.
 target_compile_definitions(daisy PRIVATE BOOT_APP)
 
+# The full investigation of the CMake-vs-Makefile SRAM_EXEC size gap (these two fixes + the residual
+# newlib impure_data difference and the firmware-exit-stub option) is written up in docs/dev/cmake-gap.md.
 # FORK GAP (size parity): the fork added -DDSY_DISABLE_USB_HOST to libDaisy's *Makefile* (so the Make
 # libdaisy.a is built with it) but never to its CMakeLists.txt. Without it, fatfs.cpp (sys/fatfs.cpp)
 # keeps its `#ifndef DSY_DISABLE_USB_HOST` USBH_Driver reference, which drags the entire unused USB-host
