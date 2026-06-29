@@ -305,6 +305,21 @@ include(DaisyProject)
 # so defining it lib-wide changes nothing else.
 target_compile_definitions(daisy PRIVATE BOOT_APP)
 
+# FORK GAP (size parity): the fork added -DDSY_DISABLE_USB_HOST to libDaisy's *Makefile* (so the Make
+# libdaisy.a is built with it) but never to its CMakeLists.txt. Without it, fatfs.cpp (sys/fatfs.cpp)
+# keeps its `#ifndef DSY_DISABLE_USB_HOST` USBH_Driver reference, which drags the entire unused USB-host
+# MSC stack -> usb_host.cpp -> the Logger -> the USB-device CDC middleware into the link (~10 KB of SRAM
+# .text/.data that --gc-sections cannot drop, because a global USB-host-handle static initializer roots
+# it). The platform never uses USB-MSC host, so define it on the daisy lib to match the Make build's size.
+target_compile_definitions(daisy PRIVATE DSY_DISABLE_USB_HOST)
+
+# SIZE PARITY: the Make build compiles FatFs (ff.c/diskio.c/...) as ordinary app sources at the APP opt
+# level (-O2, or -Os for reso/mosc/graincloud), whereas CMake builds it as a sub-library that inherits the
+# directory -O3 -- so its f_*/dir_* functions come out ~2.4 KB larger. Force the FatFs target to the same
+# APP_OPT so the FatFs .text matches the canonical build. (FatFs is the only libDaisy component the Make
+# build compiles at app opt; everything else in libdaisy.a is -O3 in both.)
+target_compile_options(FatFs PRIVATE ${APP_OPT})
+
 # FORK GAP: the bleeptools fork added hid/midi_util.cpp (daisy::MidiTxMessage) to libDaisy's *Make*
 # module list (core Makefile) but never to its CMakeLists.txt add_library(daisy ...). The Make build
 # compiles it; the CMake build does not, so the app fails to link with undefined MidiTxMessage symbols.
