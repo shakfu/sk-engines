@@ -32,8 +32,9 @@ CMAKE_FLAGS += -DLOFI_INT16=1
 endif
 
 .PHONY: all build configure clean check-boundary program-dfu program-boot \
-        engine-granular engine-passthrough engine-delay engine-edrums engine-reso engine-graincloud engine-tape \
-        engine-reverb engine-shuttle engine-radio engine-gigaverb \
+        engine-granular engine-passthrough engine-delay engine-qdelay engine-edrums engine-reso engine-mosc engine-graincloud engine-tape \
+        engine-reverb engine-shuttle engine-softcut engine-radio engine-glitch engine-gigaverb engine-csound engine-chuck \
+        engine-chorus engine-filter engine-voice \
         faust-gen gen-engines test-scripts test-scripts-deps
 
 all: build
@@ -76,6 +77,8 @@ engine-passthrough:
 	$(MAKE) -f $(THIS) ENGINE=passthrough build program-dfu
 engine-delay:
 	$(MAKE) -f $(THIS) ENGINE=delay build program-dfu
+engine-qdelay:
+	$(MAKE) -f $(THIS) ENGINE=qdelay build program-dfu
 engine-edrums:
 	$(MAKE) -f $(THIS) ENGINE=edrums build program-dfu
 engine-reso:
@@ -88,10 +91,30 @@ engine-reverb:
 	$(MAKE) -f $(THIS) ENGINE=reverb build program-dfu
 engine-shuttle:
 	$(MAKE) -f $(THIS) ENGINE=shuttle build program-dfu
+engine-softcut:
+	$(MAKE) -f $(THIS) ENGINE=softcut build program-dfu
 engine-radio:
 	$(MAKE) -f $(THIS) ENGINE=radio build program-dfu
+engine-glitch:
+	$(MAKE) -f $(THIS) ENGINE=glitch build program-dfu
 engine-gigaverb:
 	$(MAKE) -f $(THIS) ENGINE=gigaverb build program-dfu
+# QSPI-execute engines: same DFU flash path (the QSPI linker script places the app at 0x90040000, which
+# program-dfu already targets). mosc's Plaits DSP is vendored in-tree; csound/chuck need their static lib
+# fetched first (scripts/fetch_csound.sh / fetch_chuck.sh) or the link fails on a missing libcsound/chuck.a.
+engine-mosc:
+	$(MAKE) -f $(THIS) ENGINE=mosc build program-dfu
+engine-csound:
+	$(MAKE) -f $(THIS) ENGINE=csound build program-dfu
+engine-chuck:
+	$(MAKE) -f $(THIS) ENGINE=chuck build program-dfu
+# Generated Faust engines (header-only kernels; no extra sources in CMakeLists).
+engine-chorus:
+	$(MAKE) -f $(THIS) ENGINE=chorus build program-dfu
+engine-filter:
+	$(MAKE) -f $(THIS) ENGINE=filter build program-dfu
+engine-voice:
+	$(MAKE) -f $(THIS) ENGINE=voice build program-dfu
 
 # --- Host-side targets (codegen + Python tests) ----------------------------------------------------
 # These do NOT touch the firmware build system: they run host Python/shell to (re)generate engine
