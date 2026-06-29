@@ -46,6 +46,9 @@
 #elif defined(SPK_ENGINE_RADIO)
   #include "engine/radio/radio_engine.h"
   namespace spotykach { using ActiveEngine = RadioEngine; }
+#elif defined(SPK_ENGINE_GLITCH)
+  #include "engine/glitch/glitch_engine.h"
+  namespace spotykach { using ActiveEngine = GlitchEngine; }
 // gen~ engines (SPK_ENGINE_GEN_*) are appended below by scripts/gen_engine.py.
 // >>> gen:gigaverb >>>
 #elif defined(SPK_ENGINE_GIGAVERB)

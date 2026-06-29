@@ -56,6 +56,12 @@ C_DEFS += -DSPK_ENGINE_RADIO
 # every non-streaming engine stays byte-identical.
 C_DEFS += -DSPK_USE_STREAM
 ENGINE_SOURCES = src/engine/radio/radio_engine.cpp
+else ifeq ($(ENGINE), glitch)
+C_DEFS += -DSPK_ENGINE_GLITCH
+# Dual-deck lo-fi/circuit-bent noise voice: 12 curated algorithms ported from Rob Scape's Noisferatu
+# (de-Arduino'd, per-instance, retuned for 48 kHz). Self-contained - no SD/arena, two ~8 KB glitch
+# buffers live in the engine object.
+ENGINE_SOURCES = src/engine/glitch/glitch_engine.cpp
 else ifeq ($(ENGINE), reverb)
 C_DEFS += -DSPK_ENGINE_REVERB
 # Stereo reverb (Dattorro plate / Zita hall) whose DSP is Faust-generated. The cyfaust-generated kernels
@@ -394,7 +400,7 @@ all: check-boundary
 
 # One-shot variant flash: clean -> build -> flash over DFU. Put the device in DFU mode first
 # (hold Reset ~3s until the bottom pad LEDs breathe white), then `make granular` / `make passthrough`.
-.PHONY: engine-granular engine-passthrough engine-delay engine-qdelay engine-edrums engine-reso engine-mosc program-mosc engine-graincloud engine-tape engine-shuttle engine-softcut engine-reverb engine-radio engine-chorus engine-filter engine-voice engine-gigaverb engine-csound program-csound engine-chuck program-chuck
+.PHONY: engine-granular engine-passthrough engine-delay engine-qdelay engine-edrums engine-reso engine-mosc program-mosc engine-graincloud engine-tape engine-shuttle engine-softcut engine-reverb engine-radio engine-glitch engine-chorus engine-filter engine-voice engine-gigaverb engine-csound program-csound engine-chuck program-chuck
 engine-granular:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=granular
@@ -462,6 +468,11 @@ engine-radio:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=radio
 	$(MAKE) ENGINE=radio program-dfu
+
+engine-glitch:
+	$(MAKE) clean
+	$(MAKE) -j8 ENGINE=glitch
+	$(MAKE) ENGINE=glitch program-dfu
 
 # Csound is QSPI-only (BOOT_QSPI + the SDRAM-pool linker script, links libcsound.a). Put the board
 # in DFU before the build finishes - program-dfu flashes once (no retry loop). The leading `-`

@@ -153,4 +153,9 @@ Firmware internals are documented under [`docs/`](docs/) — start with [`docs/a
 
 ## License
 
-This project is **MIT** (see [`LICENSE`](LICENSE)), **except the `qdelay` engine**, which is **GPLv3**: `src/dsp/diffuser.h` is a port of [qdelay](https://github.com/tiagolr/qdelay)'s GPLv3 `Diffusor`, so that file and `src/engine/qdelay/` (and any firmware built with `ENGINE=qdelay`) are distributed under GPLv3 — see [`src/engine/qdelay/NOTICE.md`](src/engine/qdelay/NOTICE.md) and [`src/engine/qdelay/LICENSE`](src/engine/qdelay/LICENSE). Every other engine and the platform itself remain MIT and do not link the GPLv3 code. Vendored third-party DSP keeps its own upstream license alongside the code (e.g. `stmlib`).
+This project is **MIT** (see [`LICENSE`](LICENSE)), **except the `qdelay` and `glitch` engines**, which are **GPLv3**:
+
+- **`qdelay`** — `src/dsp/diffuser.h` is a port of [qdelay](https://github.com/tiagolr/qdelay)'s GPLv3 `Diffusor`, so that file and `src/engine/qdelay/` (and any firmware built with `ENGINE=qdelay`) are distributed under GPLv3 — see [`src/engine/qdelay/NOTICE.md`](src/engine/qdelay/NOTICE.md) and [`src/engine/qdelay/LICENSE`](src/engine/qdelay/LICENSE).
+- **`glitch`** — `src/engine/glitch/glitch_voice.h` ports the algorithms of the GPLv3 [Noisferatu](https://github.com/rob-scape/noisferatu), so `src/engine/glitch/` (and any firmware built with `ENGINE=glitch`) is distributed under GPLv3 — see [`src/engine/glitch/NOTICE.md`](src/engine/glitch/NOTICE.md) and [`src/engine/glitch/LICENSE`](src/engine/glitch/LICENSE).
+
+Every other engine and the platform itself remain MIT and do not include the GPLv3 code. Vendored third-party DSP keeps its own upstream license alongside the code (e.g. `stmlib`).

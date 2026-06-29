@@ -1,0 +1,55 @@
+{
+  "engine": "glitch",
+  "title": "Glitch - dual lo-fi / circuit-bent noise voice",
+  "subtitle": "12 curated Noisferatu algorithms, one per deck",
+
+  "knobs": {
+    "Pitch": "master pitch +/-2oct; Alt = ALGORITHM select",
+    "Position": "param 2 (algorithm-specific)",
+    "Size": "param 1 (algorithm-specific)",
+    "Envelope": "output tone (low-pass tilt)",
+    "Mix (SOS)": "deck volume",
+    "Cycle": "-",
+    "Glow": "-"
+  },
+
+  "pads": {
+    "Play": "regenerate the glitch buffer",
+    "Reverse": "-",
+    "Grit": "-",
+    "Flux": "-",
+    "Seq": "-"
+  },
+
+  "ring": "algorithm marker; selector dots (Alt)",
+
+  "crossfade": "A/B blend of the two voices",
+
+  "switches": {
+    "Mode (L/C/R)": "-",
+    "Routing (L/C/R)": "stereo image: A|B / mono / random",
+    "CV target (U/C/D)": "-",
+    "Out trims A/B": "output trims"
+  },
+
+  "transport": {
+    "Tap": "-",
+    "Spot": "-"
+  },
+
+  "cv": {
+    "Size/Pos A/B": "-",
+    "Mix A/B": "-",
+    "V/Oct A/B": "-",
+    "Crossfade CV": "A/B blend"
+  },
+
+  "gates": {
+    "Gate in A/B": "-",
+    "Gate out A/B": "-"
+  },
+
+  "mod_midi": {
+    "Mod CV out A/B": "-"
+  }
+}
