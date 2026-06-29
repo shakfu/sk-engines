@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cmath>
+#include <cstddef>   // size_t
 #include "nocopy.h"
 
 namespace spotykach {

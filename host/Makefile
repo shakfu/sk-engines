@@ -8,6 +8,9 @@ CXX      ?= clang++
 ROOT      = ..
 # reso's vendored Rings/stmlib DSP, colocated under the engine and trimmed to the used closure.
 RESO_TP   = $(ROOT)/src/engine/reso/thirdparty
+# stmlib (the Mutable Instruments support lib) is vendored ONCE under common/ and shared by reso + mosc
+# (relocated there in the mosc-engine commit); mirror the firmware Makefile's $(STMLIB_TP).
+STMLIB_TP = $(ROOT)/src/engine/common/thirdparty/stmlib
 # graincloud's vendored, de-STL'd GrainflowLib (header-only) - the grain-cloud kernel.
 GRAINCLOUD_TP = $(ROOT)/src/engine/graincloud/thirdparty
 BUILD     = build
@@ -19,7 +22,7 @@ DAISYSP   = $(ROOT)/lib/DaisySP/Source
 # must be on the include path. src/transport/ headers (transport.h) likewise pull siblings
 # (synclock.h/tempo.h) by bare name, so that dir is on the path too for TUs that include the transport.
 DAISYSP_INC = $(addprefix -I,$(wildcard $(DAISYSP)/*/))
-INCLUDES  = -Ishim -I$(ROOT)/src -I$(ROOT)/src/transport -I$(RESO_TP) -I$(GRAINCLOUD_TP) -I$(ROOT)/src/engine/softcut/vendor/include -I. -I$(DAISYSP) $(DAISYSP_INC)
+INCLUDES  = -Ishim -I$(ROOT)/src -I$(ROOT)/src/transport -I$(RESO_TP) -I$(ROOT)/src/engine/common/thirdparty -I$(GRAINCLOUD_TP) -I$(ROOT)/src/engine/softcut/vendor/include -I. -I$(DAISYSP) $(DAISYSP_INC)
 # -DTEST selects stmlib's portable C paths (the ARM ssat/usat asm is gated behind #ifndef TEST), so
 # the Rings DSP (under $(RESO_TP)) compiles on the desktop. Unused elsewhere in this repo.
 CXXFLAGS  = -std=c++17 -O2 -DTEST -Wall -Wno-unused-variable -Wno-unused-but-set-variable $(INCLUDES)
@@ -58,12 +61,14 @@ SHUTTLE_SRC = $(ROOT)/src/engine/shuttle/shuttle_engine.cpp
 # The dual-deck softcut overdub looper: engine wrapper + the vendored monome softcut core (5 .cpp).
 SOFTCUT_SRC = $(ROOT)/src/engine/softcut/softcut_engine.cpp $(wildcard $(ROOT)/src/engine/softcut/vendor/src/*.cpp)
 RADIO_SRC   = $(ROOT)/src/engine/radio/radio_engine.cpp
+# The dual-deck glitch/lo-fi noise engine (12 Noisferatu algorithms, header-only Voice). Self-contained.
+GLITCH_SRC  = $(ROOT)/src/engine/glitch/glitch_engine.cpp
 # reso's DSP is the Mutable Instruments Rings engine + its stmlib support library (under $(RESO_TP)).
 RINGS_SRC   = $(RESO_TP)/rings/dsp/part.cc $(RESO_TP)/rings/dsp/string.cc \
               $(RESO_TP)/rings/dsp/resonator.cc $(RESO_TP)/rings/dsp/fm_voice.cc \
               $(RESO_TP)/rings/resources.cc \
-              $(RESO_TP)/stmlib/dsp/units.cc $(RESO_TP)/stmlib/utils/random.cc \
-              $(RESO_TP)/stmlib/dsp/atan.cc
+              $(STMLIB_TP)/dsp/units.cc $(STMLIB_TP)/utils/random.cc \
+              $(STMLIB_TP)/dsp/atan.cc
 
 SRC          = main_host.cpp $(LIB_SRC)
 TEST         = $(BUILD)/test_engine_params
@@ -75,6 +80,7 @@ TEST_STREAM  = $(BUILD)/test_stream
 TEST_SHUTTLE = $(BUILD)/test_shuttle
 TEST_SOFTCUT = $(BUILD)/test_softcut
 TEST_RADIO   = $(BUILD)/test_radio
+TEST_GLITCH  = $(BUILD)/test_glitch
 TEST_CHORUS  = $(BUILD)/test_chorus
 TEST_FILTER = $(BUILD)/test_filter
 TEST_VOICE   = $(BUILD)/test_voice
@@ -90,7 +96,7 @@ TEST_CHUCK_PATCH = $(BUILD)/test_chuck_patch
 BENCH_REVERB     = $(BUILD)/bench_reverb
 BENCH_GRAINCLOUD = $(BUILD)/bench_graincloud
 
-.PHONY: all clean run test test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-qdelay test-diffuser test-tape test-stream test-shuttle test-radio test-chorus test-filter test-voice test-csound-alloc test-csound-patch test-csound-midi test-csound-reload test-chuck-patch bench-reverb bench-graincloud
+.PHONY: all clean run test test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-qdelay test-diffuser test-tape test-stream test-shuttle test-radio test-glitch test-chorus test-filter test-voice test-csound-alloc test-csound-patch test-csound-midi test-csound-reload test-chuck-patch bench-reverb bench-graincloud
 all: $(TARGET)
 
 $(TARGET): $(SRC) | $(BUILD)
@@ -188,6 +194,11 @@ $(TEST_RADIO): test_radio.cpp $(LIB_SRC) $(RADIO_SRC) $(ROOT)/src/engine/radio/r
                $(ROOT)/src/memory/raw_stream.h | $(BUILD)
 	$(CXX) $(CXXFLAGS) test_radio.cpp $(LIB_SRC) $(RADIO_SRC) -o $@
 
+# Glitch engine + its header-only Voice (no extra deps).
+$(TEST_GLITCH): test_glitch.cpp $(LIB_SRC) $(GLITCH_SRC) $(ROOT)/src/engine/glitch/glitch_engine.h \
+                $(ROOT)/src/engine/glitch/glitch_voice.h | $(BUILD)
+	$(CXX) $(CXXFLAGS) test_glitch.cpp $(LIB_SRC) $(GLITCH_SRC) -o $@
+
 # Generated Faust `chorus` engine - header-only (the cyfaust kernel + the shared FaustEngine wrapper),
 # so it links against LIB_SRC with no extra engine .cpp.
 $(TEST_CHORUS): test_chorus.cpp $(LIB_SRC) $(ROOT)/src/engine/chorus/chorus_engine.h \
@@ -227,7 +238,7 @@ run: $(TARGET)
 
 # `test` runs both engine harnesses. Both inject the transport via EngineContext (granular drives the
 # real platform Transport; edrums uses a small stub ITransport) - the post-transport-decoupling way.
-test: test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-qdelay test-diffuser test-tape test-stream test-shuttle test-softcut test-radio test-chorus test-filter test-voice test-csound-alloc test-csound-patch test-csound-midi test-csound-reload test-chuck-patch
+test: test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-qdelay test-diffuser test-tape test-stream test-shuttle test-softcut test-radio test-glitch test-chorus test-filter test-voice test-csound-alloc test-csound-patch test-csound-midi test-csound-reload test-chuck-patch
 
 test-granular: $(TEST)
 	./$(TEST)
@@ -270,6 +281,9 @@ test-softcut: $(TEST_SOFTCUT)
 
 test-radio: $(TEST_RADIO)
 	./$(TEST_RADIO)
+
+test-glitch: $(TEST_GLITCH)
+	./$(TEST_GLITCH)
 
 test-chorus: $(TEST_CHORUS)
 	./$(TEST_CHORUS)

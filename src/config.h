@@ -29,7 +29,7 @@ public:
     {
         if (data == nullptr || size == 0) return;
 
-        auto line_size = 8;
+        constexpr int line_size = 8;   // fixed bound (clang 21 rejects the non-const VLA form)
         char prop[line_size];
         size_t cursor = 0;
         while (cursor < size) {
