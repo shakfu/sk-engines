@@ -160,6 +160,11 @@ elseif(ENGINE STREQUAL glitch)
     # Self-contained -- no SD/stream, no arena, no transport; just the engine wrapper. (GPLv3 -- see
     # src/engine/glitch/NOTICE.md.)
     set(ENGINE_SOURCES src/engine/glitch/glitch_engine.cpp)
+elseif(ENGINE STREQUAL pstretch)
+    set(ENGINE_DEFINE SPK_ENGINE_PSTRETCH)
+    # Real-time clean-room PaulStretch ambient time-smear; self-contained vendored radix-2 FFT
+    # (engine/pstretch/fft.h), no CMSIS-DSP. Rings + FFT scratch live in the SDRAM arena.
+    set(ENGINE_SOURCES src/engine/pstretch/pstretch_engine.cpp)
 elseif(ENGINE STREQUAL reverb)
     set(ENGINE_DEFINE SPK_ENGINE_REVERB)
     # Stereo reverb (Dattorro plate / Zita hall). Its DSP is the cyfaust-generated kernels
@@ -265,7 +270,7 @@ elseif(ENGINE STREQUAL chuck)
     # firmware keeps them off, so libstdc++'s exception machinery does not bloat the SRAM-tight platform).
     set_source_files_properties(src/engine/chuck/chuck_engine.cpp PROPERTIES COMPILE_OPTIONS "-fexceptions;-frtti")
 else()
-    message(FATAL_ERROR "Unknown ENGINE '${ENGINE}' - use granular, passthrough, delay, qdelay, edrums, reso, mosc, graincloud, tape, radio, glitch, reverb, shuttle, softcut, gigaverb, chorus, filter, voice, csound, or chuck")
+    message(FATAL_ERROR "Unknown ENGINE '${ENGINE}' - use granular, passthrough, delay, qdelay, edrums, reso, mosc, graincloud, tape, radio, glitch, pstretch, reverb, shuttle, softcut, gigaverb, chorus, filter, voice, csound, or chuck")
 endif()
 
 # Source list = the Makefile's CPP_SOURCES, with the wildcard dirs expanded the same way.

@@ -33,7 +33,7 @@ endif
 
 .PHONY: all build configure clean check-boundary program-dfu program-boot \
         engine-granular engine-passthrough engine-delay engine-qdelay engine-edrums engine-reso engine-mosc engine-graincloud engine-tape \
-        engine-reverb engine-shuttle engine-softcut engine-radio engine-glitch engine-gigaverb engine-csound engine-chuck \
+        engine-reverb engine-shuttle engine-softcut engine-radio engine-glitch engine-pstretch engine-gigaverb engine-csound engine-chuck \
         engine-chorus engine-filter engine-voice \
         faust-gen gen-engines test-scripts test-scripts-deps
 
@@ -97,6 +97,8 @@ engine-radio:
 	$(MAKE) -f $(THIS) ENGINE=radio build program-dfu
 engine-glitch:
 	$(MAKE) -f $(THIS) ENGINE=glitch build program-dfu
+engine-pstretch:
+	$(MAKE) -f $(THIS) ENGINE=pstretch build program-dfu
 engine-gigaverb:
 	$(MAKE) -f $(THIS) ENGINE=gigaverb build program-dfu
 # QSPI-execute engines: same DFU flash path (the QSPI linker script places the app at 0x90040000, which

@@ -63,6 +63,8 @@ SOFTCUT_SRC = $(ROOT)/src/engine/softcut/softcut_engine.cpp $(wildcard $(ROOT)/s
 RADIO_SRC   = $(ROOT)/src/engine/radio/radio_engine.cpp
 # The dual-deck glitch/lo-fi noise engine (12 Noisferatu algorithms, header-only Voice). Self-contained.
 GLITCH_SRC  = $(ROOT)/src/engine/glitch/glitch_engine.cpp
+# The real-time PaulStretch ambient engine (vendored radix-2 FFT + Stretcher, header-only). Self-contained.
+PSTRETCH_SRC = $(ROOT)/src/engine/pstretch/pstretch_engine.cpp
 # reso's DSP is the Mutable Instruments Rings engine + its stmlib support library (under $(RESO_TP)).
 RINGS_SRC   = $(RESO_TP)/rings/dsp/part.cc $(RESO_TP)/rings/dsp/string.cc \
               $(RESO_TP)/rings/dsp/resonator.cc $(RESO_TP)/rings/dsp/fm_voice.cc \
@@ -81,6 +83,7 @@ TEST_SHUTTLE = $(BUILD)/test_shuttle
 TEST_SOFTCUT = $(BUILD)/test_softcut
 TEST_RADIO   = $(BUILD)/test_radio
 TEST_GLITCH  = $(BUILD)/test_glitch
+TEST_PSTRETCH = $(BUILD)/test_pstretch
 TEST_CHORUS  = $(BUILD)/test_chorus
 TEST_FILTER = $(BUILD)/test_filter
 TEST_VOICE   = $(BUILD)/test_voice
@@ -96,7 +99,7 @@ TEST_CHUCK_PATCH = $(BUILD)/test_chuck_patch
 BENCH_REVERB     = $(BUILD)/bench_reverb
 BENCH_GRAINCLOUD = $(BUILD)/bench_graincloud
 
-.PHONY: all clean run test test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-qdelay test-diffuser test-tape test-stream test-shuttle test-radio test-glitch test-chorus test-filter test-voice test-csound-alloc test-csound-patch test-csound-midi test-csound-reload test-chuck-patch bench-reverb bench-graincloud
+.PHONY: all clean run test test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-qdelay test-diffuser test-tape test-stream test-shuttle test-radio test-glitch test-pstretch test-chorus test-filter test-voice test-csound-alloc test-csound-patch test-csound-midi test-csound-reload test-chuck-patch bench-reverb bench-graincloud
 all: $(TARGET)
 
 $(TARGET): $(SRC) | $(BUILD)
@@ -199,6 +202,11 @@ $(TEST_GLITCH): test_glitch.cpp $(LIB_SRC) $(GLITCH_SRC) $(ROOT)/src/engine/glit
                 $(ROOT)/src/engine/glitch/glitch_voice.h | $(BUILD)
 	$(CXX) $(CXXFLAGS) test_glitch.cpp $(LIB_SRC) $(GLITCH_SRC) -o $@
 
+# PaulStretch ambient engine + its header-only FFT/Stretcher (no extra deps).
+$(TEST_PSTRETCH): test_pstretch.cpp $(LIB_SRC) $(PSTRETCH_SRC) $(ROOT)/src/engine/pstretch/pstretch_engine.h \
+                  $(ROOT)/src/engine/pstretch/pstretch_voice.h $(ROOT)/src/engine/pstretch/fft.h | $(BUILD)
+	$(CXX) $(CXXFLAGS) test_pstretch.cpp $(LIB_SRC) $(PSTRETCH_SRC) -o $@
+
 # Generated Faust `chorus` engine - header-only (the cyfaust kernel + the shared FaustEngine wrapper),
 # so it links against LIB_SRC with no extra engine .cpp.
 $(TEST_CHORUS): test_chorus.cpp $(LIB_SRC) $(ROOT)/src/engine/chorus/chorus_engine.h \
@@ -238,7 +246,7 @@ run: $(TARGET)
 
 # `test` runs both engine harnesses. Both inject the transport via EngineContext (granular drives the
 # real platform Transport; edrums uses a small stub ITransport) - the post-transport-decoupling way.
-test: test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-qdelay test-diffuser test-tape test-stream test-shuttle test-softcut test-radio test-glitch test-chorus test-filter test-voice test-csound-alloc test-csound-patch test-csound-midi test-csound-reload test-chuck-patch
+test: test-granular test-edrums test-reso test-graincloud-kernel test-reverb test-delay test-qdelay test-diffuser test-tape test-stream test-shuttle test-softcut test-radio test-glitch test-pstretch test-chorus test-filter test-voice test-csound-alloc test-csound-patch test-csound-midi test-csound-reload test-chuck-patch
 
 test-granular: $(TEST)
 	./$(TEST)
@@ -284,6 +292,9 @@ test-radio: $(TEST_RADIO)
 
 test-glitch: $(TEST_GLITCH)
 	./$(TEST_GLITCH)
+
+test-pstretch: $(TEST_PSTRETCH)
+	./$(TEST_PSTRETCH)
 
 test-chorus: $(TEST_CHORUS)
 	./$(TEST_CHORUS)

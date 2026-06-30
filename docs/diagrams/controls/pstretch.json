@@ -1,0 +1,55 @@
+{
+  "engine": "pstretch",
+  "title": "Pstretch - real-time PaulStretch ambient time-smear",
+  "subtitle": "clean-room PaulStretch; live smear + capture-and-stretch-through",
+
+  "knobs": {
+    "Pitch": "pitch shift +/- 1 octave",
+    "Position": "diffusion / smear (clean .. full wash)",
+    "Size": "STRETCH 1x .. 64x",
+    "Envelope": "output tone (low-pass)",
+    "Mix (SOS)": "dry/wet",
+    "Cycle": "-",
+    "Glow": "-"
+  },
+
+  "pads": {
+    "Play": "FREEZE the read head (drone)",
+    "Reverse": "CAPTURE/hold (loop the grab)",
+    "Grit": "-",
+    "Flux": "-",
+    "Seq": "-"
+  },
+
+  "ring": "stretch marker; live/capture/freeze colour",
+
+  "crossfade": "A/B blend of the two decks",
+
+  "switches": {
+    "Mode (L/C/R)": "-",
+    "Routing (L/C/R)": "stereo image: centre / A|B / random",
+    "CV target (U/C/D)": "-",
+    "Out trims A/B": "output trims"
+  },
+
+  "transport": {
+    "Tap": "-",
+    "Spot": "-"
+  },
+
+  "cv": {
+    "Size/Pos A/B": "-",
+    "Mix A/B": "-",
+    "V/Oct A/B": "-",
+    "Crossfade CV": "A/B blend"
+  },
+
+  "gates": {
+    "Gate in A/B": "-",
+    "Gate out A/B": "-"
+  },
+
+  "mod_midi": {
+    "Mod CV out A/B": "-"
+  }
+}

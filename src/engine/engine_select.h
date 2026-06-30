@@ -49,6 +49,9 @@
 #elif defined(SPK_ENGINE_GLITCH)
   #include "engine/glitch/glitch_engine.h"
   namespace spotykach { using ActiveEngine = GlitchEngine; }
+#elif defined(SPK_ENGINE_PSTRETCH)
+  #include "engine/pstretch/pstretch_engine.h"
+  namespace spotykach { using ActiveEngine = PstretchEngine; }
 // gen~ engines (SPK_ENGINE_GEN_*) are appended below by scripts/gen_engine.py.
 // >>> gen:gigaverb >>>
 #elif defined(SPK_ENGINE_GIGAVERB)
