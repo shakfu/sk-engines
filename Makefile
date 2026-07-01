@@ -64,8 +64,11 @@ C_DEFS += -DSPK_ENGINE_GLITCH
 ENGINE_SOURCES = src/engine/glitch/glitch_engine.cpp
 else ifeq ($(ENGINE), pstretch)
 C_DEFS += -DSPK_ENGINE_PSTRETCH
-# Real-time clean-room PaulStretch ambient time-smear. Self-contained: a vendored radix-2 FFT
+# Real-time clean-room PaulStretch ambient time-smear. Self-contained DSP: a vendored radix-2 FFT
 # (engine/pstretch/fft.h), no CMSIS-DSP. Per-voice input rings + FFT scratch live in the SDRAM arena.
+# The Phase-2 SD-file source streams clips from the card via the shared streaming service (stream_deck.cpp
+# + fat_file.cpp, guarded by SPK_USE_STREAM like tape/radio), so non-streaming engines stay byte-identical.
+C_DEFS += -DSPK_USE_STREAM
 ENGINE_SOURCES = src/engine/pstretch/pstretch_engine.cpp
 else ifeq ($(ENGINE), reverb)
 C_DEFS += -DSPK_ENGINE_REVERB
@@ -283,6 +286,14 @@ endif
 # over USB serial (keep the port open). Compiled under METER, works at the shipping -O2.
 ifeq ($(METER), 1)
 C_DEFS += -DMETER
+endif
+
+# pstretch FFT/analysis window override. The default (8192 - a lusher wash) lives in pstretch_engine.h; opt in
+# to the lighter, meter-verified window with `make ENGINE=pstretch WINDOW=4096` (avg ~32% / max ~64% CPU on
+# hardware). 8192 ~doubles the FFT working set (ola/fifo move to the SDRAM arena there); it links + fits and
+# runs clean on hardware (flashed 2026-07-01) - re-measure CPU with METER=1 to get an exact number.
+ifdef WINDOW
+C_DEFS += -DPSTRETCH_WINDOW=$(WINDOW)
 endif
 
 # ChucK bring-up debugging (opt-in, ENGINE=chuck only). See docs/dev/chuck-impl.md "M1/M2 hardware".

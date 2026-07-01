@@ -179,6 +179,7 @@ int StreamDeck::scan_bank(const char* dir, BankEntry* out, int max) const {
         ++count;
     }
     f_closedir(&dp);
+    bank_sort(out, count);   // deterministic alphabetical order, not FAT directory-enumeration order
     return count;
 }
 

@@ -163,7 +163,9 @@ elseif(ENGINE STREQUAL glitch)
 elseif(ENGINE STREQUAL pstretch)
     set(ENGINE_DEFINE SPK_ENGINE_PSTRETCH)
     # Real-time clean-room PaulStretch ambient time-smear; self-contained vendored radix-2 FFT
-    # (engine/pstretch/fft.h), no CMSIS-DSP. Rings + FFT scratch live in the SDRAM arena.
+    # (engine/pstretch/fft.h), no CMSIS-DSP. Rings + FFT scratch live in the SDRAM arena. The Phase-2
+    # SD-file source streams clips via the shared streaming service, gated by SPK_USE_STREAM (as tape/radio).
+    set(ENGINE_DEFINES SPK_USE_STREAM)
     set(ENGINE_SOURCES src/engine/pstretch/pstretch_engine.cpp)
 elseif(ENGINE STREQUAL reverb)
     set(ENGINE_DEFINE SPK_ENGINE_REVERB)

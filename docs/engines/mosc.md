@@ -17,8 +17,11 @@ Two switches set behaviour:
 - **Mode (per deck, `ConfigId::Mode`)** — *Gate* vs *Drone*. **Gate**: each trigger (Play pad / gate-in / MIDI / Seq) strikes the LPG/decay envelope, so notes have a percussive/plucked shape (`MOD_AMT` = decay). **Drone**: the LPG is bypassed and the engine runs open/continuous (good for pads and held tones).
 
 - **Routing (global, `ConfigId::Route`)** — how the two voices reach the L/R outputs:
+
   - **Stereo** (center) — deck A → left, deck B → right (two independent oscillators, hard-panned).
+
   - **DoubleMono** (left) — both voices summed to a centred mono image (layer two engines into one sound).
+
   - **GenerativeStereo** (right) — an out/aux spread for width: each channel carries one voice's main output plus the *other* voice's **aux** output (Plaits' secondary signal — a sub/variation), so two mono voices bloom into a decorrelated stereo field.
 
 ### Control map (per deck)

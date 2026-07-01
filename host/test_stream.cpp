@@ -7,6 +7,7 @@
 #include "memory/audio_stream.h"
 #include "memory/byte_file.h"
 #include "memory/wav_stream.h"
+#include "engine/istreamdeck.h"   // BankEntry + bank_sort (scanner ordering)
 
 #include <cstdio>
 #include <cstdint>
@@ -410,6 +411,31 @@ int main() {
             put(v, "data", bodyramp(body));
             check(reads_body(wrap(v), body), "spec: odd-sized chunk pad byte handled (data stays aligned)");
         }
+    }
+
+    // --- bank_sort: scanned entries ordered by case-insensitive name (deterministic, not FAT order) ----
+    {
+        auto mk = [](const char* nm) {
+            BankEntry e{}; std::strncpy(e.name, nm, 12); e.name[12] = '\0';
+            e.frames = 48000; e.rate = 0; e.is_wav = false; return e;
+        };
+        BankEntry b[5] = { mk("Zoo.wav"), mk("apple.raw"), mk("10.wav"), mk("2.wav"), mk("Bee.raw") };
+        bank_sort(b, 5);
+        // Case-insensitive lexicographic: digits < letters, case folded. ("10" before "2" is the lexicographic
+        // caveat that motivates zero-padding numeric names.)
+        check(std::strcmp(b[0].name, "10.wav")   == 0, "bank_sort: digit-leading first ('10.wav')");
+        check(std::strcmp(b[1].name, "2.wav")    == 0, "bank_sort: lexicographic ('2' after '10')");
+        check(std::strcmp(b[2].name, "apple.raw")== 0, "bank_sort: letters after digits, case-insensitive");
+        check(std::strcmp(b[3].name, "Bee.raw")  == 0, "bank_sort: case-insensitive ('Bee' before 'Zoo')");
+        check(std::strcmp(b[4].name, "Zoo.wav")  == 0, "bank_sort: last entry");
+        // Stable + idempotent: re-sorting an ordered bank leaves it unchanged; payload travels with the name.
+        check(b[0].frames == 48000 && b[2].is_wav == false, "bank_sort: entry payload preserved");
+        bank_sort(b, 5);
+        check(std::strcmp(b[0].name, "10.wav") == 0 && std::strcmp(b[4].name, "Zoo.wav") == 0,
+              "bank_sort: idempotent on an already-sorted bank");
+        BankEntry one[1] = { mk("solo.wav") };
+        bank_sort(one, 1); bank_sort(b, 0);   // n<=1 is a no-op, must not read out of bounds
+        check(std::strcmp(one[0].name, "solo.wav") == 0, "bank_sort: n<=1 no-op");
     }
 
     if (g_failures == 0) { std::printf("OK: all stream checks passed\n"); return 0; }

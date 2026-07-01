@@ -4,35 +4,89 @@ Implementation, design, and roadmap for `ENGINE=pstretch` — a clean-room, real
 time-smear. This is the developer doc (architecture, the source-mode plan, the file map, risks); a
 user-facing control reference will live in `docs/engines/pstretch.md` once the source modes settle.
 
-## Status — pick up here (2026-06-30)
+## Status — pick up here (2026-07-01)
 
-**Working and hardware-verified clean.** Flashed on the H7 (spotykach); boots, runs, audio is glitch-free
-at the full **4096 / 85 ms** window. CPU (via `METER=1`): **avg ~32% / max ~64%** with both decks. Builds
-on Make + CMake (SRAM_EXEC ~77%, SRAM ~72%); `make -C host test-pstretch` is green.
+**Update 2026-07-01:** the earlier "no SD playback" bug is **fixed and confirmed on hardware** — SD-file
+mode now reads and streams clips from `/pstretch` on the device. What remains is the by-ear character pass
+(below), not basic SD function.
+
+**Update 2026-07-01 (b):** the **8192 window is now the default** (~171 ms, lusher wash; 4096 is the
+`WINDOW=4096` opt-in), flashed and clean by ear incl. the SD+8192 path. A full **modulation / CV / gate
+control layer** was added — a per-deck LFO (Cycle/Glow) targeting diffusion/stretch/tone via the Size/Pos
+mod switch, sine/triangle/follower via Mod Type, **Alt+Cycle clock-sync** to tempo; **CV inputs** (V/Oct,
+Size/Pos, Mix, Crossfade, additive); **gate in** (re-grab / freeze); and **CV/gate out** (the LFO as CV +
+a per-cycle clock). All reuse the platform's existing mod/cv/gate hooks — no new capabilities. See the
+Modulation section below; host tests B14–B18. Open item is still the by-ear tuning of the mod ranges + SD
+character pass.
+
+
+**Phase 1 hardware-verified clean; Phase 2 (SD-file source + full control rework) landed in code.** Phase 1
+is flashed on the H7 (spotykach); boots, glitch-free at the full **4096 / 85 ms** window, CPU (via
+`METER=1`) **avg ~32% / max ~64%** with both decks. Phase 2 adds the SD-file source mode, the Mode-switch
+source selector (Live/Capture/SD), and the Aux clip selector; it **builds + links + fits** (Make: SRAM_EXEC
+~80%, SRAM ~74%, SDRAM ~78% now that the StreamDeck's 2 MB+32 KB SD rings are linked; CMake SRAM_EXEC ~81%)
+and **passes `make -C host test-pstretch`** (B7 capture-via-Mode, B8 SD source, B9 Aux clip select, B10
+off-rate pitch correction, B11 Alt+POS scrub). The full Phase-2 control plan is now implemented; what
+remains is **NOT yet hardware-verified** (no card with clips tested on device, no by-ear pass).
 
 Done:
 - **Live smear** + **Freeze** (Play pad) + **Capture/hold** (Rev pad — grab the recent ~5 s and loop the
   stretch *through* it). Dual-deck (A=L, B=R), routing, crossfade, dry/wet, ENV tone, ±1-oct pitch.
 - **Real-time performance** solved (see that section below): FFT working set in on-chip SRAM, the hop
   pipelined across blocks, finely-chunked worker ticks. This was the hard part and it is finished.
-- **Mode-switch phase A/B retired** (the recompute path + its host test removed); the Mode switch is now
-  **unused / free** for the Phase-2 source select.
-- Docs (this file, `docs/engines/pstretch.md`, controls diagram) and the `CHANGELOG.md` entry are current.
+- **Phase 2 SD-file source (code complete, host-tested):** the Mode switch is now the **source selector**
+  (0=Live, 1=Capture, 2=SD); SD streams a clip from `/pstretch` *through* the stretch. Reuses the platform
+  `StreamDeck` stack (`SPK_USE_STREAM` now set for pstretch). The voice gained a third "what fills the ring"
+  path (`set_sd`/`sd_want`/`feed_sd`/`sd_rewind`) alongside live and capture; the engine pulls only the few
+  source frames the slow read head needs each block (`sd_want()`), decodes int16->float, and feeds the ring.
+  Self-regulating margin: freeze stalls the head, the gap holds at the margin, the feed (and the clip
+  position) stops. `_wpos`/`_rpos` are rebased per ring wrap in SD mode, so the float-precision risk (#4
+  below) does **not** bite the hours-long SD drone.
+- **Control rework done:** per-deck source is one `Source {Live,Capture,SD}` state driven by the Mode
+  switch (`_set_source` exits the old / enters the new cleanly). The **Rev pad** retired as a capture
+  toggle -> it now **re-grabs** the ring within Capture mode (Live/SD no-op). **Aux (Alt+PITCH) is the clip
+  selector** (`CapAux`): `/pstretch` is scanned once in `prepare()`, the knob quantizes to a clip index,
+  and selection re-opens the clip live on a streaming deck (or is honoured on the next switch to SD). The
+  own-display `render()` shows the clip dots while Alt is held. **Alt+POS is scrub** (`CapAltPos`): POS
+  stays diffusion, Alt+POS seeks the SD playhead to a position in the clip (debounced settle; works frozen).
+  The shared `StreamDeck::scan_bank` now returns clips in **deterministic alphabetical order** (`bank_sort`),
+  so Aux position N is the Nth file by name, not by FAT enumeration (also affects radio's station order).
+
+Async card-mount: the SD card mounts a moment after boot, so `prepare()` keeps any SD deck that is not yet
+streaming trying to (re)scan `/pstretch` and open a clip until one is playing - self-heals a slow mount, a
+late-inserted card, an empty folder filled later, or Drift already selected at power-on (no fixed boot
+window; stops once streaming). If SD is selected but no clips are found, the deck's pad LED shows **red**
+(vs magenta when streaming) so a card/folder/format problem is visible. Host tests B12/B13.
 
 NOT done / next session:
-1. **By-ear character pass** — the one thing only a human can sign off: does the 85 ms wash sound right?
-   Tune the per-algorithm ranges (stretch curve, diffusion, default tone) to taste on hardware.
-2. **Phase 2: SD-file source mode** — fully scoped in "Roadmap" below. The big realization: the slow read
-   head makes SD bandwidth trivial, so stream (don't RAM-load) arbitrarily long clips on the `radio`
-   `StreamDeck` stack. The Mode switch becomes Live/Capture/SD; Aux becomes the clip slot.
-3. **8192 window option** — now affordable (avg is only 32% at 4096); the vendored FFT takes any 2^k. Would
-   give a lusher wash. Wire it as a control or a constant + re-measure.
-4. **`float` position rebase** — `_wpos`/`_rpos` lose integer precision after ~6 min continuous (2^24
-   samples). Keep them bounded before relying on long unbroken sessions.
+1. **By-ear pass for SD mode** — SD streaming from `/pstretch` is now confirmed on the device (2026-07-01);
+   still to do: re-measure CPU with clips streaming, and tune the wash character (stretch curve, diffusion,
+   default tone) to taste. The character pass is the one thing only a human can sign off.
+2. ~~POS diffusion-vs-scrub contention~~ **DONE** — resolved by **scrub on Alt+POS** (`CapAltPos`): POS
+   stays diffusion; Alt+POS seeks the SD stream playhead to a normalized position in the clip, debounced by
+   a settle timer (mirrors radio, so a sweep only opens the spot you land on) and ignoring sub-1% nudges.
+   Re-seek is `_open_clip(i, start_frame)` from `prepare()` (`_apply_scrub`, main-loop/FatFs); works while
+   frozen (audition frozen spots). Host test B11. Residual: each settled seek re-primes the ring (~170 ms
+   soft swell) — intentional/benign for an ambient scrub.
+3. ~~Source-rate ratio for off-48k clips~~ **DONE** — a clip's own rate (from the `.wav` header) is folded
+   into the SD grain read stride (`Stretcher::set_sd_rate`, applied in `_open_clip`), so a 44.1 kHz file
+   plays at native pitch, not ~7% sharp. Raw files assume the engine rate. Host test B10 (zero-crossing)
+   confirms it. (Residual: ~170 ms of soft/near-silent output at SD entry while the ring primes - benign.)
+4. ~~**8192 window option**~~ **DONE** — 8192 is now the default (`WINDOW=4096` for the lighter build);
+   ola/fifo move to the SDRAM arena at >= 8192, `kWorkBudget` scales 14->16, flashed clean by ear. A formal
+   METER number at 8192 is still pending (only by-ear so far).
+5. ~~**Modulation / CV / gate**~~ **DONE** (host-tested B14–B18; by-ear mod-range tuning still open) — see
+   the Modulation section below.
+6. **`float` position rebase (live/capture)** — `_wpos`/`_rpos` lose integer precision after ~6 min
+   continuous (2^24 samples). SD mode now rebases; do the same for the live path before relying on long
+   unbroken live sessions.
 
-Tuning knobs (all in the engine/voice): `kWindow=4096`, `kHop`, `kRing=2^18` (~5.5 s ring / capture span),
-`kWorkBudget=14` (worker ticks/block, shared across voices — raise if audio underruns, lower if a block
-overruns), `kChunk=512` (work granularity), `kLut=1024` (smear cos/sin table).
+Tuning knobs (all in the engine/voice): `kWindow=8192` default (`PSTRETCH_WINDOW`/`WINDOW=4096` for the
+lighter build), `kHop`, `kRing=2^18` (~5.5 s ring / capture span), `kWorkBudget` (worker ticks/block, shared
+across voices — `16` at 8192, `14` at 4096; raise if audio underruns, lower if a block overruns), `kChunk=512`
+(work granularity), `kLut=1024` (smear cos/sin table). Modulation ranges: `kModDiffAmt=0.5`, `kModStrAmt=0.35`,
+`kModToneAmt=0.4` (full-depth swings — the first knobs to tune by ear), `kModRateMin=0.03` Hz, `kSyncMult[7]`
+(clock-sync divisions, cycles per beat).
 
 Measuring CPU: build `make engine-pstretch METER=1`; the load meter prints to the **FS_EXTERNAL** USB-CDC
 (the spotykach USB-C — the app must be *running*, not in bootloader). Read `/dev/cu.usbmodem*` (`screen`/
@@ -139,7 +193,7 @@ the shared FFT/window scratch are sub-allocated from the injected SDRAM arena. A
 produces a wet stream; the engine applies dry/wet, an ENV tone low-pass, the routing-switch stereo
 placement, and the crossfader A/B blend, soft-limited.
 
-### Control map (current, Phase 1)
+### Control map (current)
 
 | Control | Effect |
 |---|---|
@@ -148,11 +202,45 @@ placement, and the crossfader A/B blend, soft-limited.
 | **PITCH** | Pitch shift +/- 1 octave (grain resample) |
 | **ENV** | Output tone (one-pole low-pass) |
 | **MIX** | Dry/wet |
-| **Play pad** | Freeze the read head (evolving drone on the current spot) — per deck |
-| **Rev pad** | Capture/hold (latched): grab the recent ring and loop the stretch *through* it — per deck |
+| **Mode switch** (per deck) | **SOURCE select: 0 = Live, 1 = Capture, 2 = SD-file** (stream a clip from `/pstretch`). The authoritative source selector. (Panel silkscreen Reel/Slice/Drift maps Slice=Live, Reel=Capture, Drift=SD.) |
+| **Play pad** | Freeze the read head (evolving drone on the current spot) — per deck, works in any source |
+| **Rev pad** | In Capture mode, **re-grab** the recent ring at the current instant (the switch grabs on entry; the pad refreshes). No-op in Live/SD — per deck |
+| **Alt+PITCH (Aux)** | **Clip select** — pick which clip in `/pstretch` the SD source plays. Takes effect live if that deck is streaming, else on the next switch to SD. Held = show the selector (`CapAux`) — per deck |
+| **Alt+POS** | **Scrub (SD only)** — seek the stream playhead to a position in the clip; POS itself stays diffusion. Debounced (a sweep opens where you land); works while frozen to audition spots (`CapAltPos`) — per deck |
+| **Cycle / Glow** | Mod LFO **rate** / **depth** (Glow 0 = off). **Alt+Cycle** = clock-sync the rate to tempo — per deck |
+| **Mod Type switch** | LFO **shape** (sine / triangle) or **Follow** (input-envelope follower) — per deck |
+| **Size/Pos mod switch** | Mod **target**: Pos = diffusion, Size = stretch, both = tone (pitch is modulated via V/Oct CV) — per deck |
+| **CV in** | Additive on the knobs: V/Oct = pitch, Size/Pos = stretch, Mix = dry/wet, Crossfade = A/B blend |
+| **Gate in** | Re-grab in Capture, else toggle freeze — per deck |
+| **CV / gate out** | **Mod CV out** = the LFO as 0..1 CV; **gate out** = a pulse per LFO cycle (tempo-synced clock). LFO free-runs regardless of depth — per deck |
 | **Crossfade** | A/B blend of the two decks |
 | **Routing switch** | Stereo topology (Stereo / DoubleMono / GenerativeStereo) |
-| **Mode switch** | unused (free for the Phase-2 source select) |
+
+### Modulation, CV, and gate
+
+A control layer added on top of the source/stretch core (2026-07-01), reusing the platform's existing
+mod/cv/gate hooks — no new capability flags. All per deck, all **off by default** (the audio path is
+byte-identical to the un-modulated engine until engaged).
+
+- **Mod LFO.** A per-deck LFO on the free Cycle (`ModSpeed`, rate) / Glow (`ModAmp`, depth) knobs. The
+  **Size/Pos mod switch** (`StartModOn`/`SizeModOn`) picks the target — Pos = diffusion, Size = stretch,
+  both = tone. Pitch is deliberately *not* a switch target: diffusion and tone have no CV jack (so the LFO
+  is their only modulation route), whereas pitch and stretch also have CV jacks, so pitch modulation lives
+  on the V/Oct jack. The **Mod Type switch** (`ModType`/`LfoShape`) selects sine / triangle / **Follow** (an
+  input-envelope follower, fast-attack/slow-release). Applied once per block in `_derive_and_push()` (block
+  rate is ample for the sub-10 Hz range); the LFO free-runs every block so it is always available as a CV
+  source, and the depth only scales the internal effect.
+- **Clock-sync (Alt+Cycle).** `set_mod_speed`'s `sync` flag (= Alt held) latches per deck; when synced the
+  Cycle knob quantizes to `kSyncMult[]` (cycles per beat) and the rate is `tempo/60 * mult`, recomputed each
+  block from the injected `ITransport` so it tracks tempo. `deck_leds()` reports `mod_synced`/`mod_type` so
+  the platform lights the Cycle LED (the own-display ring is drawn by `render()`; the panel Cycle/Mode LEDs
+  are a separate channel the platform reads for every engine).
+- **CV in (additive).** `cv_voct` -> pitch (semitones/12 octaves), `cv_size_pos` -> stretch, `cv_mix` ->
+  dry/wet, `cv_crossfade` -> A/B blend; calibrated to ~0 unpatched, summed onto the knobs and clamped.
+- **Gate in.** `on_gate_trigger`: re-grab in Capture (`set_capture` off/on), else toggle freeze.
+- **CV / gate out.** `process_cv` emits each deck's LFO as a 0..1 CV (the app maps it to the DAC and feeds
+  the last value to the Cycle-LED brightness); `gate_out_triggered` returns a latch set on each LFO phase
+  wrap, so the gate out is a per-cycle pulse — a tempo-synced clock when the LFO is clock-synced.
 
 ## Roadmap — all three source modes, staged
 
@@ -162,13 +250,21 @@ span so a big stretch traverses the whole captured phrase (the classic PaulStret
 seconds of input). Cheap, no new infrastructure. Ship + tune the stretch *sound* and measure CPU on
 hardware before adding streaming.
 
-**Phase 2 (SD-file source).** Add an SD-clip source on the `StreamDeck` stack (`radio` is the template):
-scan a folder of clips, stream the selected one slowly into the analysis ring ahead of the read head,
-loop or stop at end. Control rework: the **Mode switch** becomes the SOURCE selector (Live / Capture /
-SD), the phase A/B retires off it, **Alt+PITCH (Aux)** becomes the clip-slot selector (like radio banks,
-add `CapAux`), and the diffusion-vs-scrub contention on POS is resolved (scrub on Alt+POS, or diffusion
-fixed in SD mode). The streaming pump lives in `prepare()` and must throttle (the read head is slower
-than real time, so the ring must not overrun).
+**Phase 2 (SD-file source + control rework).** *Landed (code complete, host-tested, builds/fits) — see
+Status.* An SD-clip source on the `StreamDeck` stack (`radio` is the template): `/pstretch` is scanned once
+in `prepare()`; entering SD opens the selected clip looping and streams it slowly into the analysis ring
+ahead of the read head. The streaming is **rate-matched, not pumped blindly**: each block the engine asks
+the voice `sd_want()` (how many source frames to top the write head up to `kSdMargin` ahead of the read
+head — ~1 frame/block at 50x), pulls exactly that many int16 frames from `ctx.stream->play_consume`,
+decodes to float, and `feed_sd`s them. Because want is derived from the read-head gap, it is self-throttling
+(no overrun) and self-quiescing under freeze. `play_consume`/`feed_sd` run in `process()` (ISR-safe,
+lock-free ring); the FatFs `scan_bank`/`start_play_*` run in `prepare()`/`set_config` (main loop).
+**Done in this cut:** Mode switch = source selector (Live/Capture/SD as one `Source` state); Rev pad
+re-grabs within Capture; **Aux (`CapAux`) is the clip-slot selector** (per-deck, re-opens live on a
+streaming deck, honoured on entry otherwise); the own-display renders the clip dots while Alt is held;
+positions/feed/freeze/rebase all working; **off-rate clips are pitch-corrected** by their `.wav` rate
+(`set_sd_rate` folded into the read stride); **Alt+POS scrubs** the SD playhead (`CapAltPos`, debounced
+re-seek). The full Phase-2 control plan is implemented. **Still to do:** the on-hardware + by-ear pass.
 
 **Deferred.** Per-deck independent clips, longer windows (the vendored FFT supports 8192 for a smoother
 wash; 4096/85 ms today), an in-RAM record-to-slot, and a bigger capture ring.
@@ -177,12 +273,24 @@ wash; 4096/85 ms today), an in-RAM record-to-slot, and a bigger capture ring.
 
 - `src/engine/pstretch/fft.h` — vendored radix-2 complex FFT (MIT, clean-room), arena-backed tables.
 - `src/engine/pstretch/pstretch_voice.h` — the mono `Stretcher` (ring, read head, window, phase smear,
-  OLA; live clamp + capture loop).
-- `src/engine/pstretch/pstretch_engine.{h,cpp}` — the `IEngine` dual-deck wrapper.
+  OLA; live clamp + capture loop + the SD source path `set_sd`/`sd_want`/`feed_sd`/`sd_rewind` with
+  margin-keep + position rebase).
+- `src/engine/pstretch/pstretch_engine.{h,cpp}` — the `IEngine` dual-deck wrapper; holds `ctx.stream`, the
+  per-deck `Source {Live,Capture,SD}` state, the source/clip helpers
+  (`_set_source`/`_open_sd`/`_open_clip`/`_ensure_scan`/`_apply_scrub`/`_build_path`), the Aux clip selector
+  and Alt+POS scrub (`CapAux`/`CapAltPos`, `set_param`/`param`/`set_aux_active`), the `prepare()`
+  scan + scrub settle, and the per-block SD feed in `process()`.
 - `host/test_pstretch.cpp` — FFT round-trip/known-bin, finite/bounded/produces-signal, dry passthrough,
-  stretch changes output, freeze, capture loops, routing.
-- Registered in `engine_select.h`, `Makefile`, `CMakeLists.txt`, `Makefile.cmake`, `host/Makefile` (+
-  `engine-pstretch` one-shot targets).
+  stretch changes output, freeze, routing, **B7 capture-via-Mode + Rev-pad re-grab, B8 SD-file source, B9
+  Aux clip select, B10 off-rate pitch correction (zero-crossing), B11 Alt+POS scrub (debounced re-seek)**. A
+  `FakeStream` 3-clip stub proves the engine opens/changes/seeks clips, feeds the ring from the stream, and
+  consumes below real time.
+- `src/engine/istreamdeck.h` — `bank_sort(BankEntry*, int)`: case-insensitive insertion sort the shared
+  `StreamDeck::scan_bank` calls so scanned clips/stations are alphabetical, not FAT-enumeration order.
+  Unit-tested in `host/test_stream.cpp`.
+- Build: `SPK_USE_STREAM` is set for pstretch in `Makefile` and `CMakeLists.txt` (pulls in the shared
+  `stream_deck.cpp`/`fat_file.cpp` and the app's stream injection). Registered as before in
+  `engine_select.h`, `Makefile.cmake`, `host/Makefile` (+ `engine-pstretch` one-shot targets).
 
 ## Risks / open items
 
@@ -192,9 +300,12 @@ wash; 4096/85 ms today), an in-RAM record-to-slot, and a bigger capture ring.
 - **Free-running write head as `float`** — `_wpos`/`_rpos` are floats, so positions lose integer precision
   after ~6 min of continuous runtime (2^24 samples). Rebase them (keep bounded) before relying on long
   unbroken sessions; not yet done.
-- **Window is 4096 (85 ms)** — a good smear; 8192 (smoother still) is a follow-on (the vendored FFT
-  supports any 2^k; cost is CPU + buffer size, and there is headroom).
+- **Window is 8192 (~171 ms) by default** — a lush, smooth wash; `WINDOW=4096` (~85 ms) is the lighter,
+  meter-verified opt-in (the vendored FFT supports any 2^k). 8192 is flashed and clean by ear (incl. SD+8192);
+  a formal METER number at 8192 is still pending.
 - **Delayed-smear UX** in live mode (above) — intentional; capture/SD modes are the "play through the
   material" answer.
-- **Build status:** SRAM engine, links + fits (`SRAM_EXEC` ~77% Make, SRAM ~72%), host test green,
-  **hardware-verified clean** (audio + CPU meter).
+- **Build status:** with Phase-2 SD streaming linked it is now a `SPK_USE_STREAM` engine; links + fits
+  (`SRAM_EXEC` ~80% Make / ~81% CMake, SRAM ~74%, SDRAM ~78% incl. the StreamDeck SD rings), host test green
+  (incl. B7/B8/B9/B10/B11). Phase 1 is **hardware-verified clean**; **Phase-2 SD mode is not yet
+  hardware-tested** (no card-with-clips run on device).

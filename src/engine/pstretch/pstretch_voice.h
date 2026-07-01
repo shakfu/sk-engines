@@ -53,6 +53,7 @@ public:
         _re = re; _im = im; _ola = ola; _fifo = fifo; _fcap = fifocap;
         _rng = seed ? seed : 0x1234567u;
         _wpos = 0; _rpos = 0.f;
+        _capture = false; _sd = false; _sd_rate = 1.f;
         _frd = 0; _fwr = 0; _fcount = 0;
         _wstate = W_IDLE; _wcur = 0; _wjob = FFT::Job{};
         for (int i = 0; i < sh->n; i++) _ola[i] = 0.f;
@@ -84,13 +85,57 @@ public:
         _capture = on;
     }
 
+    // SD-file source mode (Phase 2). A third "what fills the ring": instead of live input (live) or a
+    // frozen grab (capture), an SD clip is streamed into the ring slowly, kept a fixed margin AHEAD of the
+    // analysis head. The head advances at hop/stretch input samples per hop, so at large stretch it
+    // consumes the source far below real time (~1 KB/s at 50x) - SD bandwidth is trivial and the clip can
+    // be arbitrarily long. The engine pulls `sd_want()` source frames per block from the stream deck and
+    // hands them to feed_sd(); everything downstream (read head, FFT, smear, OLA) is source-agnostic.
+    static constexpr uint32_t kSdMargin  = 8192;   // desired write-ahead lead (2 grains): head stays inside
+                                                   //   freshly-streamed source, with slack for the chunked
+                                                   //   extract that spans several blocks.
+    static constexpr uint32_t kSdMaxFeed = 1024;   // per-block feed cap (bounds the engine's decode scratch
+                                                   //   and CPU); the margin ramps up over a few blocks.
+
+    void set_sd(bool on) {
+        if (on && !_sd) { _wpos = 0; _rpos = 0.f; }   // restart positions; the ring is fed forward from SD
+        _sd = on;
+    }
+
+    // Restart the SD read/write heads (used when the engine re-points this voice at a different clip): the
+    // ring is re-fed forward from the new source, so the head crawls the new file from its start.
+    void sd_rewind() { _wpos = 0; _rpos = 0.f; }
+
+    // SD source-rate correction. The ring is fed one sample per source frame, but the read/synthesis math is
+    // at the engine's sample rate, so an off-rate clip (e.g. 44.1 kHz) would play sharp. Fold clip_rate/sr
+    // into the grain read stride to restore native pitch (the tiny residual time-stretch error is inaudible
+    // in an ambient wash). clip_rate <= 0 (raw/unknown -> assume engine rate) resets to 1.0 (no correction).
+    void set_sd_rate(float clip_rate) { _sd_rate = (clip_rate > 0.f) ? clip_rate / _sr : 1.f; }
+
+    // How many source frames the engine should stream this block to top the write head up to kSdMargin
+    // ahead of the read head. Self-regulating: freeze (or stretch change) stalls the read head -> the gap
+    // stays at the margin -> want falls to 0 -> the stream deck (and clip position) stops too.
+    uint32_t sd_want() const {
+        if (!_sd) return 0;
+        const float gap = static_cast<float>(_wpos) - _rpos;
+        float want = static_cast<float>(kSdMargin) - gap;
+        if (want < 0.f) want = 0.f;
+        if (want > static_cast<float>(kSdMaxFeed)) want = static_cast<float>(kSdMaxFeed);
+        return static_cast<uint32_t>(want);
+    }
+
+    // Write `count` decoded source frames at the write head (SD mode). Mirrors write_input's ring fill.
+    void feed_sd(const float* s, uint32_t count) {
+        for (uint32_t i = 0; i < count; i++) { _inring[_wpos & _ringmask] = s[i]; _wpos++; }
+    }
+
     // The audio block is split into three engine-driven steps so a whole FFT never lands in one block:
-    //   1. write_input() - capture the live input into the ring (skipped in capture/hold).
+    //   1. write_input() - capture the live input into the ring (skipped in capture/hold and SD modes).
     //   2. work(budget)  - advance the pipelined analysis/synthesis worker (the engine shares a small
     //                      per-block budget across both voices); fills the output FIFO ahead of playback.
     //   3. drain()       - pull the block's output samples from the FIFO (0 on underrun during start-up).
     void write_input(const float* in, size_t nframes) {
-        if (_capture) return;
+        if (_capture || _sd) return;
         for (size_t i = 0; i < nframes; i++) { _inring[_wpos & _ringmask] = in[i]; _wpos++; }
     }
 
@@ -157,7 +202,7 @@ private:
 
     // Position the read head for the hop about to begin.
     void start_hop() {
-        if (_capture) return;   // CAPTURE: head loops the frozen span (wrap handled in advance_read)
+        if (_capture || _sd) return;   // CAPTURE/SD: head traverses a bounded span (wrap in advance_read)
         // LIVE: keep the head inside the written, not-yet-overwritten span. When it falls too far behind
         // (large stretch) it holds at the trailing edge and the advancing write head drags it forward at
         // real time -> a continuous smear of the recent past. (The 2*n margin covers the few blocks the
@@ -175,8 +220,9 @@ private:
     // Windowed grain at the read head, pitch-resampled (linear interp). pitch>1 reads faster -> higher pitch.
     void extract_range(int s, int e) {
         const float* win = _sh->window;
+        const float stride = _pitch * _sd_rate;   // grain resample step (PITCH knob x SD source-rate fix)
         for (int i = s; i < e; i++) {
-            const float src = _rpos + static_cast<float>(i) * _pitch;
+            const float src = _rpos + static_cast<float>(i) * stride;
             const int32_t i0 = static_cast<int32_t>(src);
             const float fr = src - static_cast<float>(i0);
             const float s0 = _inring[static_cast<uint32_t>(i0) & _ringmask];
@@ -229,6 +275,12 @@ private:
         if (_capture) {   // loop within the captured span
             while (_rpos >= _cap_end) _rpos -= _cap_len;
             if (_rpos < _cap_start) _rpos = _cap_start;
+        } else if (_sd) {
+            // SD: keep both positions bounded so the floats never lose integer precision over a long
+            // (hours) drone. Subtracting ringlen (a power of two) leaves every masked index and the
+            // write-ahead gap unchanged.
+            const float rl = static_cast<float>(_ringlen);
+            if (_rpos >= rl) { _rpos -= rl; _wpos -= _ringlen; }
         }
     }
 
@@ -250,9 +302,11 @@ private:
     float    _rpos = 0.f;        // analysis read head (input samples)
 
     float    _stretch = 8.f, _pitch = 1.f, _diffusion = 1.f;
+    float    _sd_rate = 1.f;              // SD source-rate correction folded into the read stride (1 = none)
     bool     _freeze = false;
     bool     _capture = false;           // capture/hold: read head loops a frozen span instead of live
     float    _cap_start = 0.f, _cap_end = 0.f, _cap_len = 0.f;
+    bool     _sd = false;                // SD-file source: ring fed from a streamed clip (engine drives it)
     uint32_t _rng = 0x1234567u;
 };
 

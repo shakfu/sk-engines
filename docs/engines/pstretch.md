@@ -2,19 +2,11 @@
 
 `ENGINE=pstretch` · `src/engine/pstretch/pstretch_engine.{h,cpp}` · class `PstretchEngine`
 
-A **real-time PaulStretch** ambient time-smear. PaulStretch (Nasca Octavian Paul) turns audio into a
-diffuse, evolving spectral wash by FFT-ing large overlapping windows, **randomizing the phases** (keeping
-the magnitudes), and overlapping back to time. Advancing the analysis read head slowly - or freezing it -
-stretches and smears time without limit.
+A **real-time PaulStretch** ambient time-smear. PaulStretch (Nasca Octavian Paul) turns audio into a diffuse, evolving spectral wash by FFT-ing large overlapping windows, **randomizing the phases** (keeping the magnitudes), and overlapping back to time. Advancing the analysis read head slowly - or freezing it - stretches and smears time without limit.
 
-Each deck (A/B) runs an independent stretcher over its input channel (A = left, B = right, like the delay
-engine); the two are blended by the crossfader and placed by the routing switch. This is a **clean-room**
-reimplementation written from the published algorithm description (not derived from the GPL PaulStretch /
-PaulXStretch sources), so it stays **MIT**, and it is **self-contained** - a small vendored FFT, no
-external DSP library.
+Each deck (A/B) runs an independent stretcher over its input channel (A = left, B = right, like the delay engine); the two are blended by the crossfader and placed by the routing switch. This is a **clean-room** reimplementation written from the published algorithm description (not derived from the GPL PaulStretch / PaulXStretch sources), so it stays **MIT**, and it is **self-contained** - a small vendored FFT, no external DSP library.
 
-> Implementation, the source-mode roadmap (live / capture / SD-file), and the design notes live in
-> [`docs/dev/pstretch-impl.md`](../dev/pstretch-impl.md).
+> Implementation, the source modes (live / capture / SD-file), and the design notes live in [`docs/dev/pstretch-impl.md`](../dev/pstretch-impl.md).
 
 ---
 
@@ -31,61 +23,90 @@ _Generated from [`docs/diagrams/controls/pstretch.json`](../diagrams/controls/ps
 | **PITCH** (`Speed`) | | **pitch shift** of the grain, +/- 1 octave. |
 | **ENV** (`Env`) | | **tone** - a one-pole low-pass to soften the wash (open at max). |
 | **MIX** (`Mix`) | | **dry/wet**. |
-| **Play pad** | | **FREEZE** the read head - an infinite, evolving drone on the current spot. |
-| **Rev pad** | | **CAPTURE/hold** (latched) - grab the recent input and loop the stretch through it (below). |
+| **Mode switch** (`Mode`) | | **SOURCE** select (per deck). The 3-position switch is silkscreened (top to bottom) **Reel / Slice / Drift** - legacy labels from the stock granular firmware; here they map **Reel = Capture, Slice = Live, Drift = SD-file** (stream a clip from `/pstretch`). See below. |
+| **Play pad** | | **FREEZE** the read head - an infinite, evolving drone on the current spot. Works in any source. |
+| **Rev pad** | | **RE-GRAB** the ring at the current instant - refreshes the Capture snapshot (Capture mode only; no-op in Live/SD). |
+| **Alt+PITCH** (`Aux`) | | **CLIP select** (SD source) - pick which clip in `/pstretch` this deck streams. Takes effect live if the deck is already streaming, else on the next switch to SD. Hold Alt to show the selector. |
+| **Alt+POS** (`AltPos`) | | **SCRUB** (SD source) - seek the stream playhead to a position in the clip (debounced, so a sweep opens where you land; works while frozen to audition spots). |
+| **Cycle** (`ModSpeed`) | | **MOD rate** - the per-deck LFO speed (~0.03..8 Hz). **Alt+Cycle** locks the rate to the tempo (musical divisions). |
+| **Glow** (`ModAmp`) | | **MOD depth** - 0 = modulation off (the engine is un-modulated until you raise this). |
+| **Mod Type switch** (`ModType`/`LfoShape`) | | LFO **shape** (sine / triangle) or **Follow** (input-envelope follower). |
+| **Size/Pos mod switch** (`StartModOn`/`SizeModOn`) | | MOD **target**: Pos = diffusion, Size = stretch, both = tone (pitch is modulated via the V/Oct CV jack). |
+| **CV in** (`cv_voct`/`cv_size_pos`/`cv_mix`/`cv_crossfade`) | | additive CV: **V/Oct** -> pitch, **Size/Pos** -> stretch, **Mix** -> dry/wet, **Crossfade** -> A/B blend. |
+| **Gate in** | | in Capture, **re-grab** the ring; in Live/SD, **toggle freeze** - rhythmic re-sampling / stutter from a clock. |
+| **Mod CV out** (`process_cv`) | | each deck's **LFO** as a 0..1 CV (free-runs as a usable modulation source even at Glow=0). |
+| **Gate out** (`gate_out_triggered`) | | a pulse on every **LFO cycle** - a tempo-synced clock/reset out when the LFO is clock-synced. |
 | **Mix fader** (`Crossfade`) | | A/B blend of the two decks. |
 | **Routing switch** (`Route`) | | stereo topology (below). |
 
-### Live vs capture - what the stretch acts on
+### Source modes - what the stretch acts on
 
-pstretch is a **live effect** (no sample files; it processes the incoming audio). It keeps a few seconds
-of input in a ring buffer, and what the stretch reads from that ring depends on the mode:
+The stretch is orthogonal to its **source** - the analysis ring is just "what's being read," and the per-deck **Mode switch** selects what fills it. That switch is a 3-position toggle silkscreened (top to bottom) **Reel / Slice / Drift**; those are legacy labels from the stock granular firmware and do *not* describe pstretch's use. Here they select the source:
 
-- **Live (default).** The read head trails the incoming sound. Because real-time stretching cannot stretch
-  the literal present (the output would fall infinitely behind), at high **SIZE** the head holds near the
-  trailing edge and you hear an evolving, smeared wash of the **recent past** - a few seconds back - rather
-  than the instantaneous input. This is the ambient "blur the room" mode.
+| Switch position | Label | Source |
+|---|---|---|
+| top | Reel | **Capture** |
+| middle | Slice | **Live** |
+| bottom | Drift | **SD-file** |
 
-- **Freeze (Play pad).** Pins the read head: the same spectral region keeps re-randomizing into an endless
-  evolving pad. This is how you drone on *this* moment.
+Live and Capture are pure live effects (no files); SD streams a clip. All three respond to SIZE / PITCH / DIFFUSION / ENV / MIX and to **Freeze** identically. The two decks are independent, so you can run one Live while the other streams an SD clip and blend them on the crossfader.
 
-- **Capture/hold (Rev pad).** Grabs the last ~5 seconds of input, stops listening, and loops the read head
-  *through* that captured span - so a big **SIZE** slowly traverses the whole captured phrase. This is the
-  classic PaulStretch "stretch a short sound into a long drone." Tap the Rev pad again to return to live.
+- **Live (Slice, middle position).** The read head trails the incoming sound. Because real-time stretching cannot stretch the literal present (the output would fall infinitely behind), at high **SIZE** the head holds near the trailing edge and you hear an evolving, smeared wash of the **recent past** - a few seconds back - rather than the instantaneous input. This is the ambient "blur the room" mode.
 
-All three respond to PITCH / DIFFUSION / ENV / MIX the same way.
+- **Capture (Reel, top position).** On entering the mode it grabs the last ~5 seconds of input, stops listening, and loops the read head *through* that captured span - so a big **SIZE** slowly traverses the whole captured phrase. This is the classic PaulStretch "stretch a short sound into a long drone." The **Rev pad** re-grabs a fresh snapshot at the current instant.
+
+- **SD-file (Drift, bottom position).** Streams a clip from the `/pstretch` folder on the SD card *through* the stretch, so you can smear a whole recording into an hour-long drone (see below). **Alt+PITCH** picks the clip, **Alt+POS** scrubs the playhead.
+
+- **Freeze (Play pad).** Orthogonal to all three: pins the read head so the same spectral region keeps re-randomizing into an endless evolving pad. This is how you drone on *this* moment (or a scrubbed SD spot).
+
+### SD-file source
+
+Put 16-bit mono `.wav` (or `.raw`, assumed 48 kHz) clips in a flat `/pstretch` folder on the card (8.3 names, at least ~32 KB each, up to 32 clips); the folder is scanned once and sorted **alphabetically**, so **Alt+PITCH** position N is the Nth clip by name (zero-pad any numeric names). Both decks stream independently.
+
+Because the stretch makes the read head crawl (it consumes the source at `input_rate / stretch`, ~1 KB/s at 50x), the clip is **streamed** slowly from the card - never fully loaded into RAM - so an arbitrarily long file plays for hours. Off-rate clips (e.g. 44.1 kHz) are pitch-corrected from the `.wav` header, so they play at native pitch rather than sharp. The card mounts a moment after boot and the engine keeps rescanning until a clip streams, so a slow or late-inserted card self-heals; if SD is selected but the folder is empty/unreadable the pad LED turns **red** (vs magenta when streaming) as a diagnostic.
+
+### Modulation, CV, and gate
+
+The engine self-animates and patches into a modular rig. All of this is **per deck** and independent of the source (Live / Capture / SD), and everything is **off by default** - the un-modulated engine is unchanged until you raise **Glow** or patch a jack.
+
+- **Mod LFO (Cycle / Glow).** A free-running LFO whose **rate** is **Cycle** (~0.03..8 Hz, exponential) and **depth** is **Glow** (0 = off). The **Size/Pos mod switch** picks the **target**: Pos = **diffusion** (breathing clean↔wash), Size = **stretch** (a slow time-wobble), both = **tone** (a slow filter sweep). The **Mod Type switch** picks the LFO **shape** (sine / triangle) or **Follow**, which replaces the LFO with an **envelope follower** on the deck's live input so the sound's own dynamics drive the target. Ranges are deliberately gentle for an ambient wash. (Modulation is applied once per audio block - ample for the sub-10 Hz rates.) **Clock sync:** hold **Alt while turning Cycle** to lock the LFO rate to the transport tempo - the knob then selects a musical division (a cycle every few bars up to several per beat), tracked live as the tempo changes, and the **Cycle LED** lights in the clock-source colour. A plain Cycle turn returns to free-running Hz. **Pitch** is not on the switch because it already has its own modulation route - the **V/Oct CV** jack (patch an external LFO for vibrato/detune); diffusion and tone have no CV jack, so the internal LFO is their only route.
+
+- **CV inputs (additive).** The CV jacks sum on top of the knobs (calibrated to ~0 when unpatched, so the knob alone rules with nothing patched): **V/Oct** -> pitch (1 V/oct), **Size/Pos CV** -> stretch, **Mix CV** -> dry/wet (per deck), and **Crossfade CV** -> A/B blend (global). (A negative Mix CV can null the wet to a dry passthrough.)
+
+- **Gate in.** A rising edge **re-grabs** the ring in **Capture** (rhythmic re-sampling of the input from a clock), or **toggles freeze** in **Live / SD** (rhythmic hold / stutter). It shares the freeze state with the Play pad.
+
+- **CV / gate out.** pstretch is also a CV *source*: the **Mod CV out** emits each deck's LFO as a 0..1 control voltage, and the **gate out** fires a pulse on every LFO cycle. The LFO free-runs from Cycle/Mod-Type/Alt+Cycle regardless of the internal depth (Glow), so you can use pstretch as a plain **LFO / clock generator** (tempo-synced when clock-synced) to drive other modules even when it isn't modulating itself.
 
 ### Routing / stereo image
 
 - **LEFT (DoubleMono):** deck A hard-left, deck B hard-right (independent L/R smear).
+
 - **CENTRE (Stereo):** both centred.
+
 - **RIGHT (GenerativeStereo):** each deck at a random pan (re-rolled on entering the mode).
 
 ### Display
 
-Per deck the play LED and a ring marker show the stretch amount and the state colour: **green** = live,
-**amber** = captured (looping a grab), **cyan** = frozen. The routing switch lights the mode L/C/R
-indicator.
+Per deck the play LED and a ring marker show the stretch amount and the state colour: **green** = live, **amber** = capture (looping a grab), **magenta** = SD (streaming a clip), **red** = SD selected but no clips found, **cyan** = frozen (takes priority). While Alt is held on a streaming SD deck, the ring shows a **dot per clip** with the selected one bright, instead of the stretch marker. The routing switch lights the mode L/C/R indicator.
 
 ---
 
 ## Notes
 
-- **No SD card, no sample prep** - it is a pure live effect. The per-deck input rings and the FFT scratch
-  live in the SDRAM arena.
-- **Delayed smear** (live mode) is intentional and inherent to real-time stretching - use **Freeze** or
-  **Capture** to play *through* a fixed moment/phrase instead of trailing the input.
-- **Window is 4096 samples (~85 ms).** A valid smear; larger windows (smoother wash) are a possible
-  follow-on.
-- A full **SD-file** source (load an arbitrary clip and stretch a whole song into an hour-long drone) is
-  planned as a second source mode on the platform's SD-streaming stack - see the dev notes.
+- **Three sources, one stretch.** Live and Capture need no SD card or prep; the SD-file source (Mode R) streams a clip from `/pstretch`. The per-deck input rings live in the SDRAM arena, but the FFT working set is in on-chip SRAM (see the dev notes - scattered SDRAM access is why the first build was unusable).
+
+- **Delayed smear** (live mode) is intentional and inherent to real-time stretching - use **Freeze**, **Capture**, or the **SD-file** source to play *through* a fixed moment / phrase / clip instead of trailing the input.
+
+- **Window is 8192 samples (~171 ms)** by default - a lush, smooth wash, hardware-confirmed running clean on the H7. A lighter **4096-sample (~85 ms)** window is available with `make ENGINE=pstretch WINDOW=4096` (metered at ~32% avg / ~64% max). The 8192 default roughly doubles the FFT work and hasn't had a formal `METER=1` CPU number taken yet, but it plays clean by ear; if you ever hear underruns, drop to `WINDOW=4096` or raise `kWorkBudget`.
+
+- **Soft start.** Entering SD mode (and each scrub re-seek) briefly primes the ring - expect ~170 ms of soft/near-silent output; benign for an ambient scrub.
 
 ---
 
 ## Build / flash
 
 ```text
-make -j8 ENGINE=pstretch      # build (~78% SRAM_EXEC)
+make -j8 ENGINE=pstretch      # build (8192 window, ~82% SRAM_EXEC; WINDOW=4096 for the lighter build)
 make ENGINE=pstretch program-dfu
 make engine-pstretch          # one-shot: clean + build + flash (device in DFU mode)
 make -C host test             # host suites incl. test-pstretch

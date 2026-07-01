@@ -31,6 +31,30 @@ struct BankEntry {
     bool     is_wav;     // false = headerless .raw, true = 16-bit-mono PCM .wav
 };
 
+// Order a freshly-scanned bank by case-insensitive filename so the selector index (radio station /
+// pstretch clip) follows a deterministic alphabetical order rather than FAT directory-enumeration order.
+// Small n (a few dozen) -> in-place insertion sort, no <algorithm>/allocation; safe to call from the main
+// loop. The compare is lexicographic, so zero-pad numeric names (01.wav .. 12.wav) for natural numeric order.
+inline void bank_sort(BankEntry* out, int n) {
+    for (int i = 1; i < n; ++i) {
+        const BankEntry key = out[i];
+        int j = i - 1;
+        while (j >= 0) {
+            const char* a = key.name; const char* b = out[j].name;
+            int cmp = 0;
+            for (;;) {
+                char ca = *a++, cb = *b++;
+                if (ca >= 'A' && ca <= 'Z') ca = static_cast<char>(ca + 32);
+                if (cb >= 'A' && cb <= 'Z') cb = static_cast<char>(cb + 32);
+                if (ca != cb) { cmp = (ca < cb) ? -1 : 1; break; }
+                if (ca == '\0') break;                       // equal
+            }
+            if (cmp < 0) { out[j + 1] = out[j]; --j; } else break;   // stable: stop on >=
+        }
+        out[j + 1] = key;
+    }
+}
+
 struct IStreamDeck {
     virtual ~IStreamDeck() = default;
 

@@ -25,13 +25,21 @@ Each deck edits one **focused** voice at a time; the Rev pad swaps which one, an
 ## Pads
 
 - **Play** - roll / stop the focused loop (snaps rate to unity on engage).
+
 - **Alt+Play** - the record gesture, context-sensitive on whether the voice has content:
+
   - **Empty voice (looper record):** first press starts recording a **fresh loop** (the buffer is cleared first); the second press **closes the loop at exactly the length you played** and starts looping it. Further presses overdub.
+
   - **Voice with content (SD-loaded or already recorded):** arms / disarms **overdub** on top (sound-on-sound).
+
 - **Rev** - swap the deck's focused voice.
+
 - **Seq** - realign **all** voices to their loop start at once: softcut's `cutToPos` does a click-free crossfaded jump, so drifted free-running loops snap back to a common downbeat (the voice-sync gesture).
+
 - **Alt+Seq (tap)** - **save the full take** (the whole recording, lossless) to the focused voice's currently-selected SD slot.
+
 - **Alt+Rev** - **save the trimmed loop** (exactly the POS/SIZE window - "bounce what you hear") to the same slot.
+
 - **Alt+Seq (hold ~1.5 s)** - **erase** the focused voice (clean discard - nothing is written). It empties the buffer so the next Alt+Play records a fresh take. Holding cancels the tap's pending save, so an erase never touches the card.
 
 Both saves write a float32-mono WAV; pick the destination slot with Alt+PITCH first (use an empty slot so you don't overwrite a boot loop). The ring flashes amber while it writes (~1 s, non-blocking - the loop keeps playing). Save and load share the same slot files, so a captured loop reloads on the next boot or via Alt+PITCH. Alt+Seq is the safe everyday save (SIZE/POS stay non-destructive); Alt+Rev prints exactly the loop you hear. Note the Alt+Seq save commits a moment (~1.5 s) after the tap so a hold can turn it into an erase instead; Alt+Rev saves immediately.
@@ -45,7 +53,9 @@ Per-voice pan into the stereo bus: **LEFT** (DoubleMono) manual Alt+POS pan; **C
 ## Make a loop
 
 1. On an empty voice, **Alt+Play** to start recording, play your phrase, **Alt+Play** again to close the loop - it now repeats at the length you played.
+
 2. **Alt+Play** once more to overdub. Keep layering (ENV high) or let old layers fade as you add (ENV lower).
+
 3. PITCH for varispeed/reverse, the FLUX pad to filter, Seq to re-sync against the other deck.
 
 Each voice's buffer is **~10.9 s** (2^19 frames @ 48 kHz, 2 MB), so a single take can be up to ~10.9 s at the default 1x record speed.
@@ -63,4 +73,5 @@ Loop clips are **32-bit float, mono, 48 kHz** WAVs at `softcut/loop_<a|b>_<1..8>
 ## Not in v1
 
 - **Phase-quantised voice sync** - the Seq-pad realign covers the musical case; locked phase-quant is a later add.
+
 - **6 voices** - gated on the `std::function`-per-sample removal in the vendored core (see the spike doc).

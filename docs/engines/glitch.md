@@ -52,7 +52,9 @@ The pitched algorithms (3-11 where a frequency is involved) follow **PITCH** as 
 ### Routing / stereo image
 
 - **LEFT (DoubleMono):** voice A hard-left, voice B hard-right (two glitch voices across the field).
+
 - **CENTRE (Stereo):** both centred.
+
 - **RIGHT (GenerativeStereo):** each voice at a random pan (re-rolled on entering the mode).
 
 ### Display
@@ -64,7 +66,9 @@ Per deck the ring shows a marker at the current algorithm position over a faint 
 ## Notes
 
 - **No SD card, no sample prep, no CV inputs needed** - the engine is a pure generator. The two voices each own an ~8 KB glitch buffer in RAM (regenerated on algorithm select and on the Play pad); there is no arena or streaming.
+
 - **Decks decorrelate:** the two voices carry distinct PRNG seeds, so the same algorithm on both decks still sounds different (useful with the random-pan routing).
+
 - **Aliasing is the aesthetic:** the oscillators are naive (no band-limiting). Use **ENV** (tone) to tame the harshness on the pitched algorithms.
 
 ---

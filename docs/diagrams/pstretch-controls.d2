@@ -12,7 +12,7 @@ vars: {
 
 title: |md
   # Pstretch - real-time PaulStretch ambient time-smear
-  _clean-room PaulStretch; live smear + capture-and-stretch-through_
+  _clean-room PaulStretch; live / capture / SD-file source, stretch-through_
 | {
   near: top-center
   style.font-size: 26
@@ -37,20 +37,20 @@ panel: Front panel {
     knobsA: Knobs (7) {
       class: knob
       shape: sql_table
-      Pitch: "pitch shift +/- 1 octave"
-      Position: "diffusion / smear (clean .. full wash)"
+      Pitch: "pitch shift +/- 1 octave; Alt = CLIP select (SD)"
+      Position: "diffusion / smear (clean .. full wash); Alt = SCRUB clip playhead (SD)"
       Size: "STRETCH 1x .. 64x"
       Envelope: "output tone (low-pass)"
       "Mix (SOS)": "dry/wet"
-      Cycle: "-"
-      Glow: "-"
+      Cycle: "MOD LFO rate; Alt = clock-sync"
+      Glow: "MOD depth (0 = off)"
     }
 
     padsA: Pads (5) {
       class: pad
       shape: sql_table
       Play: "FREEZE the read head (drone)"
-      Reverse: "CAPTURE/hold (loop the grab)"
+      Reverse: "RE-GRAB the ring (Capture mode)"
       Grit: "-"
       Flux: "-"
       Seq: "-"
@@ -59,7 +59,7 @@ panel: Front panel {
     ringA: "LED Ring A (32px)" {
       class: knob
       shape: circle
-      label: "Ring A\nstretch marker; live/capture/freeze colour"
+      label: "Ring A\nstretch marker; live/capture/SD/freeze colour; clip dots (Alt, SD)"
     }
   }
 
@@ -76,7 +76,7 @@ panel: Front panel {
     switches: Switches (74HC165) {
       class: shared
       shape: sql_table
-      "Mode (L/C/R)": "-"
+      "Mode (L/C/R)": "SOURCE: Reel=Capture / Slice=Live / Drift=SD"
       "Routing (L/C/R)": "stereo image: centre / A|B / random"
       "CV target (U/C/D)": "-"
       "Out trims A/B": "output trims"
@@ -104,20 +104,20 @@ panel: Front panel {
     knobsB: Knobs (7) {
       class: knob
       shape: sql_table
-      Pitch: "pitch shift +/- 1 octave"
-      Position: "diffusion / smear (clean .. full wash)"
+      Pitch: "pitch shift +/- 1 octave; Alt = CLIP select (SD)"
+      Position: "diffusion / smear (clean .. full wash); Alt = SCRUB clip playhead (SD)"
       Size: "STRETCH 1x .. 64x"
       Envelope: "output tone (low-pass)"
       "Mix (SOS)": "dry/wet"
-      Cycle: "-"
-      Glow: "-"
+      Cycle: "MOD LFO rate; Alt = clock-sync"
+      Glow: "MOD depth (0 = off)"
     }
 
     padsB: Pads (5) {
       class: pad
       shape: sql_table
       Play: "FREEZE the read head (drone)"
-      Reverse: "CAPTURE/hold (loop the grab)"
+      Reverse: "RE-GRAB the ring (Capture mode)"
       Grit: "-"
       Flux: "-"
       Seq: "-"
@@ -126,7 +126,7 @@ panel: Front panel {
     ringB: "LED Ring B (32px)" {
       class: knob
       shape: circle
-      label: "Ring B\nstretch marker; live/capture/freeze colour"
+      label: "Ring B\nstretch marker; live/capture/SD/freeze colour; clip dots (Alt, SD)"
     }
   }
 }
@@ -148,9 +148,9 @@ io: I/O jacks (fixed) {
   cv: CV in (7) {
     class: io
     shape: sql_table
-    "Size/Pos A/B": "-"
-    "Mix A/B": "-"
-    "V/Oct A/B": "-"
+    "Size/Pos A/B": "stretch (additive)"
+    "Mix A/B": "dry/wet (additive)"
+    "V/Oct A/B": "pitch (1V/oct, additive)"
     "Crossfade CV": "A/B blend"
   }
 
@@ -158,14 +158,14 @@ io: I/O jacks (fixed) {
     class: io
     shape: sql_table
     "Clock in (TRS 4PPQN)": "sync"
-    "Gate in A/B": "-"
-    "Gate out A/B": "-"
+    "Gate in A/B": "re-grab (Capture) / freeze toggle"
+    "Gate out A/B": "LFO cycle (tempo-synced clock)"
   }
 
   modmidi: Mod CV / MIDI {
     class: io
     shape: sql_table
-    "Mod CV out A/B": "-"
+    "Mod CV out A/B": "LFO as 0..1 CV"
     "MIDI in/out":    "24 PPQN + notes"
   }
 }

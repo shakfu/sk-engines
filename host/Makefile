@@ -235,7 +235,8 @@ bench-reverb: $(BENCH_REVERB)
 # The SD-streaming core (SpscRing + Play/RecordStream) is self-contained header-only logic with no
 # engine/Daisy/FatFs deps, so its test compiles on its own.
 $(TEST_STREAM): test_stream.cpp $(ROOT)/src/memory/spsc_ring.h $(ROOT)/src/memory/audio_stream.h \
-                $(ROOT)/src/memory/byte_file.h $(ROOT)/src/memory/wav_stream.h $(ROOT)/src/memory/wav.h | $(BUILD)
+                $(ROOT)/src/memory/byte_file.h $(ROOT)/src/memory/wav_stream.h $(ROOT)/src/memory/wav.h \
+                $(ROOT)/src/engine/istreamdeck.h | $(BUILD)
 	$(CXX) $(CXXFLAGS) test_stream.cpp -o $@
 
 $(BUILD):

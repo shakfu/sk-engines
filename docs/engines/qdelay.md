@@ -51,8 +51,11 @@ Identical to [`delay`](delay.md): **DoubleMono** (two independent mono delays), 
 ## Resources
 
 - `capabilities()` = `CapOwnDisplay | CapDualDeck`; `route()` reports the topology for the route LED.
+
 - Display: a division arc tinted by character + a play indicator (white = frozen, cyan = reversed, else green by input).
+
 - Delay lines + the diffuser are sub-allocated from the engine arena (SDRAM); SRAM_EXEC sits at ~77 % (the diffuser does not touch it), comfortably a normal (non-QSPI) build.
+
 - Host coverage: [`host/test_qdelay.cpp`](../../host/test_qdelay.cpp) (`make -C host test-qdelay`) and the standalone diffuser test [`host/test_diffuser.cpp`](../../host/test_diffuser.cpp) (`make -C host test-diffuser`).
 
 ## Build
