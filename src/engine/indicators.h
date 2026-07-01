@@ -79,10 +79,14 @@ namespace pal {
 //    Both are raised-cosine over `period_ms`. Pass now_ms from EngineContext's ITimeSource.
 // =====================================================================================
 namespace motion {
-    // Raised-cosine in [lo, hi] with the given period. General form behind the two presets.
+    // Smooth pulse in [lo, hi] with the given period - a smoothstepped triangle, visually a
+    // raised-cosine but with NO libm dependency (stmlib/rings use trig lookup tables, so pulling in
+    // libm cos here overflowed tight engines). General form behind the two presets.
     inline float breathe(uint32_t now_ms, float lo, float hi, uint32_t period_ms = 2400) {
-        const float ph = static_cast<float>(now_ms % period_ms) / static_cast<float>(period_ms);
-        return lo + (hi - lo) * (0.5f - 0.5f * std::cos(6.2831853f * ph));
+        float t = static_cast<float>(now_ms % period_ms) / static_cast<float>(period_ms); // 0..1 phase
+        t = t < 0.5f ? t * 2.f : (1.f - t) * 2.f;   // fold to a 0..1..0 triangle
+        t = t * t * (3.f - 2.f * t);                // smoothstep -> raised-cosine-like ease
+        return lo + (hi - lo) * t;
     }
     inline float breathe_standby(uint32_t now_ms, uint32_t period_ms = 2400) { return breathe(now_ms, 0.35f, 0.60f, period_ms); }
     inline float breathe_alive  (uint32_t now_ms, uint32_t period_ms = 2400) { return breathe(now_ms, 0.70f, 1.00f, period_ms); }
