@@ -70,6 +70,75 @@ make -C host test-softcut      # host correctness test
 
 Worked through on-device over several DFU cycles; the bugs (and reusable softcut-porting lessons): FadeCurves uninit (ASan); `playFlag` doesn't start the head; input-channel mismatch (fixed by the mono-sum input); no live monitoring; the **empty-buffer record bug** (a fresh voice had no sized, head-aligned loop to record into → fixed by record-defines-loop, the key insight); SIZE capping the open take mid-record. The dual-deck `set_config(Mode)` clobber was caught in the scaffold (gate on `DeckRef::A`).
 
+## Control surface re-evaluation (2026-07-01)
+
+The *panel* is densely mapped (both mod knobs, every pad, the Alt layers, SD save/load). But softcut uses
+**none** of the CV/gate I/O, ignores the per-deck Mode switch, and leaves a lot of softcut-lib's own DSP
+unexposed. Confirmed unused hooks: no `cv_voct`/`cv_size_pos`/`cv_mix`/`cv_crossfade`, no `on_gate_trigger`,
+no `process_cv`/`gate_out_triggered`, no `ConfigId::Mode`, no `ITransport` (the `set_mod_speed` `sync` flag
+is ignored). For a *looper* the CV/gate omission is the biggest gap.
+
+### Gaps
+
+**A. CV / gate I/O — entirely unmapped (the standout miss).**
+
+| Hook | High-value mapping for a looper |
+|---|---|
+| **V/Oct in** (`cv_voct`) | → rate — pitched/tuned loops, playable from a keyboard/sequencer (softcut as a sampler) |
+| **Size/Pos CV in** (`cv_size_pos`) | → loop position or length (scan/modulate the window) |
+| **Mix CV in** (`cv_mix`) | → voice volume (VCA) |
+| **Crossfade CV** (`cv_crossfade`) | → deck A/B blend (the controls JSON already claims this, but it is **not** implemented — needs the override, cf. pstretch) |
+| **Gate in** (`on_gate_trigger`) | → arm overdub / **retrigger the loop** (clocked looping) / one-shot capture |
+| **Gate out** (`gate_out_triggered`) | → a pulse on each **loop boundary** — the loop becomes the patch's clock/reset |
+| **Mod CV out** (`process_cv`) | → the loop **phase** as a ramp/phasor locked to the loop (`Voice::getActivePosition()` already exists) |
+
+**B. Free panel controls.**
+- **Mode switch** (per-deck 3-way, currently `-`): a natural **record-mode** selector — Overdub (current) / Replace / **One-shot** (softcut has `setRecOnceFlag`). (NB: `set_config(Mode)` must stay gated per-deck — the clobber noted in the bring-up history.)
+- **Grit pad** (currently `-`): *reserved for the TapeFx port* (see the deferred-features TODO). An **alternative** use, if TapeFx is dropped, is softcut's **pre-filter** (`setPreFilterFc/Rq/Lp/...`) — Grit shapes what gets *recorded* (lo-fi record chain) while FLUX shapes *playback*. Both are near-free (the pre-filter is already compiled into the vendored `Voice`); pick one.
+
+**C. Unexposed softcut-lib DSP.** Comparing the full `Voice` public API against the setters the engine
+actually calls, the engine wires ~60% of the voice's control surface. The rest is **not DSP to write** — it
+is already in the vendored `Voice`, already contributing to the ~11 KB code and the ~62%/79% CPU we pay for,
+just unwired. Engine-used: `setRate`, `setLoop{Start,End,Flag}`, `setFadeTime`, `setPreLevel` (ENV),
+`setRecLevel`/`setRecFlag`/`setPlayFlag`, `setRateSlewTime` (MODFREQ), `setPostFilter{Fc,Rq,Lp,Dry}` (FLUX),
+`cutToPos`, `getSavedPosition`. What's left on the table:
+
+- **An entire pre-filter — completely untouched (the big one).** softcut has *two* independent multimode SVFs
+  per voice: a **pre-filter** on the *record* path (shaping what is written to the buffer) and the
+  **post-filter** on *playback* (the FLUX pad). The pre-filter's eight setters — `setPreFilterFc`,
+  `setPreFilterRq`, `setPreFilterLp/Hp/Bp/Br`, `setPreFilterDry`, `setPreFilterFcMod` — are all unused, so
+  softcut records the raw input. Wiring it gives a **record-vs-playback tone pair** (lo-fi/telephone loops,
+  rumble removal before committing, a record-side character distinct from playback) for zero new DSP. This is
+  the concrete capability behind the "Grit → pre-filter" idea in **B**.
+- **The post-filter is multimode, but only LP is used.** The FLUX pad drives `setPostFilterLp` (+ `Fc`/`Rq`/
+  `Dry`); the same SVF also exposes `setPostFilterHp/Bp/Br` (highpass / bandpass / notch), blendable via the
+  per-mode level setters. Four of five shapes + morphing are unused — the FLUX pad runs a fifth of the filter
+  it already pays for.
+- **Phase quantization + phase poll (4 methods).** `setPhaseQuant`, `setPhaseOffset`, `getQuantPhase`,
+  `updateQuantPhase` are the built-in machinery for **clock-locked loops / quantized cuts** and for reading a
+  voice's loop phase. Their absence is *why* the Seq realign must be an immediate `cutToPos` rather than
+  beat-quantized, and why there is no loop-phase signal to drive a CV/gate out. With the injected `ITransport`
+  (unused today) + **Alt+Cycle** (`set_mod_speed`'s `sync` flag, currently ignored) this becomes clock-sync.
+  Overlaps the deferred "phase-quantised voice sync" TODO.
+- **`setRecOffset`** — the record head can lead/lag the play head by an arbitrary offset: the primitive for
+  **delay-style overdub** (record what you played N ms ago) and Fripp-ish feedback-loop textures — something
+  shuttle/tape structurally can't do and softcut gives for free.
+- **`setRecPreSlewTime`** — smooths record/pre-level changes; unused, so turning **ENV (overdub feedback)** or
+  arming record steps the level instantly (a slew would make those click-free).
+- **`setRecOnceFlag`** — one-shot "capture one pass then auto-disarm" record (pairs with the Mode-switch
+  record-mode idea in **B**).
+- **`getActivePosition`** — the audio-thread play-head position (the engine only uses `getSavedPosition`, for
+  closing the record-defined loop). This is what a precise position display or a **loop-phase CV out** reads.
+
+### Recommendations (by value / cost)
+
+1. **CV in + gate in + CV/gate out** — near-free (override the hooks, route into existing setters + `getActivePosition`), the single biggest capability jump: softcut becomes a modular-playable, clock-emitting looper. Confirm V/Oct→rate as the pitch axis. *Standout.*
+2. **Grit → pre-filter** — near-free, uses lib DSP already present; a record-chain vs playback-chain filter pair. **Only if** the reserved TapeFx port is not wanted on Grit (mutually exclusive).
+3. **Clock-synced loops** (Alt+Cycle + `phaseQuant` + transport) — medium cost, most musical; upgrades the manual Seq realign to beat-locked sync. Folds in the existing phase-quant TODO.
+4. **Mode switch → record mode** (Overdub / Replace / One-shot via `setRecFlag`/`setRecOnceFlag`/`preLevel`) — low cost.
+
+Suggested first pass: the CV/gate I/O batch (#1) — near-free and independently testable — then clock-sync (#3). #2 and #4 are small opportunistic adds gated on the Grit/TapeFx decision.
+
 ## TODO / open items
 
 Build: `make engine-softcut` (clean → build → DFU); `make ENGINE=softcut METER=1` for the load meter.
