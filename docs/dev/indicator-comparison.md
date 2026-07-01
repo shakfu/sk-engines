@@ -179,8 +179,12 @@ panel is entirely dark. This is the floor of the spectrum.
 > hardware-free helper toolkit any engine's `render()` can call (value-pickup overlay, breathe/blink,
 > selector/slot/progress/level rings, the direction-coded transport color, and the canonical
 > palette). API + a best-use example are in [`indicator-grammar.md` §8](indicator-grammar.md#8-shared-helper-api-engineindicatorsh).
-> What remains is #4–#5 (migrating each engine's `render()` onto it) and lifting the platform's
-> `core.ui.leds.cpp` constants onto `pal::`.
+> **`shuttle` is the first engine migrated onto it** (`src/engine/shuttle/shuttle_engine.cpp`): its
+> hand-rolled breathe/transport-color/slot code was replaced by the helpers (behavior-preserving),
+> then enhanced with A/B fader LEDs, a loop-window arc, a wow/flutter cycle glow, and knob-turn value
+> bars — see [`indicator-grammar.md` §8 "First adopter"](indicator-grammar.md#first-adopter-shuttle).
+> What remains is migrating the other engines' `render()` onto it (`softcut` next — it's shuttle's
+> twin) and lifting the platform's `core.ui.leds.cpp` constants onto `pal::`.
 
 Ordered by leverage:
 

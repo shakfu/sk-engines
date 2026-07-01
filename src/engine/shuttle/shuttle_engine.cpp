@@ -1,5 +1,6 @@
 #include "engine/shuttle/shuttle_engine.h"
 #include "engine/arena.h"
+#include "engine/indicators.h" // shared indicator toolkit (docs/dev/indicator-grammar.md §8)
 #include "engine/tape/tapefx.h" // shared TapeFx wrapper around the cyfaust-generated tfx_tapefx::mydsp
 
 #include <cmath>
@@ -254,10 +255,13 @@ void ShuttleEngine::_render_track(DeckRef::Ref d, int s, const float* const* in,
 void ShuttleEngine::set_param(ParamId id, DeckRef::Ref d, float v) {
     const int i = idx(d);
     const int s = _active[i];                                     // knobs address the FOCUSED track
-    if (id == ParamId::Speed) { _speed_n[i][s] = v; _speed[i][s] = speed_from_knob(v); }
-    else if (id == ParamId::Pos)  { _pos_n[i][s]  = v; }   // loop window start  (computed per block)
-    else if (id == ParamId::Size) { _size_n[i][s] = v; }   // loop window length (computed per block)
-    else if (id == ParamId::Mix) { _gain[i][s] = v; }
+    // Flag a value-bar overlay when a display knob actually moves (the platform re-sends the current
+    // value every loop, so gate on a real change). render() shows _edit_val until _edit_until.
+    auto edit = [&](float cur) { if (_time && std::fabs(v - cur) > 1e-4f) { _edit_val[i] = v; _edit_param[i] = id; _edit_until[i] = _time->now_ms() + kEditShowMs; } };
+    if (id == ParamId::Speed) { edit(_speed_n[i][s]); _speed_n[i][s] = v; _speed[i][s] = speed_from_knob(v); }
+    else if (id == ParamId::Pos)  { edit(_pos_n[i][s]);  _pos_n[i][s]  = v; }   // loop window start  (computed per block)
+    else if (id == ParamId::Size) { edit(_size_n[i][s]); _size_n[i][s] = v; }   // loop window length (computed per block)
+    else if (id == ParamId::Mix) { edit(_gain[i][s]); _gain[i][s] = v; }
     else if (id == ParamId::AltPos) { _pan[i][s] = v; _recompute_pan(); }   // per-track manual pan
     else if (id == ParamId::Crossfade) { _xfade = v; _recompute_blend(); }
     else if (id == ParamId::Aux) {
@@ -431,39 +435,26 @@ static constexpr uint32_t kTrackHue[ShuttleEngine::kTracks] = {
 void ShuttleEngine::render(DisplayModel& m) {
     m.clear();
     const uint32_t now = _time ? _time->now_ms() : 0;
-    // Slow standby pulse so a loaded-but-stopped deck reads as "on, ready" instead of powered-off.
-    // Smooth raised-cosine over ~2.4 s, kept dim (0.35..0.60) since it is only an ambient idle glow.
-    const float ph      = static_cast<float>(now % 2400u) / 2400.f;
-    const float breathe = 0.35f + 0.25f * (0.5f - 0.5f * std::cos(6.2831853f * ph));
+    // Slow standby pulse so a loaded-but-stopped deck reads as "on, ready" instead of powered-off
+    // (0.35..0.60 ambient glow); shared with softcut/granular via the indicator toolkit.
+    const float breathe = motion::breathe_standby(now);
     for (DeckRef::Ref dk : { DeckRef::A, DeckRef::B }) {
         const int  i   = idx(dk);
         const int  s   = _active[i];
         const bool err = _time && now < _err_until[i];
         // Direction-coded transport of the focused track: recording red, forward green, reverse cyan,
-        // engaged-but-frozen dim white, idle off, rejected action amber.
-        uint32_t c; float b;
-        if      (err)               { c = kErrColor; b = 1.f; }
-        else if (_recording[i][s])  { c = 0xff0000;  b = 1.f; }
-        else if (_rolling[i][s] && _speed[i][s] > 0.f) { c = 0x00ff00; b = 1.f; }
-        else if (_rolling[i][s] && _speed[i][s] < 0.f) { c = 0x00a0ff; b = 1.f; }
-        else if (_rolling[i][s])    { c = 0x404040;  b = 0.5f; }
-        else                        { c = 0x000000;  b = 0.f; }
-        const bool live = err || _recording[i][s] || _rolling[i][s];
-        // Idle transport pad glows faintly in the focused track's hue (ready, not playing); live
-        // states keep their direction color.
-        m.play[i] = live ? DisplayModel::Indicator{ c, b }
-                         : DisplayModel::Indicator{ kTrackHue[s], breathe * 0.5f };
+        // engaged-but-frozen dim white, rejected action amber, idle -> the track's hue breathing as
+        // an ambient "loaded and ready" standby.
+        const auto tv = transport_view(_rolling[i][s], _recording[i][s], _speed[i][s], err,
+                                       kTrackHue[s], breathe * 0.5f);
+        led::transport(m, i, tv);
 
         if (_aux_held[i]) {
             // Alt+PITCH held: tape-slot selector for the focused track (selected bright, recorded mid,
             // empty dim).
-            m.ring[i].set_brightness(1.f);
-            m.ring[i].set_hex_color(0x202020); m.ring[i].set_segment(0.f, 0.999f);
-            m.ring[i].set_point_hex_color(0xffffff);
-            for (int t = 0; t < kTapeSlots; t++) {
-                const float pb = (t == _tape_slot[i][s]) ? 1.f : (_slot_used[i][t] ? 0.45f : 0.12f);
-                m.ring[i].set_point(static_cast<uint8_t>(t * (kRingLeds / kTapeSlots)), pb);
-            }
+            uint32_t used = 0;
+            for (int t = 0; t < kTapeSlots; t++) if (_slot_used[i][t]) used |= (1u << t);
+            ring::slots(m.ring[i], kTapeSlots, _tape_slot[i][s], used);
         } else if (_swap_show[i] > 0) {
             // Just after a Rev swap: flash the focused-track number (1 or 2 dots) for a moment, on the
             // new track's hue so the color change itself reinforces the swap.
@@ -472,20 +463,47 @@ void ShuttleEngine::render(DisplayModel& m) {
             m.ring[i].set_hex_color(kTrackHue[s]); m.ring[i].set_segment(0.f, 0.999f);
             m.ring[i].set_point_hex_color(0xffffff);
             for (int t = 0; t <= s; t++) m.ring[i].set_point(static_cast<uint8_t>(t * 4), 1.f);
+        } else if (_time && now < _edit_until[i]
+                   && (_edit_param[i] == ParamId::Pos || _edit_param[i] == ParamId::Size) && _len[i][s] > 0) {
+            // POS/SIZE moving: show the loop WINDOW itself - an arc whose length is SIZE, with a bright
+            // dot at its START (the position POS sets), so you see where the loop begins and how long
+            // it is (not a meaningless 0..value bar).
+            uint32_t S, Lw; _window(i, s, S, Lw);
+            const float L = static_cast<float>(_len[i][s]);
+            ring::window(m.ring[i], static_cast<float>(S) / L, static_cast<float>(Lw) / L, kTrackHue[s], 0.7f);
+            ring::playhead(m.ring[i], static_cast<float>(S) / L, 1.f);   // start-of-loop marker (= POS)
+        } else if (_time && now < _edit_until[i]) {
+            // Other knobs (MIX level, PITCH speed) apply immediately: a plain value bar in the track
+            // hue (no pickup-deviation - a granular-MValue concept, N/A here; see the header note).
+            ring::value(m.ring[i], _edit_val[i], kTrackHue[s]);
+        } else if (_len[i][s] > 0) {
+            // Normal: the loop WINDOW (POS..POS+SIZE) drawn as the ring arc in the transport color
+            // (live) or the breathing track hue (idle), with the read head moving inside it - so the
+            // loop start/length are visible, not just a full-ring backdrop.
+            const uint32_t back = tv.live ? tv.rgb : kTrackHue[s];
+            const float    bri  = tv.live ? 1.f : breathe;
+            uint32_t S, Lw; _window(i, s, S, Lw);
+            const float L = static_cast<float>(_len[i][s]);
+            ring::window(m.ring[i], static_cast<float>(S) / L, static_cast<float>(Lw) / L, back, bri);
+            ring::playhead(m.ring[i], static_cast<float>(_read[i][s] / static_cast<double>(_len[i][s])),
+                           tv.live ? 1.f : 0.55f);
         } else {
-            // Normal: live -> direction color at full; idle -> the focused track's hue breathing as an
-            // ambient "loaded and ready" standby (was previously black, which looked powered-off).
-            if (live) { m.ring[i].set_brightness(1.f);     m.ring[i].set_hex_color(c); }
-            else      { m.ring[i].set_brightness(breathe); m.ring[i].set_hex_color(kTrackHue[s]); }
-            m.ring[i].set_segment(0.f, 0.999f);
-            if (_len[i][s] > 0) {                                // read-position dot (moving when live)
-                m.ring[i].set_point_hex_color(0xffffff);
-                m.ring[i].add_point(static_cast<float>(_read[i][s] / static_cast<double>(_len[i][s])),
-                                    live ? 1.f : 0.55f);
-            }
+            // Empty track: a full-ring idle glow so it still reads as "on, ready".
+            ring::progress(m.ring[i], 0.999f, kTrackHue[s], breathe);
+        }
+
+        // Cycle LED: wow/flutter modulation activity - the glow pulses at the MODFREQ (rate) knob's
+        // speed, scaled by the MOD_AMT (depth) knob, so dialed-in modulation is visible on the panel.
+        const float depth = _fx_n[i][s][2];
+        if (depth > 1e-3f) {
+            const uint32_t period = static_cast<uint32_t>(2000.f - 1850.f * _fx_n[i][s][3]); // ~2 s..150 ms
+            led::cycle(m, i, depth * motion::breathe(now, 0.f, 1.f, period), kTrackHue[s]);
         }
         m.ring[i].set_updated();
     }
+    // Global A/B crossfade on the fader LEDs (brightness = each deck's share of the mix).
+    led::fader_balance(m, _xfade);
+
     // Routing switch position on the mode L/C/R LED (matches the tape engine).
     if      (_route == Route::DoubleMono) m.mode_left   = { 0xffffff, 0.8f };
     else if (_route == Route::Stereo)     m.mode_center = { 0xffffff, 0.8f };

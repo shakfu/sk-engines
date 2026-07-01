@@ -254,6 +254,7 @@ Each sets its own color + brightness and draws a complete picture onto a `LEDRin
 |---|---|
 | `ring::level(r, level01, color)` | activity/output meter arc from 0 |
 | `ring::progress(r, frac01, color)` | bounded-operation arc (save/load) |
+| `ring::window(r, start01, len01, color)` | arbitrary-start arc — loop region / grain spread / sub-range |
 | `ring::playhead(r, pos01, bright, hue)` | moving read-head dot (wrapped, overlaid) |
 | `ring::value(r, value, knob, picked_up, color, breathe)` | **value bar + red pickup-deviation overlay** |
 | `ring::value(r, value01, color)` | value bar only (no soft-takeover) |
@@ -329,6 +330,22 @@ value-pickup feedback, an idle breathe, and a clock indicator **while shrinking 
 each concept is now one named call instead of open-coded `set_hex_color`/`set_segment`/`set_point`
 sequences plus a re-declared local palette. That is the intended win: the rich half of the grammar
 becomes vocabulary an engine *invokes*, not machinery it *rebuilds*.
+
+### First adopter: `shuttle`
+
+`src/engine/shuttle/shuttle_engine.cpp` is the first engine migrated onto the toolkit. It landed in
+two phases: **(1)** a behavior-preserving swap of its hand-rolled breathe, transport-color ladder,
+slot loop, and read-head dot for `motion::breathe_standby` / `transport_view` / `ring::slots` /
+`ring::playhead` (deleting its local `kErrColor`/`kRingLeds`), then **(2)** enhancements the shared
+vocabulary made one-liners: `led::fader_balance` (A/B crossfade, previously unlit), `ring::window`
+(the loop window drawn as an arc with the read head inside it, replacing a featureless full-ring
+backdrop), `led::cycle` (wow/flutter modulation glow), and a **param-aware knob-edit overlay**
+(POS/SIZE redraw the loop window via `ring::window` with a dot at the loop start, so you see the
+region's position and length; MIX/PITCH show a `ring::value` bar — the "no-deviation" form, correct
+because shuttle applies knob values immediately). It is the worked example of the §8 pattern: display
+state expressed as a short list of intent. One lesson from it: a value *bar* fits a scalar (level,
+speed) but is wrong for a *geometric* param — POS/SIZE describe a region, so they must be drawn as
+one (an arc + marker), not a 0..value bar.
 
 ### What stays in the platform (not in the helper)
 

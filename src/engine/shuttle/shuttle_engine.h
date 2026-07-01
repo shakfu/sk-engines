@@ -116,11 +116,9 @@ private:
     static constexpr float    kDead       = 0.03f;     // deadzone half-width about noon -> guaranteed stop
     static constexpr float    kHalfPi     = 1.57079632679f;
     static constexpr float    kCenterGain = 0.70710678f;
-    static constexpr uint32_t kErrColor   = 0xff6000;
-    static constexpr uint32_t kErrFlashMs = 1200;
+    static constexpr uint32_t kErrFlashMs = 1200;      // error/rejected-action flash duration (color = pal::kErr)
     static constexpr uint32_t kDebounceMs = 300;
     static constexpr int      kTapeSlots  = 8;         // SD files per deck (Alt+PITCH selector)
-    static constexpr int      kRingLeds   = 32;
     static constexpr uint32_t kLoadChunk  = 8192;      // frames pulled from the stream per prepare() pass
     static constexpr int      kDeclickRamp = 64;       // realign fade half-length (~1.3 ms/side at 48 kHz)
     static constexpr uint32_t kMinLoopFrames = 64;     // shortest SIZE window (avoids a degenerate loop)
@@ -184,6 +182,14 @@ private:
     uint32_t _err_until[2]    = { 0, 0 };
     uint32_t _last_trig_ms[2] = { 0, 0 };
     int  _swap_show[2] = { 0, 0 };            // frames left to flash the focused-track indicator
+    // Knob-edit feedback: set_param stamps the moved knob's value + a short deadline here; render
+    // shows it as a ring::value bar while live, so turning PITCH/POS/SIZE/MIX gives visual feedback
+    // (previously the ring never reacted to a knob). Shuttle applies values immediately, so this is
+    // the value bar only - the red pickup-deviation overlay is a granular-MValue concept and N/A here.
+    float    _edit_val[2]     = { 0.f, 0.f };
+    ParamId  _edit_param[2]   = { ParamId::Count, ParamId::Count };  // which knob moved -> how to show it
+    uint32_t _edit_until[2]   = { 0, 0 };
+    static constexpr uint32_t kEditShowMs = 700;
 
     // ---- Global ------------------------------------------------------------------------------
     float _xfade = 0.5f;

@@ -115,6 +115,16 @@ namespace ring {
         r.set_segment(0.f, std::clamp(frac01, 0.f, 0.999f));
     }
 
+    // WINDOW — an arc of length `len01` starting at `start01` (both normalized; the arc wraps past
+    // 1.0). The general form behind level()/progress() (which pin the start at 0): a loop region,
+    // grain spread, or any sub-range. `len01` is clamped to a near-full ring to avoid the exact-1.0
+    // wrap-onto-itself glitch.
+    inline void window(LEDRing& r, float start01, float len01, uint32_t color, float brightness = 1.f) {
+        r.set_hex_color(color);
+        r.set_brightness(brightness);
+        r.set_segment(start01, start01 + std::clamp(len01, 0.f, 0.999f));
+    }
+
     // PLAYHEAD — a dot at normalized position `pos01` (wrapped), overlaid on whatever is beneath.
     // The moving read-head marker. `hue` defaults to white so it reads on any arc color.
     inline void playhead(LEDRing& r, float pos01, float brightness = 1.f, uint32_t hue = pal::kWhite) {
