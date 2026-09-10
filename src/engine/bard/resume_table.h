@@ -8,7 +8,7 @@
 //   0/HOBBIT1.WAV 84719232
 //   0/DUNE.WAV 12006400
 //
-// The 64-entry cap is load-bearing, not decorative. IStreamDeck::read_text reads only the first max-1
+// The 64-entry cap is structural, not decorative. IStreamDeck::read_text reads only the first max-1
 // bytes and truncates silently, so the file must stay small enough to read in one go: 64 lines of about
 // 28 bytes is under 2 KB, whereas an uncapped table over 16 shelves x 32 books would be ~14 KB and would
 // lose its tail on every read.

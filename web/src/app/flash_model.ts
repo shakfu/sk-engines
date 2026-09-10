@@ -1,6 +1,6 @@
 // flash_model.ts - the Flash tab's state, and the only place that decides what may be written.
 //
-// The split is deliberate and load-bearing. `core/dfu.ts` implements DFU faithfully and will write
+// The split is deliberate and structural. `core/dfu.ts` implements DFU faithfully and will write
 // whatever address it is given, because a protocol implementation that argues with its caller is a
 // worse protocol implementation. This file is the caller, and it will only ever name one address.
 //

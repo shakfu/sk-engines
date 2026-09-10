@@ -2,7 +2,7 @@
  *
  * This replaced three stylesheets over two vendored frameworks (system.css for the System 6 look,
  * water.css light and dark for the other two). What is kept from that design is the part that was
- * actually load-bearing:
+ * actually structural:
  *
  *   1. TOKENS FIRST. The old app.css was written against 63 custom properties so it survived either
  *      framework. Those tokens are now the @theme block below, which is the same idea with the

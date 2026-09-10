@@ -209,7 +209,7 @@ public:
     // the device - no address, reply or error derives from it - which is why it defaults to nullptr
     // ("use the kParamNames entry") and no engine is obliged to care. It exists for `describe`, whose
     // OSC form carries a label per row so a control surface can print the engine's word on a fader that
-    // is still bound to the stable generic address. One tier up it IS load-bearing: the host-side
+    // is still bound to the stable generic address. One tier up it IS structural: the host-side
     // semantic namespace is generated from these. See docs/dev/terminal-osc.md ("Where the label comes
     // from"). A label that rots misnames a control; it can never make the device unreachable.
     virtual const char* param_label(ParamId) const { return nullptr; }
