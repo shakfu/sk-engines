@@ -80,7 +80,7 @@ Yes, possible and cheap via `TransportTick.index` (a monotonic 16th counter): a 
 
 - **P3 — timing.** Triggers land on the audio-block boundary (~2 ms quantization, set in the tick callback). For tighter feel, schedule the sample-offset within the block.
 
-- **Later.** More division values (currently 3: 1/16, 1/8, 1/4) incl. triplets; sample playback behind the `Voice` seam (SD/Card path); per-step ratchet/roll; swing (the transport `Divider` supports it); pattern save/recall.
+- **Later.** More division values (currently 3: 1/16, 1/8, 1/4) incl. triplets; sample playback behind the `Voice` layer (SD/Card path); per-step ratchet/roll; swing (the transport `Divider` supports it); pattern save/recall.
 
 ## Known limitations (as built)
 

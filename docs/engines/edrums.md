@@ -34,7 +34,7 @@ Defaults assign a four-piece kit — deck A = **Kick** (slot 0) + **Tom** (slot 
 
 ## Audio: the synthesized voice
 
-Each drum has one `Voice` (a small abstraction so sample playback could replace it later behind the same `trigger()` / `process()` seam) — four in all. The voice is:
+Each drum has one `Voice` (a small abstraction so sample playback could replace it later behind the same `trigger()` / `process()` layer) — four in all. The voice is:
 
 - **Body** — a sine (`dsp/LUTSinOsc`) with a downward **pitch sweep** on trigger (`freq = base_hz · (1 + pitch_env·sweep)`, `pitch_env` decaying over a **per-model time**), plus an optional **second detuned partial** (a ratio of the body, for snare/tom richness) and a gentle **saturation** (`drive` → soft-clip) for punch and harmonics. The classic drum "thump".
 
@@ -62,7 +62,7 @@ Defaults, per drum: deck A = **Kick** (slot 0) + **Tom** (slot 1); deck B = **Sn
 
 > Why a knob and not a load-pad: synth model switching is instantaneous and free, so it applies live > — the select-then-load ceremony is only needed for expensive operations (sample loading), and is > reserved for that (see roadmap). The same Alt+PITCH control will select sample slots later, the only > difference being a deferred/debounced load instead of an instant apply.
 
-The live model select rides a new platform seam: `CapAux` + `ParamId::Aux`. The platform routes Alt+PITCH to `Aux` only for engines that advertise `CapAux`; granular (which uses Alt+PITCH for pitch-quantize) is unaffected.
+The live model select rides a new platform layer: `CapAux` + `ParamId::Aux`. The platform routes Alt+PITCH to `Aux` only for engines that advertise `CapAux`; granular (which uses Alt+PITCH for pitch-quantize) is unaffected.
 
 The sequencer triggers run in the transport-tick callback (the audio-block context); `trigger()` only re-arms envelope state, so it is allocation/lock free.
 

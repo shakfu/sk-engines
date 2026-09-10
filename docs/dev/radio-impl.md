@@ -84,7 +84,7 @@ Edited (all `SPK_USE_STREAM`-guarded, byte-identical for non-streaming engines):
 
 `.wav` support is done. Possible future work:
 
-- **Per-station fade/declick** at the loop seam for short stations.
+- **Per-station fade/declick** at the loop layer for short stations.
 
 - **A lighter in-file seek** so START can scrub continuously.
 

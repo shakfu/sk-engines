@@ -17,13 +17,16 @@ Scope was produced by a full read of `src/memory/{wav,wav_stream,raw_stream,pcm_
 
 The RIFF chunk walk itself is written **three times** in C++ (`wav.h wav_header()`, `wav_stream.h:52`, `raw_stream.h:44`), plus once in Python (`scripts/card_layout.py`) and once in JS (`web/`). The three C++ copies already agree on the hard parts (`WAVE_FORMAT_EXTENSIBLE` unwrapping, word-aligned chunk stepping, a `kMaxChunks` guard) — they are duplicated, not divergent. That duplication is a maintenance cost independent of the format question and is worth paying off first.
 
-## The analytical key: four axes, only one is load-bearing
+## The analytical key: four axes, only one is structural
 
 Every difference in the table above lives on exactly one of four axes. Sorting them is what turns this from "unify four formats" into "one small decorator plus one policy decision".
 
 - **Bit depth** — pure sample arithmetic. No timing, no length, no indexing consequence.
+
 - **Channel count** — pure sample arithmetic, same as depth (a fold, not a reindex, because every path is frame-aligned).
+
 - **Sample rate** — the only axis that changes what a *frame count means*. Everything downstream that measures time in source frames (loop lengths, RAM caps, cue marks, tempo sync) is coupled to it.
+
 - **Container** (`.wav` vs headerless `.raw`) — not a format question at all; it is a compatibility obligation.
 
 Consequence: **depth and channels can be unified with a byte-level decorator and no engine changes whatsoever. Rate is a separate, per-engine policy decision. Container is out of scope.**
@@ -33,12 +36,15 @@ Consequence: **depth and channels can be unified with a byte-level decorator and
 The write side does **not** change:
 
 - `WavStreamWriter` keeps emitting 48 kHz mono f32 for the tape / shuttle / softcut decks.
+
 - `storage.cpp` / `card.cpp` keep writing granular's 48 kHz stereo loop buffer.
 
 This is what makes the change safe:
 
 - Existing cards keep round-tripping. Every file the firmware has ever written is still exactly what the firmware most wants to read.
+
 - Shuttle's **bit-faithful varispeed replay** guarantee (`shuttle_engine.cpp:169`) survives untouched, because a 48 k f32 mono file still takes the `memcpy` fast path with zero conversion.
+
 - Record→play round trips inside one session are byte-identical, so nothing in the tape/softcut overdub or save paths needs re-verifying.
 
 A second, free consequence: **`LOFI_INT16` becomes a write-side-only flag.** Today it also silently re-gates what `WavStreamReader` will *accept* (`wav_stream.h`, via `kWavAudioFormat`/`kWavBitsPerSample`), which is precisely the "saved files mislabel float data as 16-bit PCM" trap that [`lofi-int16-scope.md`](lofi-int16-scope.md) warns not to ship into. Once the reader accepts both depths on every build, enabling `LOFI_INT16` can only affect what is written.
@@ -49,7 +55,7 @@ A second, free consequence: **`LOFI_INT16` becomes a write-side-only flag.** Tod
 
 A `WavSource` in `src/memory/` that walks the chunk list once and yields:
 
-```
+```text
 { audio_format, channels, sample_rate, bits_per_sample, data_start, data_size }
 ```
 
@@ -69,14 +75,18 @@ Landed as `src/memory/wav_source.h` (`WavInfo` + `parse_wav`, a template `walk_w
 Outcome, all measured:
 
 - **The whole host suite passes unmodified** — no test file was touched.
+
 - **SRAM_EXEC went down**, not up: granular −8 B, tape −112 B, radio −112 B. Three copies of the walk collapsing to one more than pays for the two template instantiations, so the size risk flagged below did not materialise for step A. (It still applies to step B, which adds code rather than removing it.)
+
 - Two deliberate deltas, both narrowing toward what the streaming readers already did:
+
   - `card.cpp` now bounds the walk by `bytesread` rather than `kChunk`. A file shorter than one 32 KB chunk previously let the walk step into whatever the *previous* read left in `_buffer`; it now fails cleanly instead of parsing stale bytes.
+
   - `card.cpp` inherits `WAVE_FORMAT_EXTENSIBLE` unwrapping (granular accepts one more legal file shape) and the `fmt`-must-precede-`data` rule (it rejects one pathological shape no tool emits).
 
 ### B. A converting `IChunkSource` decorator — **DONE**
 
-The streaming path is byte-oriented by design (`audio_stream.h`: "the stream is format-agnostic"), which is exactly the seam this needs. Insert between the reader and `PlayStream`:
+The streaming path is byte-oriented by design (`audio_stream.h`: "the stream is format-agnostic"), which is exactly the layer this needs. Insert between the reader and `PlayStream`:
 
 | Concern | Resolution |
 |---|---|
@@ -101,6 +111,7 @@ Landed as `src/memory/converting_source.h` (`ConvertingSource`), plus the format
 Deviations from the plan above, both deliberate:
 
 - **The shared scratch was not resized.** `ConvertingSource` carries its own 512-byte stage instead, so `StreamDeck::Mem::scratch` and the SDRAM rings are untouched and `PlayStream`'s read-ahead window is unchanged. The expansion-ratio hazard the table above worried about simply does not arise: the decorator sits *behind* `PlayStream`, so it is asked for destination bytes and pulls however many source bytes that needs.
+
 - **`PcmLoader` grew a straddle carry.** `card.cpp` reads fixed 32 KB blocks, and its old comment ("kChunk is a multiple of both sample widths … no cross-chunk straddle") stops being true the moment a frame is 3 or 6 bytes. A partial trailing frame is now carried into the next chunk rather than converted as though it were whole.
 
 Measured, `-O2`, SRAM_EXEC, against the pre-step-A baseline (so these deltas include step A's small win):
@@ -132,11 +143,12 @@ A decorator there would cost on every axis and buy nothing: a headerless file st
 Mechanically this is nearly free. All three of the currently-48k-locked engines already read with a fractional interpolating playhead:
 
 - `tape_engine.cpp:308` — `_phase[i] += _speed[i]`, linear interpolation between `_cur`/`_next`
+
 - shuttle and softcut — the bipolar capstan maps (`speed_from_knob` / `rate_from_knob`)
 
 So a rebase is one multiply on an existing step, exactly the pattern radio/bard/pstretch already ship (`radio_engine.cpp:285`, `bard_engine.cpp:295`, `pstretch_engine.cpp:451`):
 
-```
+```text
 step *= file_rate / 48000.f
 ```
 
@@ -155,7 +167,7 @@ Recommendation: ship A + B first with the 48 k gate intact, then take C per engi
 
 **That recommendation was superseded by a better answer, and it dissolves softcut's problem.** Everything above assumes the rate change happens in each engine's *playhead*. It does not have to: put it in the **adapter** instead, and the ring receives frames at the device rate, so a loop length, a RAM cap and a tempo-synced buffer all still count 48 kHz frames whatever the file held. Nothing downstream sees a rate at all.
 
-Concretely, no engine source changed for step C. `ConvertingSource` gained an optional resampler (linear interpolation — the same interpolation the engines' varispeed playheads use, so it is not a quality step down from rebasing one), and `StreamDeck::loop_frames` now reports the **output** frame count via `ConvertingSource::out_frames`. Every consumer of `loop_frames` — tape's loop-seam length, shuttle's and softcut's RAM-load targets — was already asking "how many frames will I receive", so they got the right answer for free.
+Concretely, no engine source changed for step C. `ConvertingSource` gained an optional resampler (linear interpolation — the same interpolation the engines' varispeed playheads use, so it is not a quality step down from rebasing one), and `StreamDeck::loop_frames` now reports the **output** frame count via `ConvertingSource::out_frames`. Every consumer of `loop_frames` — tape's loop-layer length, shuttle's and softcut's RAM-load targets — was already asking "how many frames will I receive", so they got the right answer for free.
 
 That resolves each row of the table above:
 
@@ -181,6 +193,7 @@ Headerless `.raw` exists solely for RadioMusic card compatibility. Keep acceptin
 `scripts/card_layout.py` is the single source of truth the CLI, `make check-sdcard` and `web/` all read. The collapse there was not four specs becoming one — it was noticing that one dataclass had been doing **two jobs**, and that the widened read path pulled them apart:
 
 - **`Accepts`** — what the firmware will LOAD. Two instances now cover all ten engines, split on the only axis that still differs: `ACCEPT_48K` (the engines with no resampler) and `ACCEPT_SCANNED` (the ones that already resample, so any rate works). `verify` predicts against this.
+
 - **`Fmt`** — what `convert` WRITES, and what a README recommends. The four narrow native formats are unchanged, renamed `TARGET_*` to stop them reading as acceptance rules.
 
 Everything downstream follows from the export: `card_audio.WavInfo.encoding` gained the wider vocabulary (mirroring `pcm_format_of`), `verify`'s findings changed from *"wrong format … plays as noise"* to *"this will not load (…)"*, and each folder's generated `README.TXT` now says both **ACCEPTS** and **BEST**. The web front-end consumes `accepts` from `card_layout.json` and its verify was updated to match; the two are pinned together by `web/test/fixtures/verify_cases.json`, regenerated from the Python.
@@ -196,24 +209,35 @@ User-facing docs updated to match: [`docs/sd-card.md`](../sd-card.md) (its "four
 Listed so effort is not spent here.
 
 - **Write formats.** See [the principle](#the-principle-read-wide-write-narrow).
+
 - **Granular's stereo loop buffer.** It is stereo interleaved and it is the persistence format for recorded loops. Unify *acceptance* (accept mono, duplicate it), not the on-disk layout.
+
 - **`play_consume` / the ISR side.** All conversion is main-loop. The lock-free `SpscRing` contract, underrun accounting and `finished()` semantics are untouched.
+
 - **`find_cue_points`** (`wav.h`). Already a standalone, order-independent, bounds-checked scan over the raw bytes; it needs the new parser's chunk walk no more than it needs the old one's.
+
 - **Slot/scan directory rules.** The 12-character name limit, the 32 KB floor, the `.raw`/`.wav` extension filter and the leading-dot skip (`stream_deck.cpp::scan_bank`) are a separate class of failure from format and are not touched here.
+
 - **Engine DSP.** With the decorator in place, every engine keeps receiving exactly the frame format it receives today.
 
 ## Risks
 
 - **SRAM_EXEC.** The firmware links at ~89% SRAM_EXEC at `-O2` ([`softcut-impl.md`](softcut-impl.md)), and `card.cpp` already carries `#pragma GCC optimize("Os")` to claw space back. The decorator is small (<1 KB expected) but not free — take a size measurement on-target before step B lands, and `-Os` the new TU by default since it is main-loop-only code.
+
 - **Scratch buffer growth.** The expansion ratios in step B are the one place this can quietly cost SDRAM or, worse, silently truncate a read. Cover it with a host test that runs every accepted format through the decorator at a chunk size that is *not* a multiple of the frame size.
+
 - **Fewer rejects means fewer diagnostics.** Today a wrong-format file strobes amber (`tape_engine.cpp` `_err_fmt`). Widening acceptance is a net improvement — a converted file beats a rejected one — but the strobe stops being the signal that something is off-spec. Off-rate playback in particular becomes *audible* rather than *refused*, which is the argument for gating step C per engine.
+
 - **Test surface.** `host/` covers the readers well. New cases needed: each depth × each channel count through the decorator, the non-frame-aligned chunk size above, and a fast-path assertion that a 48 k f32 mono file is still byte-identical end to end (the shuttle guarantee).
 
 ## Order of work
 
 1. **A — one parser.** No behaviour change; existing host tests pass unmodified.
+
 2. **B — converting decorator**, depth + channels, 48 k gate still in place. This is where the user-visible win lands: stereo and 16/24-bit files start working on every engine.
+
 3. **C — rate**, per engine: tape and shuttle first, softcut on its own decision.
+
 4. **E — tooling and docs** collapse to match what the firmware actually accepts.
 
 Steps 1 and 2 are the high-value, low-risk core and are worth doing whether or not 3 ever happens.
@@ -221,5 +245,7 @@ Steps 1 and 2 are the high-value, low-risk core and are worth doing whether or n
 ## See also
 
 - [`docs/sd-card.md`](../sd-card.md) — the user-facing rules, and the "nine layouts, four formats" statement this document is trying to retire
+
 - [`docs/preparing-audio.md`](../preparing-audio.md) — the tape/shuttle format rationale and the ffmpeg/sox one-liners
+
 - [`docs/dev/lofi-int16-scope.md`](lofi-int16-scope.md) — why `LOFI_INT16` must not ship until read and write agree

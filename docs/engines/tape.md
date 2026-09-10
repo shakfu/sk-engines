@@ -71,7 +71,7 @@ Total per-deck gain into the bus = **MIX volume x mix-fader blend x pan(L/R)**.
 
 ## Tape slots
 
-Each deck has **8 slots**, files `/tapes/tape_a_1.wav` … `/tapes/tape_a_8.wav` (and `tape_b_`), so takes are non-destructive and recallable rather than overwriting one fixed file. **Alt+PITCH** selects the active slot; while Alt is held, the deck's ring shows the **8 slots as evenly-spaced dots with the selected one bright** (the same `set_aux_active` selector seam reso uses for its model picker). Selecting a slot sets the target for the next Play / record - it does not interrupt a deck already playing. Record writes the selected slot (overwriting only that one); Play reads it (amber if empty). The selector shows **recorded vs empty** slots (selected bright / recorded mid / empty dim). The `/tapes/` directory is created on first record. Single-digit slot numbers keep the names 8.3-safe.
+Each deck has **8 slots**, files `/tapes/tape_a_1.wav` … `/tapes/tape_a_8.wav` (and `tape_b_`), so takes are non-destructive and recallable rather than overwriting one fixed file. **Alt+PITCH** selects the active slot; while Alt is held, the deck's ring shows the **8 slots as evenly-spaced dots with the selected one bright** (the same `set_aux_active` selector layer reso uses for its model picker). Selecting a slot sets the target for the next Play / record - it does not interrupt a deck already playing. Record writes the selected slot (overwriting only that one); Play reads it (amber if empty). The selector shows **recorded vs empty** slots (selected bright / recorded mid / empty dim). The `/tapes/` directory is created on first record. Single-digit slot numbers keep the names 8.3-safe.
 
 To load **your own** audio into a slot, the file must be **mono 32-bit-float WAV at 48 kHz** - the engine does no on-device conversion, and a wrong-format file (16-bit / 32-bit-int / stereo / non-48k) is rejected with a strobing amber error LED. Convert source files with [`scripts/convert_tape_audio.py`](../../scripts/convert_tape_audio.py) or the ffmpeg/sox one-liners in [`docs/preparing-audio.md`](../preparing-audio.md).
 
@@ -85,7 +85,7 @@ The ENV knob picks one of four loop behaviors by quadrant, from fully CCW:
 |---|---|---|
 | `< 0.25` | **None** | play once, stop at end |
 | `< 0.5` | **Plain loop** | seamless repeat at full level |
-| `< 0.75` | **Faded loop** | repeat with a ~50 ms fade across the seam (de-click) |
+| `< 0.75` | **Faded loop** | repeat with a ~50 ms fade across the layer (de-click) |
 | `>= 0.75` | **Frippertronics** | each pass ~0.6x quieter; fades out over ~8 passes, then auto-stops |
 
 Loops are the *recorded take's* length (free-run, not tempo-aligned).

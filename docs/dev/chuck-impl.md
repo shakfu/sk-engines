@@ -294,13 +294,13 @@ ChucK's `SndBuf` uses the libsndfile read API. The minimum to satisfy it:
 
 - **Host test (`host/test_chuck_sndfile.cpp`, `make -C host test-chuck-sndfile`).** The WAV parser + PCM→float conversion are pure and `libchuck`-free: feed crafted byte buffers (PCM16/24, float32, mono/stereo, chunks in odd order, a truncated/garbage header, an unsupported format) through the parse
 
-  - decode and assert frame counts, sample values, and graceful rejection. Factor the parser so the FatFs `f_read` is behind a tiny "read N bytes" seam the host test fills from memory.
+  - decode and assert frame counts, sample values, and graceful rejection. Factor the parser so the FatFs `f_read` is behind a tiny "read N bytes" layer the host test fills from memory.
 
 - **On target:** flash with a card holding `chuck/5.ck` + `samples/snare.wav`; confirm it plays, confirm the load happens without a dropout/overrun (it runs on the main loop), and confirm an unsupported/missing file falls back to silence cleanly (not a hang).
 
 ### Files
 
-- `src/engine/chuck/chuck_sndfile.cpp` — **new (M6).** Real `sf_*` over FatFs (overrides the `libchuck.a` stubs); minimal WAV parse + PCM→float; the "read N bytes" seam for host testing.
+- `src/engine/chuck/chuck_sndfile.cpp` — **new (M6).** Real `sf_*` over FatFs (overrides the `libchuck.a` stubs); minimal WAV parse + PCM→float; the "read N bytes" layer for host testing.
 
 - `src/engine/chuck/chuck_engine.cpp` — `do_reload` gains the main-loop preload tick after `load_program()`.
 

@@ -26,7 +26,7 @@ Engine testing needs almost nothing from the HAL. The entire `IEngine` input sur
 
 - `on_record_pad / on_play_pad / on_seq_trigger / clear_buffer` - drive pads (`iengine.h:99-109`)
 
-So "stimulus" is the reflective dispatcher generalized from params to the whole input surface. There is no separate HAL probe/actuate target; the engine's own contract is the seam.
+So "stimulus" is the reflective dispatcher generalized from params to the whole input surface. There is no separate HAL probe/actuate target; the engine's own contract is the layer.
 
 ## The one hard constraint: the Logger already owns USB-C
 

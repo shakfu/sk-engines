@@ -28,7 +28,7 @@ Both are mirrors of calls that already existed, both have `return false` default
 
 ## Architecture: the ISR does nothing slow
 
-- **`process()` (audio ISR):** per deck, pull int16 frames from the ring, resample, feed/drain the WSOLA time-scaler, then apply the Flux colour, the Grit room and the seam fade to the finished voice; then the per-block duck envelopes and the stereo mix. No FatFs, no allocation, no seeks, **no `powf`** (the rate chain is precomputed on the main loop).
+- **`process()` (audio ISR):** per deck, pull int16 frames from the ring, resample, feed/drain the WSOLA time-scaler, then apply the Flux colour, the Grit room and the layer fade to the finished voice; then the per-block duck envelopes and the stereo mix. No FatFs, no allocation, no seeks, **no `powf`** (the rate chain is precomputed on the main loop).
 
 - **`prepare()` (main loop):** every `f_open` / `f_lseek` / directory scan / sidecar read / sidecar write / resume write, plus the selector settle logic, segment-end handling and gate-out edge detection.
 
@@ -126,7 +126,7 @@ Edited:
 
 - **The RATE curve is piecewise.** Unity at centre, 0.5x at 0 and 2.5x at 1 - `exp2((v-0.5)*2)` below centre, `exp2((v-0.5)*2*log2(2.5))` above. The halves meet at 1.0 in value with a slope change at centre, because the range speech wants is not log-symmetric.
 
-- **SEAM is a fade-in, not a crossfade.** A seek flushes the ring, so there is no old stream to cross-fade against; Alt+SOS sets a declick ramp on the new stream. Naming it SEAM keeps that honest.
+- **LAYER is a fade-in, not a crossfade.** A seek flushes the ring, so there is no old stream to cross-fade against; Alt+SOS sets a declick ramp on the new stream. Naming it LAYER keeps that honest.
 
 - **Directives survive a mark-less sidecar.** A sidecar with an `#!bard` line but no timestamps keeps its `order=`/`loop=` and takes the auto-marks.
 

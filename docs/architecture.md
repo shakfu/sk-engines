@@ -58,7 +58,7 @@ Dependencies point downward; nothing below depends on anything above it.
       |   pots/pads/CV/MIDI/LEDs, MValue pickup,     |   config.txt + SD sample tape
       |   gesture grammar, transport, value display  |
       |                                          |
-      +------------------ IEngine ---------------+    <-- THE SEAM (src/engine/iengine.h)
+      +------------------ IEngine ---------------+    <-- THE LAYER (src/engine/iengine.h)
                           |
                   src/engine/  (the contract + engines)
                   IEngine, GranularEngine, DelayEngine, PassthroughEngine,
@@ -74,7 +74,7 @@ Dependencies point downward; nothing below depends on anything above it.
 
 - **`src/ui/` (CoreUI) - the platform.** Owns the interaction grammar and talks to the engine *only* through `IEngine`. Reads hardware, runs `MValue` pickup / `Hold` timers / the `_touched` modifier bitset / gesture recognition, composites LED overlays, owns the storage/tape state machine. It does not know what the engine *is*.
 
-- **`src/engine/` - the seam + engines.** `IEngine` is the contract; each engine implements it and owns its DSP graph privately.
+- **`src/engine/` - the layer + engines.** `IEngine` is the contract; each engine implements it and owns its DSP graph privately.
 
 - **`src/engine/granular/` - the granular engine's private DSP.** Now platform-independent (no libDaisy include; all hardware injected via `EngineContext`). It is *not* a shared layer - it belongs to `GranularEngine`. A different engine brings its own DSP, not `Core`.
 
@@ -84,7 +84,7 @@ Dependencies point downward; nothing below depends on anything above it.
 
 **The boundary is build-enforced.** The platform (`src/hw/`, `src/ui/`, `src/memory/`) includes *zero* granular headers - it reaches the engine only through the contract in `src/engine/`. `make check-boundary` (a prerequisite of `all`) greps those directories and fails the build if a granular include is reintroduced. Only `app.cpp`, the composition root that instantiates the build-selected engine via `engine_select.h`, is exempt. See [engine-layout.md](engine-layout.md) for the contract map and Phase 5 history.
 
-### The `IEngine` seam
+### The `IEngine` layer
 
 `src/engine/iengine.h` is the entire contract between platform and engine:
 
@@ -102,7 +102,7 @@ Because the defaults are inert, adding a method to `IEngine` does not break exis
 
 `src/engine/engine_context.h` is how the DSP graph avoids any libDaisy dependency. At `init()` the platform fills an `EngineContext` - `sample_rate`, `block_size`, an `ITimeSource` (clock abstraction; `daisy::System` on hardware, a host clock off-target), and `EngineBuffers` (the large SDRAM buffers, from `SDRAMBuffer::pool()` on hardware or `malloc` on the host) - and passes it to `engine.init(ctx)`. The core pulls nothing from hardware directly. This is also what lets the desktop host harness (`host/`) run the real engine over WAV via `IEngine`.
 
-> **Seam impurity (known):** `EngineBuffers` is currently shaped for the granular engine > (`source`/`detect`/`delay`/`slices`/`track` per deck). A second engine with different buffer > needs would force this to generalise (e.g. an opaque arena the engine sub-allocates). > Acceptable while there is one engine; tracked for the Phase-5 build/boundary work.
+> **Layer impurity (known):** `EngineBuffers` is currently shaped for the granular engine > (`source`/`detect`/`delay`/`slices`/`track` per deck). A second engine with different buffer > needs would force this to generalise (e.g. an opaque arena the engine sub-allocates). > Acceptable while there is one engine; tracked for the Phase-5 build/boundary work.
 
 ### LEDs: `DisplayModel`
 
@@ -228,7 +228,7 @@ The deliberate split is that **SD-card and flash I/O live only in the main loop*
                        IEngine|          | IEngine queries (LED/transport state)
                        calls  v          | (render/DisplayModel target)
                          +----+----------+----+
-                         |   IEngine (seam)   |
+                         |   IEngine (layer)   |
                          |  GranularEngine    |  -----> mod CV out (process_cv, via DAC cb)
                          +---------+----------+
                                    | owns

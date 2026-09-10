@@ -12,7 +12,7 @@ A `tape` engine that streams audio to/from the SD card so playback and recording
 
 - **Routing switch** (`ConfigId::Route`): LEFT = per-deck Alt+POS pan, CENTRE = both centered, RIGHT = random pan. **Mix fader** (`Crossfade`) = A/B blend. **MIX** knob = per-deck volume. **PITCH** = per-deck varispeed. **Alt+POS** (`AltPos`) = pan; **Alt+PITCH** (`Aux`) = tape-slot select; **bare POS** reserved.
 
-- **ENV knob** = per-deck loop mode (4 quadrants): none / plain / faded (seam fade) / Frippertronics (per-pass decay, auto-stops).
+- **ENV knob** = per-deck loop mode (4 quadrants): none / plain / faded (layer fade) / Frippertronics (per-pass decay, auto-stops).
 
 - **Tape slots:** 8 per deck under `/tapes/`, selected by Alt+PITCH (non-destructive multi-take).
 
@@ -64,7 +64,7 @@ Data flow (per deck):
 
 - **Audio (engine):** each deck renders a mono stream (varispeed playback / record-monitor / silence), then a per-block gain matrix (MIX volume × mix-fader blend × pan, selected by the routing switch) mixes both decks to the stereo bus `out[0]`=L / `out[1]`=R. Pan/blend gains are precomputed on knob change.
 
-- **Loop shaping (engine):** for Faded/Frippertronics, the engine reads `loop_frames(deck)`, tracks source-frame position, and applies a seam fade or per-pass decay. A faded-out Frippertronics deck is flagged from the ISR and `stop()`-ped in `prepare()` (main loop), never in the audio path.
+- **Loop shaping (engine):** for Faded/Frippertronics, the engine reads `loop_frames(deck)`, tracks source-frame position, and applies a layer fade or per-pass decay. A faded-out Frippertronics deck is flagged from the ISR and `stop()`-ped in `prepare()` (main loop), never in the audio path.
 
 SDRAM: **one 1 MB ring per deck** (static `DSY_SDRAM_BSS` in `buffer.sdram.cpp`, tape-only; each serves that deck's play OR record; ~5.5 s mono read-ahead; power-of-two as `SpscRing` requires) + a 32 KB chunk scratch shared by both decks (sequential pumps). No increase over the original two-ring layout. Format is mono float WAV (one channel per deck) → no sample conversion on the audio path.
 
@@ -76,7 +76,7 @@ New (core, host-tested, engine-agnostic):
 
 - `src/memory/audio_stream.h` — `IChunkSource` (+ `rewind`) / `IChunkSink`, `PlayStream` (+ looping), `RecordStream`.
 
-- `src/memory/byte_file.h` — `IByteFile` seam (read / write / seek).
+- `src/memory/byte_file.h` — `IByteFile` layer (read / write / seek).
 
 - `src/memory/wav_stream.h` — `WavStreamReader` (parse + `rewind`/`data_bytes`) / `WavStreamWriter` (mono) over `IByteFile`.
 
@@ -136,7 +136,7 @@ Edited:
 
 **Alt-layer remaps are capability-gated, so they never degrade other engines.** Alt+POS→`AltPos` fires only for `CapAltPos` engines; everyone else hits the exact original `Pos` path (`process(val,!fx,…)` + `set_param(Pos,…)`) byte-for-byte - including pickup and the value display. Same model as `CapAux` for Alt+PITCH. (An earlier cut gated `Pos` globally and silently froze granular's Alt+POS; the capability gate fixes that - non-tape firmware is unaffected.)
 
-Loop modes (ENV): None / Plain / Faded / Fripp. Looping is in the stream (`set_loop` + `rewind`); the fade/decay is engine-side via `loop_frames` + source-frame position tracking. Tunable constants: `kFadeFrames` (~50 ms seam fade), `kFrippDecay` (0.6/pass), `kFrippFloor` (0.02 → auto-stop).
+Loop modes (ENV): None / Plain / Faded / Fripp. Looping is in the stream (`set_loop` + `rewind`); the fade/decay is engine-side via `loop_frames` + source-frame position tracking. Tunable constants: `kFadeFrames` (~50 ms layer fade), `kFrippDecay` (0.6/pass), `kFrippFloor` (0.02 → auto-stop).
 
 ## Tape FX — implementation (wow/flutter + hysteresis + low-pass)
 
@@ -184,7 +184,7 @@ Chain: **wow/flutter -> Jiles-Atherton hysteresis/saturation -> resonant low-pas
 
 - **Format validation** — `WavStreamReader` parses any WAV header, but the engine reinterprets the body as native mono float 48k; a differently-formatted file plays as garbage. Guard before allowing arbitrary-file playback. (Self-recorded files are internally consistent.)
 
-- **Concurrency review** — play-finished + finalize + loop-rewind observed working on device; the remaining edge cases of the ISR <-> main-loop handshakes (stop during the `_finalizing` flush window, the Frippertronics ISR->prepare stop flag, underrun at a loop seam) are reasoned-through but not yet stress-tested.
+- **Concurrency review** — play-finished + finalize + loop-rewind observed working on device; the remaining edge cases of the ISR <-> main-loop handshakes (stop during the `_finalizing` flush window, the Frippertronics ISR->prepare stop flag, underrun at a loop layer) are reasoned-through but not yet stress-tested.
 
 ### Feature backlog
 
@@ -196,7 +196,7 @@ Chain: **wow/flutter -> Jiles-Atherton hysteresis/saturation -> resonant low-pas
 
 - **int16 streaming** — halves SD bandwidth, the main throughput lever.
 
-- **Loop-mode tuning** — the seam-fade length and Frippertronics decay/floor are first-cut constants; tune by ear. A wider / quantized varispeed range; progress/level meters on the rings.
+- **Loop-mode tuning** — the layer-fade length and Frippertronics decay/floor are first-cut constants; tune by ear. A wider / quantized varispeed range; progress/level meters on the rings.
 
 ### Docs / housekeeping
 

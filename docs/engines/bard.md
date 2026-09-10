@@ -257,7 +257,7 @@ The default column stays entirely on **navigation and pace** - the things you to
 | **Glow** (`ModAmp`) | | mod **depth** / **duck depth**. 0 = the whole modulation layer is off. |
 | **Alt+PITCH** (`Aux`) | | **SHELF** select (0..15), held selector with ring dots - exactly radio's bank gesture. |
 | **Alt+POS** (`AltPos`) | | **SCRUB** - fine seek within the current segment. POS is coarse (marks), Alt+POS is fine (inside one). Debounced, as in [pstretch](pstretch.md). |
-| **Alt+SOS** (`Feedback`) | | **SEAM** - the crossfade time applied at every jump, ~0 to ~500 ms. Hard cuts for rhythmic work, soft dissolves for listening. |
+| **Alt+SOS** (`Feedback`) | | **LAYER** - the crossfade time applied at every jump, ~0 to ~500 ms. Hard cuts for rhythmic work, soft dissolves for listening. |
 | **Play pad** (`on_play_pad`, `reverse=false`) | | **PLAY / PAUSE**. |
 | **Alt+Play pad** (`on_record_pad`, `reverse=false`) | | **DROP MARK** at the current position (session-only; committing it to the sidecar is deferred). |
 | **Rev pad** (`on_play_pad`, `reverse=true`) | | **JUMP BACK** 15 s. Retriggering steps back another 15 s each time. |
@@ -405,7 +405,7 @@ pstretch is the important precedent for the budget question: it links the stream
 
 3. **Resume**: the 64-entry LRU table, its text serialization, the checkpoint policy, and **`IStreamDeck::write_text`** - the one contract addition, with a default no-op body for every other engine.
 
-4. **Sequence state**: Read/Recite/Wander, segment-end detection and its loop/hold policy, clock-quantized advance, seam crossfade.
+4. **Sequence state**: Read/Recite/Wander, segment-end detection and its loop/hold policy, clock-quantized advance, layer crossfade.
 
 5. `scripts/prepare_audiobooks.py` and `host/test_bard.cpp`.
 
@@ -449,7 +449,7 @@ Fix 3 is what would make rhythmic speech cutting actually work, and it is also t
 
 1. **Player.** Shelf/book scan, sidecar parse, `bard.cfg`, auto-marks, BOOK + BOOKMARK + SCRUB, play/pause, jump-back, varispeed rate, persisted resume (`write_text`), the ring display.
 
-2. **Sequence.** Read/Recite/Wander, the loop/hold policy, the seam fade, the three Seq-pad gestures, gate in/out, the speech-envelope CV out.
+2. **Sequence.** Read/Recite/Wander, the loop/hold policy, the layer fade, the three Seq-pad gestures, gate in/out, the speech-envelope CV out.
 
 3. **Colour and space.** Flux voice colour, the ducker, then the Grit room.
 
@@ -512,7 +512,7 @@ Now checked in as [`docs/diagrams/controls/bard.json`](../diagrams/controls/bard
     "Position": "BOOKMARK select (+CV); Alt = SCRUB",
     "Size": "RATE 0.5-2.5x",
     "Envelope": "PITCH-KEEP (varispeed <-> pitch held)",
-    "Mix (SOS)": "deck volume; Alt = SEAM (jump crossfade)",
+    "Mix (SOS)": "deck volume; Alt = LAYER (jump crossfade)",
     "Cycle": "mod rate / duck release (Alt = clock-sync)",
     "Glow": "mod depth / duck depth"
   },

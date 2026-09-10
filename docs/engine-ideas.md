@@ -4,7 +4,7 @@ A scratchpad of candidate engines for the Spotykach platform. Each entry is a hy
 
 **Status (2026-06):** several of these have since shipped, and a few shipped *differently* from the hypothesis here — those notes are kept because how the guess fared is the useful part. The shipped engines (with full, current docs) are in [`docs/engines/README.md`](engines/README.md); this file no longer tracks their details, only their origin as ideas. Shipped from this list: **#1 Resonator/Pluck** (`reso`), **#5 Shimmer reverb** (`reverb`, diverged — see below), **#7 Tape echo** (folded into `delay`'s Tape character), **#11 Grain cloud** (`graincloud`), **#12 Radio**. Engines that shipped without ever being ideas here: `tape`, `shuttle`, `gigaverb`, `chorus`, `dfilter`, `voice`, `passthrough`.
 
-Companion reading: `docs/engines/README.md` (the contract + the shared knob vocabulary), `docs/architecture.md` (platform/engine seam, memory model). Many of the DSP building blocks referenced below already exist as offline C++ in the sibling project [nanodsp](https://github.com/shakfu/nanodsp) (signalsmith-dsp, DaisySP, STK, madronalib, fxdsp, vafilters) — that catalogue is the main idea source. The caveat throughout: nanodsp is offline float32 Python over large buffers; this platform is hard-real-time on a 480 MHz Cortex-M7 with a 96-sample block and no heap on the audio path. An idea being "in nanodsp" proves the algorithm, not that it fits the budget. The feasibility notes call out where that gap bites.
+Companion reading: `docs/engines/README.md` (the contract + the shared knob vocabulary), `docs/architecture.md` (platform/engine layer, memory model). Many of the DSP building blocks referenced below already exist as offline C++ in the sibling project [nanodsp](https://github.com/shakfu/nanodsp) (signalsmith-dsp, DaisySP, STK, madronalib, fxdsp, vafilters) — that catalogue is the main idea source. The caveat throughout: nanodsp is offline float32 Python over large buffers; this platform is hard-real-time on a 480 MHz Cortex-M7 with a 96-sample block and no heap on the audio path. An idea being "in nanodsp" proves the algorithm, not that it fits the budget. The feasibility notes call out where that gap bites.
 
 ---
 
@@ -104,7 +104,7 @@ The three modes are not a metaphor for the switch's labels — they *are* those 
 
 **DSP (shared).** DaisySP `String` / `Pluck` (in the pinned `bleeptools` fork) or STK `Plucked` / `Twang` / `Modal` (wrapped in nanodsp over [DaisySP](https://github.com/shakfu/nanodsp/tree/main/thirdparty/DaisySP) / [STK](https://github.com/shakfu/nanodsp/tree/main/thirdparty/stk)). Loop damping = one-pole; fine tuning = a one-section fractional-delay allpass; pick-position comb = a single feedforward delay (Slice); body resonance = 1-2 biquads (`dsp/biquad` exists); sympathetic coupling = sum a fraction of one deck's loop into the other. Only the excitation front-end changes per mode; everything is per-sample-cheap.
 
-**Capabilities.** `CapDualDeck | CapOwnDisplay | CapAux | CapTransport`. **Cost: low.** Strongest first candidate — minimal DSP, immediately expressive, reuses the edrums `Aux` model-select seam *and* the idle mode switch, and folds two roadmap ideas into one engine with a free 3-way gesture.
+**Capabilities.** `CapDualDeck | CapOwnDisplay | CapAux | CapTransport`. **Cost: low.** Strongest first candidate — minimal DSP, immediately expressive, reuses the edrums `Aux` model-select layer *and* the idle mode switch, and folds two roadmap ideas into one engine with a free 3-way gesture.
 
 ### 3. West-coast complex oscillator
 
@@ -296,7 +296,7 @@ The three modes are not a metaphor for the switch's labels — they *are* those 
 
 - **Pre-allocate, don't resize.** The grain array (`std::unique_ptr<gf_grain[]>`) and a per-grain `std::unique_ptr<phasor>` vibrato must become fixed at `init()` (max grain count, `Blocksize = 96`). One `throw()` in `param_set` to remove (`-fno-exceptions`). Verify `std::atomic<bool>` is lock-free on the M7 (it is).
 
-- **Cut the `AudioFile.h` dependency** and feed the existing SDRAM buffer through the `gf_i_buffer_reader` seam (it exists for exactly this — clean).
+- **Cut the `AudioFile.h` dependency** and feed the existing SDRAM buffer through the `gf_i_buffer_reader` layer (it exists for exactly this — clean).
 
 - **The real gate is SDRAM access, not CPU.** A cloud does *scattered* reads (each grain reads a different buffer position with interpolation), the opposite of the looper's few contiguous playheads. The H7's SDRAM rewards bursts and punishes random access; N grains scattering reads per 96-sample block is the make-or-break number, and the desktop profile does not tell you it. **Benchmark N scattered grain reads/block headless in `host/` before committing** — that single measurement decides feasibility and the max grain count.
 
