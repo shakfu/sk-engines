@@ -112,6 +112,19 @@ BARD_SRC    = $(ROOT)/src/engine/bard/bard_engine.cpp
 GLITCH_SRC  = $(ROOT)/src/engine/glitch/glitch_engine.cpp
 # The real-time PaulStretch ambient engine (vendored radix-2 FFT + Stretcher, header-only). Self-contained.
 PSTRETCH_SRC = $(ROOT)/src/engine/pstretch/pstretch_engine.cpp
+# The gen~-authored `gigaverb` engine: the shared genlib runtime + the export's wrapper, built with the
+# same -D set the firmware's ENGINE=gigaverb branch uses. It is the only engine authored through the
+# gen~ path, so this is also the only off-target exercise that path gets.
+GIGAVERB_DIR  = $(ROOT)/src/engine/gigaverb
+GIGAVERB_SRC  = $(GIGAVERB_DIR)/_ext_daisy.cpp $(ROOT)/src/engine/gen/genlib_arena.cpp
+# -DGENLIB_USE_FLOAT32 is NOT optional here. genlib_platform.h defines it only under `__arm__`, so on a
+# desktop t_sample is double while the bridge still casts the caller's float** straight to t_sample**
+# (_ext_daisy.cpp:139) - perform() then reads two floats per sample and runs off the end of the block.
+# The firmware is unaffected (arm-none-eabi defines __arm__); this pins the host to the same ABI.
+GIGAVERB_FLAGS = -DGENLIB_NO_JSON -DGENLIB_USE_FLOAT32 -DDAISY_EXT_NAME=gigaverb -DGEN_EXPORTED_NAME=gen_exported \
+                 -DGEN_EXPORTED_HEADER=\"gen_exported.h\" -DGEN_EXPORTED_CPP=\"gen_exported.cpp\" \
+                 -isystem$(GIGAVERB_DIR)/gen -isystem$(GIGAVERB_DIR)/gen/gen_dsp -I$(GIGAVERB_DIR)
+
 # reso's DSP is the Mutable Instruments Rings engine + its stmlib support library (under $(RESO_TP)).
 RINGS_SRC   = $(RESO_TP)/rings/dsp/part.cc $(RESO_TP)/rings/dsp/string.cc \
               $(RESO_TP)/rings/dsp/resonator.cc $(RESO_TP)/rings/dsp/fm_voice.cc \
@@ -139,6 +152,7 @@ TEST_PSTRETCH = $(BUILD)/test_pstretch
 TEST_CHORUS  = $(BUILD)/test_chorus
 TEST_FILTER = $(BUILD)/test_filter
 TEST_VOICE   = $(BUILD)/test_voice
+TEST_GIGAVERB = $(BUILD)/test_gigaverb
 TEST_DELAY   = $(BUILD)/test_delay
 TEST_TERMINAL = $(BUILD)/test_terminal
 TEST_TERMINAL_OSC = $(BUILD)/test_terminal_osc
@@ -155,7 +169,7 @@ TEST_CHUCK_PATCH = $(BUILD)/test_chuck_patch
 BENCH_REVERB     = $(BUILD)/bench_reverb
 BENCH_GRAINCLOUD = $(BUILD)/bench_graincloud
 
-.PHONY: all build-all clean run bard-card-check test test-softcut test-terminal test-terminal-osc test-osc-labels test-osc-addr test-granular test-granular-audio test-edrums test-reso test-mosc test-graincloud-kernel test-graincloud test-reverb test-delay test-qdelay test-diffuser test-tape test-stream test-wav-cues test-shuttle test-radio test-bard test-glitch test-pstretch test-chorus test-filter test-voice test-csound-alloc test-csound-patch test-csound-midi test-csound-reload test-chuck-patch bench-reverb bench-graincloud
+.PHONY: all build-all clean run bard-card-check test test-softcut test-terminal test-terminal-osc test-osc-labels test-osc-addr test-granular test-granular-audio test-edrums test-reso test-mosc test-graincloud-kernel test-graincloud test-reverb test-delay test-qdelay test-diffuser test-tape test-stream test-wav-cues test-shuttle test-radio test-bard test-glitch test-pstretch test-chorus test-filter test-voice test-gigaverb test-csound-alloc test-csound-patch test-csound-midi test-csound-reload test-chuck-patch bench-reverb bench-graincloud
 all: $(TARGET)
 
 # Everything in here that is NOT an assertion suite: the WAV harness, the card validator, and the two
@@ -353,6 +367,18 @@ $(TEST_VOICE): test_voice.cpp $(LIB_SRC) $(ROOT)/src/engine/voice/voice_engine.h
                $(wildcard $(ROOT)/src/engine/voice/faust_kernel_*.h) | $(BUILD)
 	$(CXX) $(CXXFLAGS) test_voice.cpp $(LIB_SRC) -o $@
 
+# The gen~ `gigaverb` engine. Unlike the Faust engines its kernel is a .cpp pair rather than a header,
+# so $(GIGAVERB_SRC) joins the link. The export tree goes behind -isystem: it is generated code whose
+# warnings are not ours (genlib_ops.h alone self-initialises a local), same rule as the vendored trees.
+# Built with SPK_TERMINAL=1 (hence $(TERMINAL_SRC) + version.cpp, as test_osc_labels does) so the test
+# can assert GenEngine's DERIVED live_params() mask. gigaverb is the only engine on that wrapper, so
+# nothing else exercises the derivation.
+$(TEST_GIGAVERB): test_gigaverb.cpp $(LIB_SRC) $(GIGAVERB_SRC) $(TERMINAL_SRC) $(ROOT)/src/version.cpp \
+                  $(GIGAVERB_DIR)/gigaverb_engine.h $(GIGAVERB_DIR)/gen/gen_exported.cpp \
+                  $(ROOT)/src/engine/gen/gen_engine.h | $(BUILD)
+	$(CXX) $(CXXFLAGS) $(GIGAVERB_FLAGS) -Wno-unknown-pragmas -DSPK_TERMINAL=1 test_gigaverb.cpp \
+	  $(LIB_SRC) $(GIGAVERB_SRC) $(TERMINAL_SRC) $(ROOT)/src/version.cpp -o $@
+
 # Reverb process() cost benchmark. One binary times both topologies (Stereo vs DoubleMono) by switching
 # the Route at runtime. The ratio is the portable signal; absolute us is host time, not device load.
 REVERB_KERNELS = $(wildcard $(ROOT)/src/engine/reverb/faust_kernel_*.h)
@@ -383,7 +409,7 @@ run: $(TARGET)
 
 # `test` runs both engine harnesses. Both inject the transport via EngineContext (granular drives the
 # real platform Transport; edrums uses a small stub ITransport) - the post-transport-decoupling way.
-test: test-terminal test-terminal-osc test-osc-labels test-osc-addr test-granular test-granular-audio test-edrums test-reso test-mosc test-graincloud-kernel test-graincloud test-reverb test-delay test-qdelay test-diffuser test-tape test-stream test-wav-cues test-shuttle test-softcut test-radio test-bard test-glitch test-pstretch test-chorus test-filter test-voice test-csound-alloc test-csound-patch test-csound-midi test-csound-reload test-chuck-patch
+test: test-terminal test-terminal-osc test-osc-labels test-osc-addr test-granular test-granular-audio test-edrums test-reso test-mosc test-graincloud-kernel test-graincloud test-reverb test-delay test-qdelay test-diffuser test-tape test-stream test-wav-cues test-shuttle test-softcut test-radio test-bard test-glitch test-pstretch test-chorus test-filter test-voice test-gigaverb test-csound-alloc test-csound-patch test-csound-midi test-csound-reload test-chuck-patch
 
 test-granular: $(TEST)
 	./$(TEST)
@@ -465,6 +491,9 @@ test-filter: $(TEST_FILTER)
 
 test-voice: $(TEST_VOICE)
 	./$(TEST_VOICE)
+
+test-gigaverb: $(TEST_GIGAVERB)
+	./$(TEST_GIGAVERB)
 
 clean:
 	rm -rf $(BUILD)

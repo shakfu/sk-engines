@@ -6,11 +6,13 @@ Implementation, the file map, and dev notes for `ENGINE=gigaverb`. The user-faci
 
 - 2-in / 2-out, 8 parameters, no `[buffer]`s. Stereo, so it maps 1:1 onto the platform bus.
 
-- Links and fits: `make ENGINE=gigaverb` -> SRAM_EXEC **159,004 B (59.7% of 260 KB)** at the default `-O2`, no overflow, no `-Os` needed. (Re-measured 2026-08-31; read "158732 B (83.3% of 186 KB)" while the region was still 186 KB.)
+- Links and fits: `make ENGINE=gigaverb` -> SRAM_EXEC **164,348 B (61.73% of 260 KB)** at the default `-O2`, no overflow, no `-Os` needed. (Re-measured 2026-09-12; read "159,004 B (59.7%)" on 2026-08-31 and "158732 B (83.3% of 186 KB)" while the region was still 186 KB.)
 
 - `SRAM` (data) stays flat (~52 KB) despite the reverb delay lines, because all gen~ state is bump-allocated from the injected SDRAM arena.
 
 - `capabilities() = 0`: stereo audio + knob params only (no custom display, MIDI, CV-out, or sequencing).
+
+- Host test: `make -C host test-gigaverb`. Covers the `ParamId` map over each slot's own range, the derived `live_params()` mask, the deck-B drop, the roomsize slew, and the reverb tail (a burst then silence rings ~4 s and decays). It is the only off-target exercise the gen~ authoring path gets.
 
 - Not yet flashed/heard on hardware.
 

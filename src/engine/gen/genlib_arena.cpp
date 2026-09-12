@@ -26,6 +26,13 @@
 #include "genlib.h"
 #include "genlib_exportfunctions.h"
 
+// The bridge hands gen~ the platform's float buffers by CAST, not conversion (_ext_daisy.cpp), so
+// t_sample must be float. genlib self-defines GENLIB_USE_FLOAT32 only for __arm__ (genlib_platform.h),
+// which makes every non-ARM build read two floats per sample and run off the end of the block. Fail
+// here, at compile time, instead of at the first audio block: pass -DGENLIB_USE_FLOAT32.
+static_assert(sizeof(t_sample) == sizeof(float),
+              "gen~ t_sample must be float - define GENLIB_USE_FLOAT32 for this target");
+
 #include <cstring>
 #include <cstdlib>
 
