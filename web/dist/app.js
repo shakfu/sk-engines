@@ -768,11 +768,11 @@ function parseWav(bytes, totalSize = bytes.length) {
 function pack(samples, encoding) {
   const n = samples.length;
   if (encoding === F32) {
-    const out2 = new Uint8Array(n * 4);
-    const view2 = new DataView(out2.buffer);
+    const out = new Uint8Array(n * 4);
+    const view = new DataView(out.buffer);
     for (let i = 0;i < n; i++)
-      view2.setFloat32(i * 4, samples[i], true);
-    return out2;
+      view.setFloat32(i * 4, samples[i], true);
+    return out;
   }
   const out = new Uint8Array(n * 2);
   const view = new DataView(out.buffer);
@@ -4052,11 +4052,11 @@ This page is generated: run \`make web-data\` and serve web/ over http ` + "(fil
   ctx.go = show;
   ctx.goEngine = showEngine;
   window.addEventListener("hashchange", () => {
-    const route2 = parseHash(location.hash);
-    if (route2.engine)
-      showEngine(route2.engine);
+    const route = parseHash(location.hash);
+    if (route.engine)
+      showEngine(route.engine);
     else
-      show(route2.view);
+      show(route.view);
   });
   wireAboutMenu();
   $("#home-link")?.addEventListener("click", () => {
@@ -4141,5 +4141,5 @@ if ("serviceWorker" in navigator && location.protocol === "https:") {
 }
 main();
 
-//# debugId=65428D650D8A5BA764756E2164756E21
+//# debugId=468785F0F69AC54F64756E2164756E21
 //# sourceMappingURL=app.js.map
