@@ -23,8 +23,15 @@ _norm_start        { 0.f },
 _norm_start_offset { 0.f },
 _norm_size         { kSliceMinSize },
 _norm_size_offset  { 0.f },
+_slice_size        { 0 },
+_auto_slice_max_idx { 0 },
+_slice_points_count { 0 },
 _is_auto_slice     { false },
 _snap_to_slice     { false },
+_slice_delta       { 1 },
+_offset            { 0 },
+_offset_count      { -1 },
+_offset_interval   { 0 },
 _increment         { 1.f },
 _target_increment  { 1.f },
 _speed             { 1.f },
@@ -63,6 +70,20 @@ void Generator::set_start_offset(const float value)
 {
   _norm_start_offset = value;
   if (_cont_start_mod) _apply_start();
+};
+void Generator::set_start_offset_interval(const float norm)
+{
+  auto interval = static_cast<uint8_t>(std::round(std::clamp(norm, 0.f, 1.f) * kStartOffsetMaxInterval));
+  // Turning the walk off rewinds it, so the start returns to the knob position instead of staying
+  // parked wherever the last step left it. The next trigger picks that up; applying it here would
+  // move the start under a slice that is already sounding.
+  if (_offset_interval && !interval) reset_start_offset();
+  _offset_interval = interval;
+};
+void Generator::reset_start_offset()
+{
+  _offset_count = -1;
+  _offset = 0;
 };
 size_t Generator::_abs_start() 
 {
@@ -136,23 +157,40 @@ void Generator::slice()
 void Generator::auto_slice(const size_t slice_size, const size_t slice_count)
 {
   _slice_size = slice_size;
-  _auto_slice_max_idx = slice_count - 1;
+  // A buffer too short to hold one slice yields slice_count 0, and the unsigned decrement below
+  // wrapped that to SIZE_MAX - which _snap() then used as a divisor. One slice is the floor.
+  _auto_slice_max_idx = slice_count > 0 ? slice_count - 1 : 0;
   _is_auto_slice = true;
 }
 void Generator::clear_slices()
 {
   std::memset(_slice_points, 0, sizeof(size_t) * kMaxSlicePointCount);
+  // The count has to go with the points: has_slices() and the _snap() wrap both read it, so leaving
+  // it set left the manual branch indexing an array of zeroes.
+  _slice_points_count = 0;
   _is_auto_slice = true;
 }
 size_t Generator::_snap(const float norm_value) 
 {
   if (_is_auto_slice) {
-    auto idx = static_cast<size_t>(std::round(_auto_slice_max_idx * norm_value));
-    return _slice_size * idx;
+    // How many slices the current size spans - one step of the start-offset walk. Sizes below one
+    // slice still step by one, otherwise a walk with a short size would never leave the first slice.
+    _slice_delta = _slice_size > 0
+      ? static_cast<uint8_t>(std::clamp(_abs_size() / static_cast<float>(_slice_size), 1.f, 255.f))
+      : 1;
+    auto count = _auto_slice_max_idx + 1;
+    _offset %= count;
+    auto idx = static_cast<size_t>(std::round(_auto_slice_max_idx * norm_value)) + _offset;
+    return _slice_size * (idx % count);
   }
   else {
-    auto point = static_cast<uint8_t>(norm_value * (_slice_points_count - 1));
-    return _slice_points[point];
+    if (_slice_points_count == 0) return 0;
+    // Manually placed points are not evenly spaced, so there is no size-to-span conversion: the walk
+    // steps one point at a time.
+    _slice_delta = 1;
+    _offset %= _slice_points_count;
+    auto idx = static_cast<size_t>(norm_value * (_slice_points_count - 1)) + _offset;
+    return _slice_points[idx % _slice_points_count];
   }
 }
 
@@ -255,6 +293,14 @@ void Generator::trigger(const uint8_t vox_idx, const Event* event)
 
   // TODO: define override order, something like knob-over-cv-over-MIDI-over-event.
   if (event->p1_on) { _norm_start = event->p1; }
+
+  // Advance the start-offset walk before the start is latched, so this trigger already plays the
+  // stepped-to slice. _abs_start() below folds _offset in and refreshes _slice_delta for the next step.
+  if (_offset_interval && has_slices() && ++_offset_count >= _offset_interval) {
+    _offset_count = 0;
+    _offset += _slice_delta;
+  }
+
   if (!_cont_start_mod) v.set_start(_abs_start());
 
   if (event->p2_on) { 

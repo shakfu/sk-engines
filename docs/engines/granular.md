@@ -42,6 +42,11 @@ Each deck records into its own loop buffer (up to 42 seconds) and plays it back 
 
 Alt+Pitch enables quantized pitch values. Alt+Size sets grain size in Drift and toggles mono/poly in Slice.
 
+Alt+Position sets the start-offset walk, in Slice or on a manually sliced buffer. At 0 the start stays
+where Position puts it. Above 0 it advances one size-worth of slices every 1..8 triggers and wraps at
+the end of the buffer, so a fixed loop moves through the recording instead of repeating. Stopping the
+deck, or returning the knob to 0, rewinds it to the Position point.
+
 ## Effects
 
 Two families, each on a dedicated pad per deck. Hold the effect pad and tap the Tap button to cycle the effect type within the family; shape parameters live on the main knobs while the effect is held.
@@ -98,7 +103,7 @@ Granular `Core` subscribes to the platform transport (`ITransport::set_on_tick`)
 
 ## Controls
 
-Granular is the engine the platform's knob/modifier grammar was designed around, so it uses the full surface (the modifier columns in the [README routing table](README.md#knobs-how-a-physical-control-reaches-an-engine)): the direct knobs (Size/Pos/Speed/Mix/Env), the Flux/Grit FX-pad layers, the Alt layer (Feedback, PolySlice, mod sync), and the tap-hold layer (Tempo, KeyInterval, ClickMix, Pan). Pads drive record / play / reverse / sequencer-arm / FX, and MIDI notes trigger pitched grains. The mode/route switches go through `set_config`.
+Granular is the engine the platform's knob/modifier grammar was designed around, so it uses the full surface (the modifier columns in the [README routing table](README.md#knobs-how-a-physical-control-reaches-an-engine)): the direct knobs (Size/Pos/Speed/Mix/Env), the Flux/Grit FX-pad layers, the Alt layer (Feedback, PolySlice, start-offset walk, mod sync), and the tap-hold layer (Tempo, KeyInterval, ClickMix, Pan). Pads drive record / play / reverse / sequencer-arm / FX, and MIDI notes trigger pitched grains. The mode/route switches go through `set_config`.
 
 For the exhaustive control reference, the device's user manual is the authority (see the project `spotykach-manual` notes); `docs/architecture.md` covers the platform/engine layer.
 

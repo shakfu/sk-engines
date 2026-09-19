@@ -101,8 +101,10 @@ void GraincloudEngine::set_param(const ParamId id, const DeckRef::Ref ref, const
         case ParamId::Tempo:         break;
         case ParamId::KeyInterval:   break;
 
-        case ParamId::AltPos:        break; // Alt+POS layer (granular doesn't claim CapAltPos; POS stays Pos)
-        case ParamId::Aux:           break; // Alt+PITCH selector (granular doesn't use CapAux)
+        // Both are claimed by this engine and already handled by the cloud switch above; granular's
+        // inherited routing has nothing further to do with them.
+        case ParamId::AltPos:        break; // Alt+POS   -> vibrato (above)
+        case ParamId::Aux:           break; // Alt+PITCH -> scan speed (above)
 
         case ParamId::Count:         break;
     }
@@ -181,8 +183,9 @@ bool GraincloudEngine::size_sets_tempo(const DeckRef::Ref ref)
 
 Capabilities GraincloudEngine::capabilities() const
 {
-    // CapAux (Alt+PITCH) and CapAltPos (Alt+POS) are added vs granular to expose GrainflowLib cloud
-    // params (glisson, vibrato) on those spare layers.
+    // CapAux (Alt+PITCH) is added vs granular, to put a GrainflowLib cloud param on that spare layer.
+    // CapAltPos is claimed by both engines, for different things: granular's start-offset walk has no
+    // meaning for a cloud that does not snap to slices, so here Alt+POS is vibrato depth instead.
     return CapRecording | CapTapeStorage | CapStepSequencer
          | CapLaunchQuant | CapTransport | CapDualDeck | CapAux | CapAltPos;
 }

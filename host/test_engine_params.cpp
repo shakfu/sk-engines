@@ -92,7 +92,7 @@ int main() {
     // (4) capabilities
     auto caps = engine.capabilities();
     Capabilities expected = CapRecording | CapTapeStorage | CapStepSequencer
-                          | CapLaunchQuant | CapTransport | CapDualDeck;
+                          | CapLaunchQuant | CapTransport | CapDualDeck | CapAltPos;
     check(caps == expected, "capabilities() reports the granular set");
 
     float in_l[host::kBlock], in_r[host::kBlock], out_l[host::kBlock], out_r[host::kBlock];

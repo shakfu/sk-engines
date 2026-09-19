@@ -159,6 +159,9 @@ void Deck::_set_buf_armed(const bool on)
     _is_armed = on;
     if (on) {
         _buffer.clear();
+        // The points index the buffer we just wiped, so they no longer mark anything. Leaving them
+        // made a re-armed deck snap its start to offsets from the previous recording.
+        _generator.clear_slices();
         switch (_mode) {
             case Mode::Reel: _detector.set_armed(true); break;
             case Mode::Slice: _is_record_queued = true; break;
@@ -404,6 +407,7 @@ void Deck::stop()
 #endif
     _loop_tick_count = -1;
     _through_loop_ticks = -1;
+    _generator.reset_start_offset();
     _dispatcher.all_off();
     _track.rewind();
 }
@@ -547,7 +551,9 @@ const Event* Deck::_internal_event(const bool common_tick, const bool track_tick
         /* that's where the looping in Slice is happening */
         auto kickstart = _loop_tick_count < 0 || _needs_kickstart();
         if (_adjust_count) {
-            _loop_tick_count = _through_loop_ticks;
+            // Skip the resync while the start-offset walk is running: each step re-triggers the
+            // size-to-max adjustment, and re-seating the count every time would stall the loop.
+            if (!_generator.start_offset_interval()) _loop_tick_count = _through_loop_ticks;
             _adjust_count = false;
         }
         else {

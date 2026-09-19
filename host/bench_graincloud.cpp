@@ -42,7 +42,7 @@ struct LCG {
     inline float f01()  { return static_cast<float>(u32() >> 8) * (1.f / 16777216.f); }
 };
 
-// Catmull-Rom cubic read at a fractional frame, mirroring Buffer::read_cubic. Wraps via mask (kFrames is
+// Catmull-Rom cubic read at a fractional frame. Wraps via mask (kFrames is
 // a power of two) so the scattered restart can land anywhere without a branch.
 inline void read_cubic(float frame, float& o0, float& o1) {
     const uint32_t i  = static_cast<uint32_t>(frame);

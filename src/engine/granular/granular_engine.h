@@ -55,13 +55,14 @@ public:
     // Liveness masks for `describe` (docs/dev/terminal-dispatch.md). Derived from the set_param /
     // set_config switches in granular_engine.cpp, which are authoritative: every id below reaches real
     // work. Deliberately EXCLUDED, though the switch names them:
-    //   AltPos, Aux - explicit no-ops here ("granular doesn't claim CapAltPos / CapAux"), so a sweep
-    //                 would set them and assert on a value that went nowhere.
+    //   Aux - an explicit no-op here ("granular doesn't claim CapAux"), so a sweep would set it and
+    //         assert on a value that went nowhere. AltPos IS live: it drives the start-offset walk.
     //   Tempo, KeyInterval, ModSpeed - platform-owned; the platform never routes them through
     //                 set_param, so describe drops them regardless (see param_is_platform_owned).
     // NOT yet verified on hardware.
     ParamMask live_params() const override {
         return (1u << static_cast<uint32_t>(ParamId::Pos))
+             | (1u << static_cast<uint32_t>(ParamId::AltPos))
              | (1u << static_cast<uint32_t>(ParamId::FluxFb))
              | (1u << static_cast<uint32_t>(ParamId::Env))
              | (1u << static_cast<uint32_t>(ParamId::EnvSize))

@@ -79,7 +79,7 @@ void GranularEngine::set_param(const ParamId id, const DeckRef::Ref ref, const f
         case ParamId::Tempo:         break;
         case ParamId::KeyInterval:   break;
 
-        case ParamId::AltPos:        break; // Alt+POS layer (granular doesn't claim CapAltPos; POS stays Pos)
+        case ParamId::AltPos:        deck.voxs().set_start_offset_interval(v); break; // Alt+POS -> start-offset walk
         case ParamId::Aux:           break; // Alt+PITCH selector (granular doesn't use CapAux)
 
         case ParamId::Count:         break;
@@ -162,7 +162,7 @@ bool GranularEngine::size_sets_tempo(const DeckRef::Ref ref)
 Capabilities GranularEngine::capabilities() const
 {
     return CapRecording | CapTapeStorage | CapStepSequencer
-         | CapLaunchQuant | CapTransport | CapDualDeck;
+         | CapLaunchQuant | CapTransport | CapDualDeck | CapAltPos;
 }
 
 DeckRef::Ref GranularEngine::handle_midi_note(const uint8_t channel, const uint8_t note)

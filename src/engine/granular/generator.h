@@ -64,6 +64,16 @@ public:
   void clear_slices();
   void set_snap_to_slice(const bool value) { _snap_to_slice = value; }
 
+  // True when a snapped start has slice boundaries to land on - auto-sliced (Slice mode) or manually
+  // sliced. The start-offset walk is meaningless without them, so both the engine and Deck gate on it.
+  bool has_slices() const { return _slice_points_count || _snap_to_slice; }
+
+  // Start-offset walk (Alt+POS). Every `interval` triggers the snapped start advances by the slice
+  // span the current size covers, wrapping at the end of the buffer - so a static slice loop becomes
+  // a moving one. norm 0 disables it and rewinds the walk to where the POS knob points.
+  void set_start_offset_interval(const float norm);
+  uint8_t start_offset_interval() const { return _offset_interval; }
+
   float increment() const { return _increment; }
 
   bool is_speed_mode(const SpeedMode mode) const { return _speed_mode == mode; }
@@ -101,6 +111,8 @@ protected:
 
   bool is_reverse() const { return _reverse; }
   void set_reverse(const bool);
+
+  void reset_start_offset();
 
   void apply_pitch() { set_pitch(_norm_pitch_speed); }
   void set_cont_pitch_mod(const bool val) { _cont_speed_mod = val; }
@@ -152,6 +164,16 @@ private:
   uint8_t _slice_points_count;
   bool    _is_auto_slice;
   bool    _snap_to_slice;
+
+  // Start-offset walk. _slice_delta is how many slices the current size spans, recomputed in _snap()
+  // so a step of the walk advances by exactly one slice-length of audio. _offset_count starts at -1
+  // so the first advance lands on the (interval+1)-th trigger, not the first. _offset is 32-bit and
+  // reduced modulo the slice count in _snap(): a narrower counter would wrap at a value that is not
+  // a multiple of the count, putting a silent skip in an otherwise even walk.
+  uint8_t  _slice_delta;
+  uint32_t _offset;
+  int8_t   _offset_count;
+  uint8_t  _offset_interval;
 
   float _norm_pitch_speed;
 

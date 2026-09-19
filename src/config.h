@@ -120,6 +120,8 @@ static constexpr size_t kDefaultWindowSize = 2880; //60ms @ 48k 1x
 // Slice ........................................
 static constexpr size_t kSliceSlope = 192; //4ms
 static constexpr size_t kSliceMinSize = 2 * kSliceSlope + 960; //+20ms sustain @ 48K 1x
+// Max value of the Alt+POS start-offset interval: the slice start advances every 1..8 triggers.
+static constexpr uint8_t kStartOffsetMaxInterval = 8;
 
 // LFO ..........................................
 static constexpr float kLFOFreqMin = .01f;

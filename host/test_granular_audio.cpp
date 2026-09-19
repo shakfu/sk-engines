@@ -29,6 +29,7 @@
 #include <cstring>
 #include <functional>
 #include <new>
+#include <utility>
 
 #include "engine/granular/granular_engine.h"
 #include "engine/granular/buffer.h"
@@ -122,6 +123,21 @@ void load_buffer(GranularEngine& e, float v, size_t frames) {
         const size_t cap = e.audio_capacity_bytes(d) / sizeof(Buffer::Frame);
         const size_t n = frames < cap ? frames : cap;
         for (size_t i = 0; i < n; i++) { raw[i].l = v; raw[i].r = v; }
+        e.audio_apply_loaded(d, n);
+    }
+}
+
+// A 0..1 ramp across the buffer, so position becomes audible: a slice taken at norm position p
+// plays back at roughly level p. That is what lets the start-offset walk be measured as a level.
+void load_ramp(GranularEngine& e, size_t frames) {
+    for (auto d : { DeckRef::A, DeckRef::B }) {
+        auto* raw = reinterpret_cast<Buffer::Frame*>(e.audio_data(d));
+        const size_t cap = e.audio_capacity_bytes(d) / sizeof(Buffer::Frame);
+        const size_t n = frames < cap ? frames : cap;
+        for (size_t i = 0; i < n; i++) {
+            const float v = static_cast<float>(i) / static_cast<float>(n);
+            raw[i].l = v; raw[i].r = v;
+        }
         e.audio_apply_loaded(d, n);
     }
 }
@@ -263,6 +279,43 @@ int main() {
             std::snprintf(msg, sizeof(msg), "%s actually produces audio", m.name);
             check(s.rms > 1e-4f, msg);
         }
+    }
+
+    // --- Alt+POS start-offset walk ---------------------------------------------------------------
+    // With the walk off, every trigger replays the slice POS points at - the quiet head of the ramp.
+    // With it on, the start advances one size-worth of slices per trigger, so the louder tail of the
+    // ramp is reached and the mean level over the same number of triggers is higher. Asserting the
+    // direction rather than an exact position keeps this independent of the slice grid's size.
+    {
+        for (auto d : { DeckRef::A, DeckRef::B }) e.set_config(ConfigId::Mode, d, kSwitchSlice);
+        load_ramp(e, 48000);
+        for (auto d : { DeckRef::A, DeckRef::B })
+            if (!e.play_leds(d).playing) e.on_play_pad(d, false);
+        e.set_param(ParamId::Pos,  DeckRef::A, 0.f);    // start at the quiet end of the ramp
+        e.set_param(ParamId::Size, DeckRef::A, 0.05f);  // a short slice, so the walk has room to move
+        render(transport, e, 1200);                     // Slice waits for a bar before it will play
+
+        // Fire `triggers` gates, averaging the level each one renders.
+        auto walk_level = [&](float alt_pos) {
+            e.on_play_pad(DeckRef::A, false);                    // stop: rewinds the walk
+            e.set_param(ParamId::AltPos, DeckRef::A, alt_pos);
+            e.on_play_pad(DeckRef::A, false);                    // play again
+            render(transport, e, 1200);
+            double acc = 0; int n = 0; bool finite = true;
+            for (int i = 0; i < 24; i++) {
+                e.on_gate_trigger(DeckRef::A);
+                const Stats s = render(transport, e, 40);
+                finite = finite && s.finite;
+                acc += s.rms; n++;
+            }
+            return std::pair<float, bool>{ static_cast<float>(acc / n), finite };
+        };
+
+        const auto off = walk_level(0.f);        // interval 0 -> walk disabled
+        const auto on  = walk_level(0.125f);     // round(0.125 * 8) -> interval 1, steps every trigger
+        std::printf("  start-offset walk: off rms=%.5f, on rms=%.5f\n", off.first, on.first);
+        check(off.second && on.second, "the start-offset walk renders finite audio");
+        check(on.first > off.first, "the start-offset walk moves the start into the buffer");
     }
 
     if (g_failures == 0) { std::printf("\nAll granular audio tests passed.\n"); return 0; }
