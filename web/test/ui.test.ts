@@ -15,6 +15,7 @@ import { makeLayout } from '../src/core/layout.ts';
 import { makeCatalogue } from '../src/core/engines.ts';
 import { Store } from '../src/app/store.ts';
 import { parseHash } from '../src/ui/route.ts';
+import { plainText } from '../src/ui/engines_view.ts';
 import { THEMES, DEFAULT_THEME, THEME_ATTR, STORAGE_KEY, currentTheme } from '../src/ui/theme.ts';
 
 suite('ui');
@@ -399,7 +400,9 @@ test('the reference view lists every engine, not only the ones that read a card'
   for (const entry of engines.entries) {
     const s = sections.find((n) => n.dataset.engine === entry.doc.name)!;
     ok(s, `${entry.doc.name} has no entry`);
-    ok(s.textContent.includes(entry.doc.body.slice(0, 40)), `${entry.doc.name} states no description`);
+    ok(s.textContent.includes(plainText(entry.doc.body).slice(0, 40)), `${entry.doc.name} states no description`);
+    // The fields are markdown; inserted raw, the page showed `**dual virtual [RadioMusic](https://...)**`.
+    ok(!/\*\*|\]\(/.test(s.textContent), `${entry.doc.name} shows raw markdown`);
     if (entry.bank) {
       ok(s.textContent.includes(entry.bank.fmt.describe), `${entry.doc.name} omits its format`);
       ok(s.textContent.includes(entry.bank.source), `${entry.doc.name} omits its firmware citation`);
@@ -407,6 +410,18 @@ test('the reference view lists every engine, not only the ones that read a card'
       ok(s.textContent.includes('needs no card'), `${entry.doc.name} should say it needs no card`);
     }
   }
+});
+
+test('a reference chip exposes its pressed state, not only a colour', async () => {
+  const { root } = await mount('reference_view');
+  const chips = tags(root.querySelector('.chips')!, 'button');
+  const tape = chips.find((c) => c.textContent === 'tape')!;
+  eq(tape.getAttribute('aria-pressed'), 'false', 'unpressed at first');
+  await tape.fire('click');
+  eq(tape.getAttribute('aria-pressed'), 'true', 'pressed once selected');
+  ok(chips.filter((c) => c !== tape).every((c) => c.getAttribute('aria-pressed') === 'false'), 'and alone');
+  await tape.fire('click');
+  eq(tape.getAttribute('aria-pressed'), 'false', 'released on a second click');
 });
 
 test('the engines that need no card are the ones with no bank', async () => {

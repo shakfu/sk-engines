@@ -1495,6 +1495,47 @@ class ReferenceModel {
   }
 }
 
+// src/ui/engines_view.ts
+var MAX_CHARS = 190;
+function plainText(md) {
+  return md.replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/`([^`]*)`/g, "$1").replace(/\*\*([^*]*)\*\*/g, "$1").replace(/(?<![*\w])\*([^*]+)\*(?!\w)/g, "$1").replace(/(?<![_\w])_([^_]+)_(?!\w)/g, "$1").replace(/\s+/g, " ").trim();
+}
+function describe(entry, max = MAX_CHARS) {
+  const summary = entry.doc.summary?.trim();
+  if (summary)
+    return plainText(summary);
+  const body = plainText(entry.doc.body ?? "");
+  if (!body)
+    return "";
+  if (body.length <= max)
+    return body;
+  const window2 = body.slice(0, max + 1);
+  const sentence = [...window2.matchAll(/\.\s+(?=[A-Z])/g)].pop();
+  if (sentence && sentence.index > max * 0.4)
+    return window2.slice(0, sentence.index + 1);
+  const cut = window2.lastIndexOf(" ");
+  return `${window2.slice(0, cut > 0 ? cut : max).replace(/[,;:\s]+$/, "")}...`;
+}
+function mountEngines(root, ctx) {
+  const entries = ctx.engines.entries.filter((e) => e.doc.page);
+  clear(mountPoint(root)).append(el("div", { class: "engine-grid" }, entries.map((e) => {
+    const name = e.doc.name;
+    return el("a", {
+      class: "engine-card",
+      href: `#engine/${name}`,
+      onclick: (ev) => {
+        const m = ev;
+        if (m.metaKey || m.ctrlKey || m.shiftKey)
+          return;
+        if (m.button != null && m.button !== 0)
+          return;
+        ev.preventDefault();
+        ctx.goEngine(name);
+      }
+    }, el("span", { class: "engine-card-title" }, e.doc.title || name), e.bank ? el("span", { class: "engine-card-tag" }, "reads the card") : el("span", { class: "engine-card-tag muted" }, "no card needed"), el("span", { class: "engine-card-desc" }, describe(e)));
+  })));
+}
+
 // src/ui/reference_view.ts
 var range = ([lo, hi]) => lo === hi ? String(lo) : `${lo}-${hi}`;
 var extList = (exts) => exts.map((e) => `.${e}`).join("/");
@@ -1536,7 +1577,7 @@ function engineSection(layout, entry) {
       rows.push(specRow("Read by", bank.readers.join(", ")));
     rows.push(specRow("Firmware", bank.source, true, "src"));
   }
-  return el("section", { class: "ref-bank", dataset: { engine: doc.name } }, el("h3", {}, doc.name, " ", el("span", { class: "mono muted" }, bank ? folderLabel(bank.dirs) : "needs no card")), doc.summary && el("p", { class: "summary" }, doc.summary), doc.body && el("p", {}, doc.body), el("p", { class: "muted note" }, !doc.released && doc.doc && "(not in the released set) ", doc.page ? el("a", { href: `#engine/${doc.name}` }, "Open the manual") : null), rows.length ? el("table", { class: "layout spec" }, el("tbody", {}, rows)) : null, bank && bank.kind === "config" ? configTable(layout) : null);
+  return el("section", { class: "ref-bank", dataset: { engine: doc.name } }, el("h3", {}, doc.name, " ", el("span", { class: "mono muted" }, bank ? folderLabel(bank.dirs) : "needs no card")), doc.summary && el("p", { class: "summary" }, plainText(doc.summary)), doc.body && el("p", {}, plainText(doc.body)), el("p", { class: "muted note" }, !doc.released && doc.doc && "(not in the released set) ", doc.page ? el("a", { href: `#engine/${doc.name}` }, "Open the manual") : null), rows.length ? el("table", { class: "layout spec" }, el("tbody", {}, rows)) : null, bank && bank.kind === "config" ? configTable(layout) : null);
 }
 function mountReference(root, ctx) {
   const model = new ReferenceModel(ctx.layout, ctx.engines);
@@ -1549,7 +1590,7 @@ function mountReference(root, ctx) {
     autocomplete: "off",
     oninput: () => model.setQuery(filter.value)
   });
-  const chips = el("div", { class: "chips" }, ctx.engines.entries.map((e) => el("button", { class: "link", onclick: () => model.toggleChip(e.doc.name) }, e.doc.name)));
+  const chips = el("div", { class: "chips" }, ctx.engines.entries.map((e) => el("button", { class: "link", "aria-pressed": "false", onclick: () => model.toggleChip(e.doc.name) }, e.doc.name)));
   const srcToggle = el("input", {
     type: "checkbox",
     onchange: () => model.setShowSources(srcToggle.checked)
@@ -1560,7 +1601,9 @@ function mountReference(root, ctx) {
     for (const [engine, node] of sections)
       node.hidden = !visible.has(engine);
     for (const chip of [...chips.children]) {
-      chip.classList.toggle("on", chip.textContent === s.pinned);
+      const on = chip.textContent === s.pinned;
+      chip.classList.toggle("on", on);
+      chip.setAttribute("aria-pressed", String(on));
     }
     if (filter.value !== s.query)
       filter.value = s.query;
@@ -3881,47 +3924,6 @@ function mountHome(root, ctx) {
   }
 }
 
-// src/ui/engines_view.ts
-var MAX_CHARS = 190;
-function plainText(md) {
-  return md.replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/`([^`]*)`/g, "$1").replace(/\*\*([^*]*)\*\*/g, "$1").replace(/(?<![*\w])\*([^*]+)\*(?!\w)/g, "$1").replace(/(?<![_\w])_([^_]+)_(?!\w)/g, "$1").replace(/\s+/g, " ").trim();
-}
-function describe(entry, max = MAX_CHARS) {
-  const summary = entry.doc.summary?.trim();
-  if (summary)
-    return plainText(summary);
-  const body = plainText(entry.doc.body ?? "");
-  if (!body)
-    return "";
-  if (body.length <= max)
-    return body;
-  const window2 = body.slice(0, max + 1);
-  const sentence = [...window2.matchAll(/\.\s+(?=[A-Z])/g)].pop();
-  if (sentence && sentence.index > max * 0.4)
-    return window2.slice(0, sentence.index + 1);
-  const cut = window2.lastIndexOf(" ");
-  return `${window2.slice(0, cut > 0 ? cut : max).replace(/[,;:\s]+$/, "")}...`;
-}
-function mountEngines(root, ctx) {
-  const entries = ctx.engines.entries.filter((e) => e.doc.page);
-  clear(mountPoint(root)).append(el("div", { class: "engine-grid" }, entries.map((e) => {
-    const name = e.doc.name;
-    return el("a", {
-      class: "engine-card",
-      href: `#engine/${name}`,
-      onclick: (ev) => {
-        const m = ev;
-        if (m.metaKey || m.ctrlKey || m.shiftKey)
-          return;
-        if (m.button != null && m.button !== 0)
-          return;
-        ev.preventDefault();
-        ctx.goEngine(name);
-      }
-    }, el("span", { class: "engine-card-title" }, e.doc.title || name), e.bank ? el("span", { class: "engine-card-tag" }, "reads the card") : el("span", { class: "engine-card-tag muted" }, "no card needed"), el("span", { class: "engine-card-desc" }, describe(e)));
-  })));
-}
-
 // src/ui/route.ts
 function parseHash(hash) {
   const raw = hash.replace(/^#/, "");
@@ -4141,5 +4143,5 @@ if ("serviceWorker" in navigator && location.protocol === "https:") {
 }
 main();
 
-//# debugId=468785F0F69AC54F64756E2164756E21
+//# debugId=07612303C53B8B8A64756E2164756E21
 //# sourceMappingURL=app.js.map

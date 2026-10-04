@@ -248,15 +248,17 @@ Have ready: a released `sk-<engine>-<version>.bin`, `bootloader-spotykach-v2.bin
 
 ## Results
 
+The 2026-10-04 pass ran headless Chrome 154 on Linux, driven over the DevTools protocol, against a folder built by `sk_card.py init` with planted faults. No real SD card, Safari or device. C1 and C7 describe an older UI: the five tabs are now menu views, and the header bank-count line is now the Reference status line.
+
 | Check | Chrome | Safari | Notes |
 |---|---|---|---|
-| C1 page loads | | n/a | |
+| C1 page loads | PASS 2026-10-04 (headless) | n/a | all 8 views + `#engine/tape`, unknown engine, bad hash, reload on `#verify`; console clean except a `favicon.ico` 404 |
 | C2 degrades | n/a | | |
-| C3 read a real card | | | |
-| C4 drop a folder | | | |
-| C5 convert real audio | | | |
-| C6 write in place | | n/a | |
-| C7 reference | | | |
+| C3 read a real card | partial 2026-10-04 (headless) | | picker and `<input webkitdirectory>` not drivable headless; the handle walk ran via C4's folder drop |
+| C4 drop a folder | PASS 2026-10-04 (headless) | | folder: same 4 errors / 3 warnings as `sk_card.py verify`, junk folders absent; loose file read; 3 items at once read. Card was a folder, not FAT32 media |
+| C5 convert real audio | PASS 2026-10-04 (headless), one defect | | mp3 + flac: 16-bit mono 48 kHz, samples match ffmpeg (corr 1.00000); 0.2 s clip looped to 32812 B with note. **Defect:** reports `from 48000 Hz` for a 44.1 kHz source |
+| C6 write in place | PASS 2026-10-04 (headless, OPFS) | n/a | real FS Access handle from OPFS in place of the picker; 64 files + 47 dirs SHA-identical to `init --no-demo`; re-run left 64 untouched, tuned `SK/config.txt` survived |
+| C7 reference | PASS 2026-10-04 (headless), defects fixed | | `tape` filter now matches 6, not 4 (text search). **Fixed:** raw markdown in descriptions; chips lacked `aria-pressed` |
 | C8 terminal (line codec) | | n/a | |
 | C8b terminal (OSC codec) | | n/a | needs a second flash, `TERMINAL=1 OSC=1`; added 2026-08-11 |
 | C9 offline | | | |

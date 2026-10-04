@@ -30,8 +30,7 @@ namespace spotykach {
 // =====================================================================================
 // 1. PALETTE — the canonical, instrument-wide colors. "Hue = identity": every engine that
 //    includes this speaks the same color language (mode/FX/clock/tape), instead of re-declaring
-//    near-but-not-equal constants. These are the exact values the platform uses in
-//    core.ui.leds.cpp; that file is the historical origin and should migrate onto these.
+//    near-but-not-equal constants. core.ui.leds.cpp (the platform's granular path) uses these too.
 // =====================================================================================
 namespace pal {
     // Neutral / utility

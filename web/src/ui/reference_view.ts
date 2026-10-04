@@ -14,6 +14,7 @@ import { folderLabel } from '../core/layout.ts';
 import type { Layout } from '../core/layout.ts';
 import type { EngineEntry } from '../core/engines.ts';
 import { el } from './dom.ts';
+import { plainText } from './engines_view.ts';
 import { mountPoint } from './slots.ts';
 import type { ViewContext } from './context.ts';
 
@@ -115,8 +116,9 @@ function engineSection(layout: Layout, entry: EngineEntry): HTMLElement {
   return el('section', { class: 'ref-bank', dataset: { engine: doc.name } },
     el('h3', {}, doc.name, ' ',
       el('span', { class: 'mono muted' }, bank ? folderLabel(bank.dirs) : 'needs no card')),
-    doc.summary && el('p', { class: 'summary' }, doc.summary),
-    doc.body && el('p', {}, doc.body),
+    // Both fields are markdown from docs/engines/*.md; inserted as text, `**` and `[x](url)` show literally.
+    doc.summary && el('p', { class: 'summary' }, plainText(doc.summary)),
+    doc.body && el('p', {}, plainText(doc.body)),
     el('p', { class: 'muted note' },
       // Saying so matters: `granular` and `passthrough` are documented and deliberately unpublished,
       // so an owner looking for them in a release needs to know that is intentional.
@@ -147,7 +149,8 @@ export function mountReference(root: HTMLElement, ctx: ViewContext): void {
   // Chips filter rather than scrolling to an anchor: a `#granular` href would be caught by main.ts's
   // hashchange handler, which does not know that name and would fall back to the Build tab.
   const chips = el('div', { class: 'chips' }, ctx.engines.entries.map((e) =>
-    el('button', { class: 'link', onclick: () => model.toggleChip(e.doc.name) }, e.doc.name)));
+    el('button', { class: 'link', 'aria-pressed': 'false', onclick: () => model.toggleChip(e.doc.name) },
+      e.doc.name)));
 
   const srcToggle = el('input', {
     type: 'checkbox',
@@ -160,7 +163,9 @@ export function mountReference(root: HTMLElement, ctx: ViewContext): void {
     const visible = new Set(model.visible().map((e) => e.doc.name));
     for (const [engine, node] of sections) node.hidden = !visible.has(engine);
     for (const chip of [...chips.children]) {
-      chip.classList.toggle('on', chip.textContent === s.pinned);
+      const on = chip.textContent === s.pinned;
+      chip.classList.toggle('on', on);
+      chip.setAttribute('aria-pressed', String(on));   // the active state is otherwise visual only
     }
     if (filter.value !== s.query) filter.value = s.query;
     banksEl.classList.toggle('show-src', s.showSources);

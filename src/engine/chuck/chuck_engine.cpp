@@ -649,12 +649,12 @@ void ChuckEngine::render(DisplayModel& m)
         if (avg > 1.f) avg = 1.f;
         if (pk  < 0.f) pk  = 0.f;
         if (pk  > 1.f) pk  = 1.f;
-        const uint32_t col = (pk > 0.85f) ? 0xff2000u : (pk > 0.60f) ? 0xffa000u : 0x00ff00u;
+        const uint32_t col = (pk > 0.85f) ? 0xff2000u : (pk > 0.60f) ? 0xffa000u : pal::kGreen;
 
         // Ring A (deck A) = CPU load. Faint base ring = the full block budget; the bright arc = current
         // average load; the dot = the peak (max) load; the colour = peak severity (green/amber/red,
         // red >= 85% = at/over budget -> dropouts; max latches, so one overrun stays visible).
-        m.play[0] = { running ? 0x00ff00u : 0x000000u, running ? 1.f : 0.f };
+        m.play[0] = { running ? pal::kGreen : pal::kBlack, running ? 1.f : 0.f };
         m.ring[0].set_hex_color(0x0a0a0a);
         m.ring[0].set_segment(0.f, 0.999f);
         if (avg > 0.01f) { m.ring[0].set_hex_color(col); m.ring[0].set_segment(0.f, avg); }
@@ -671,15 +671,15 @@ void ChuckEngine::render(DisplayModel& m)
         float peak_frac = static_cast<float>(_pool_used_peak) / cap;
         if (used_frac > 1.f) used_frac = 1.f;
         if (peak_frac > 1.f) peak_frac = 1.f;
-        const uint32_t pcol = (used_frac > 0.85f) ? 0xff2000u : (used_frac > 0.60f) ? 0xffa000u : 0x00ff00u;
-        m.play[1] = { running ? 0x00ff00u : 0x000000u, running ? 1.f : 0.f };
+        const uint32_t pcol = (used_frac > 0.85f) ? 0xff2000u : (used_frac > 0.60f) ? 0xffa000u : pal::kGreen;
+        m.play[1] = { running ? pal::kGreen : pal::kBlack, running ? 1.f : 0.f };
         m.ring[1].set_hex_color(0x0a0a0a);                 // faint base = full pool capacity (the scale)
         m.ring[1].set_segment(0.f, 0.999f);
         if (used_frac > 0.001f) { m.ring[1].set_hex_color(pcol); m.ring[1].set_segment(0.f, used_frac); }
         m.ring[1].add_point(peak_frac, 1.f);               // high-water dot
         m.ring[1].set_updated();
 
-        m.mode_center = { 0xff00ffu, 0.6f };               // magenta = meter mode (vs the source LED)
+        m.mode_center = { pal::kPink, 0.6f };            // magenta = meter mode (vs the source LED)
         return;
     }
 #endif

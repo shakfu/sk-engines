@@ -6,9 +6,9 @@ Deferred work, in priority order (highest first). See `docs/` for the platform/e
 
 ## High
 
-- [ ] Migrate engines onto the indicator toolkit (check again)
+- [ ] Indicator toolkit: net-new indicators deferred from the 2026-07-31 migration (HARDWARE-GATED): `ring::value` pickup feedback, `led::clock` (reso/delay/qdelay/edrums), `led::cycle` for the LFO engines, idle breathe on renders without `ITimeSource`. See `docs/dev/indicator-comparison.md` §7.
 
-- [ ] Mono-input normalization (left -> right when right is unused)
+- [ ] Confirm input A is jack-normalled to B (HARDWARE-GATED). No firmware mirrors it (`docs/manual.md:78`), so it is presumably the jack wiring. Check: `ENGINE=passthrough`, patch A only, both outputs carry signal. If confirmed, softcut records A-only input at +6 dB, since it sums `in[0] + in[1]` (`softcut_engine.cpp:226,248`).
 
 - [ ] One bench session: measure + voice the engines that work but aren't quantified (HARDWARE-GATED)
 
