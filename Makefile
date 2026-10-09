@@ -87,7 +87,7 @@ endif
 # to their include scope and pull the three .cc from $(STMLIB_TP). The files are byte-identical to the
 # old per-engine copies (same upstream, unchanged for years), so this is a dedup, not a version bump.
 STMLIB_TP  = src/engine/common/thirdparty/stmlib
-STMLIB_INC = -Isrc/engine/common/thirdparty
+STMLIB_INC = -isystem src/engine/common/thirdparty
 
 ENGINE ?= granular
 ifeq ($(ENGINE), granular)
@@ -193,7 +193,7 @@ C_DEFS += -DSPK_USE_STREAM
 # (~10 KB SRAM_EXEC) so this is a normal -O2 SRAM build, not QSPI. Feasibility scaffold: pair with
 # METER=1 and flip the Mode switch (Slice/Reel/Drift -> 2/4/6 voices) to read on-device load.
 SOFTCUT_TP  = src/engine/softcut/vendor
-SOFTCUT_INC = -I$(SOFTCUT_TP)/include
+SOFTCUT_INC = -isystem $(SOFTCUT_TP)/include
 ENGINE_SOURCES = src/engine/softcut/softcut_engine.cpp \
 	$(wildcard $(SOFTCUT_TP)/src/*.cpp)
 else ifeq ($(ENGINE), reso)
@@ -208,7 +208,7 @@ OPT = -Os
 # to the reso build (empty for other engines). The .cc files compile on-target WITHOUT -DTEST, so stmlib
 # uses its Cortex-M ssat/usat fast paths.
 RESO_TP  = src/engine/reso/thirdparty
-RESO_INC = -I$(RESO_TP) $(STMLIB_INC)
+RESO_INC = -isystem $(RESO_TP) $(STMLIB_INC)
 ENGINE_SOURCES = src/engine/reso/reso_engine.cpp \
 	$(RESO_TP)/rings/dsp/part.cc $(RESO_TP)/rings/dsp/string.cc \
 	$(RESO_TP)/rings/dsp/resonator.cc $(RESO_TP)/rings/dsp/fm_voice.cc \
@@ -235,7 +235,7 @@ OPT = -Os
 # to the mosc build (the plaits root holds `plaits/`, the shared root holds `stmlib/`). The .cc files
 # compile on-target WITHOUT -DTEST, so stmlib uses its Cortex-M ssat/usat fast paths.
 MOSC_TP  = src/engine/mosc/thirdparty
-MOSC_INC = -I$(MOSC_TP) $(STMLIB_INC)
+MOSC_INC = -isystem $(MOSC_TP) $(STMLIB_INC)
 ENGINE_SOURCES = src/engine/mosc/mosc_engine.cpp src/engine/csound/spotykach_qspi_vtor.cpp \
 	$(MOSC_TP)/plaits/dsp/voice.cc \
 	$(wildcard $(MOSC_TP)/plaits/dsp/engine/*.cc) \
@@ -268,7 +268,7 @@ C_DEFS += -DM_PI=3.14159265358979323846
 # (as reso/reverb do). The M7 @ 480 MHz has ample compute headroom.
 OPT = -Os
 GRAINCLOUD_TP  = src/engine/graincloud/thirdparty
-GRAINCLOUD_INC = -Isrc/engine/graincloud -I$(GRAINCLOUD_TP) -Isrc/engine/granular
+GRAINCLOUD_INC = -Isrc/engine/graincloud -isystem $(GRAINCLOUD_TP) -Isrc/engine/granular
 # The granular tree MINUS its IEngine wrapper (graincloud_engine.cpp replaces granular_engine.cpp),
 # plus graincloud's own two files. generator.cpp is shared - the SPK_GRAIN_GF branches are inside it.
 ENGINE_SOURCES = $(filter-out src/engine/granular/granular_engine.cpp, $(wildcard src/engine/granular/*.cpp)) \
@@ -286,7 +286,7 @@ C_DEFS += -DGEN_EXPORTED_HEADER=\"gen_exported.h\"
 C_DEFS += -DGEN_EXPORTED_CPP=\"gen_exported.cpp\"
 C_DEFS += -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter
 GEN_DIR = src/engine/gigaverb
-GEN_INC = -I$(GEN_DIR) -I$(GEN_DIR)/gen -I$(GEN_DIR)/gen/gen_dsp
+GEN_INC = -I$(GEN_DIR) -isystem $(GEN_DIR)/gen -isystem $(GEN_DIR)/gen/gen_dsp
 ENGINE_SOURCES = $(GEN_DIR)/_ext_daisy.cpp src/engine/gen/genlib_arena.cpp
 # <<< gen:gigaverb <<<
 # >>> faust:chorus >>> (managed by scripts/gen_faust_engine.py)
@@ -326,7 +326,7 @@ C_DEFS += -DSPK_USE_STREAM
 # dropping SDRAM from ~62 MB to ~14 MB. A capability flag, not an engine-name check (shared with chuck).
 C_DEFS += -DSPK_NO_ENGINE_ARENA
 CSOUND_BASE = thirdparty/csound/Daisy
-CSOUND_INC  = -I$(CSOUND_BASE)/include/csound
+CSOUND_INC  = -isystem $(CSOUND_BASE)/include/csound
 ENGINE_SOURCES = src/engine/csound/csound_engine.cpp src/engine/csound/csound_alloc.cpp src/engine/csound/spotykach_qspi_vtor.cpp
 LIBS    += $(CSOUND_BASE)/lib/libcsound.a
 LDFLAGS += -u _printf_float
@@ -365,7 +365,7 @@ C_DEFS += -D__PLATFORM_LINUX__ -D__USE_CHUCK_YACC__ \
 build/chuck_engine.o: CPP_USER_FLAGS += -fexceptions -frtti
 CHUCK_BASE = thirdparty/chuck
 # chuck.h/chuck_globals.h from src/core; the shim provides the POSIX headers chuck.h transitively pulls.
-CHUCK_INC  = -I$(CHUCK_BASE)/src/core -I$(CHUCK_BASE)/Daisy/shim
+CHUCK_INC  = -isystem $(CHUCK_BASE)/src/core -isystem $(CHUCK_BASE)/Daisy/shim
 # Reuse the Csound engine's VTOR inject (the BOOT_QSPI vector-table fix is engine-agnostic).
 ENGINE_SOURCES = src/engine/chuck/chuck_engine.cpp src/engine/chuck/chuck_alloc.cpp src/engine/csound/spotykach_qspi_vtor.cpp
 LIBS    += $(CHUCK_BASE)/Daisy/lib/libchuck.a
@@ -500,6 +500,16 @@ CPP_SOURCES = \
 # Core location, and generic Makefile.
 SYSTEM_FILES_DIR = $(LIBDAISY_DIR)/core
 include $(SYSTEM_FILES_DIR)/Makefile
+
+# Warnings: -Wextra over the project's own code. Vendored trees (the *_INC vars above, and libDaisy/DaisySP
+# here, whose -I the core Makefile appends) sit behind -isystem so upstream warnings stay out of the
+# signal; the conversion is byte-identical on every CI target. Flags match host/Makefile. `override`
+# keeps a command-line C_USER_FLAGS from dropping them. CI passes WERROR=1 to hold the count at 0.
+C_INCLUDES := $(patsubst -I$(LIBDAISY_DIR)%,-isystem $(LIBDAISY_DIR)%,$(patsubst -I$(DAISYSP_DIR)%,-isystem $(DAISYSP_DIR)%,$(C_INCLUDES)))
+override C_USER_FLAGS += -Wextra -Wno-missing-field-initializers -Wno-unused-parameter
+ifeq ($(WERROR), 1)
+override C_USER_FLAGS += -Werror
+endif
 
 # Rebuild the engine-dependent object when ENGINE changes. Objects are compiled with -DSPK_ENGINE_*,
 # but make can't see flag changes, so `make ENGINE=passthrough` over a stale granular build would

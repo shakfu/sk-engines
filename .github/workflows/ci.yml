@@ -189,7 +189,8 @@ jobs:
       - name: Build ${{ matrix.target }}
         # The link step prints --print-memory-usage, so the log carries the per-region figures. That is
         # the number to read when an engine starts creeping toward a region overflow.
-        run: make -j$(nproc) ${{ matrix.target }}
+        # WERROR=1 holds the project's -Wextra count at 0; local builds only warn.
+        run: make -j$(nproc) WERROR=1 ${{ matrix.target }}
 
       - name: Report image size and check the boot banner
         run: |

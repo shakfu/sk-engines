@@ -46,6 +46,7 @@ if(NOT DEFINED ENGINE)
 endif()
 # Per-engine extras (defaults; the reso branch overrides them for its vendored Rings/stmlib DSP).
 set(ENGINE_INCLUDES "")            # extra -I roots for the firmware target
+set(ENGINE_SYSTEM_INCLUDES "")     # extra -isystem roots: vendored trees, kept out of -Wextra
 set(ENGINE_DEFINES  "")            # extra compile definitions
 set(ENGINE_OPTIONS  "")            # extra compile options (gigaverb suppresses gen~ unused-* warnings)
 set(APP_OPT -O2)                   # app-TU opt level (overrides the inherited -O3); reso/mosc drop to -Os
@@ -89,7 +90,7 @@ elseif(ENGINE STREQUAL reso)
         ${STMLIB_TP}/utils/random.cc
         ${STMLIB_TP}/dsp/atan.cc
     )
-    set(ENGINE_INCLUDES ${RESO_TP} ${COMMON_TP})
+    set(ENGINE_SYSTEM_INCLUDES ${RESO_TP} ${COMMON_TP})
     # stmlib's filters use M_PI, which strict -std=c++17 does not expose from <cmath> on arm-none-eabi.
     set(ENGINE_DEFINES M_PI=3.14159265358979323846)
     # Rings (~30 KB of code+tables) overflows the 186 KB execution SRAM at -O2; build reso at -Os to fit.
@@ -105,7 +106,7 @@ elseif(ENGINE STREQUAL mosc)
     set(COMMON_TP ${CMAKE_CURRENT_SOURCE_DIR}/src/engine/common/thirdparty)
     set(STMLIB_TP ${COMMON_TP}/stmlib)
     set(ENGINE_DEFINES M_PI=3.14159265358979323846 PLAITS_USER_DATA_STUB)
-    set(ENGINE_INCLUDES ${MOSC_TP} ${COMMON_TP})
+    set(ENGINE_SYSTEM_INCLUDES ${MOSC_TP} ${COMMON_TP})
     set(APP_OPT -Os)
     set(ENGINE_LDSCRIPT linker/alt_qspi.lds)
     set(ENGINE_BOOT_QSPI TRUE)
@@ -139,7 +140,8 @@ elseif(ENGINE STREQUAL graincloud)
     list(REMOVE_ITEM ENGINE_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/src/engine/granular/granular_engine.cpp)
     # graincloud's own dir first, so granular/generator.cpp's guarded `#include "gf_cloud.h"` resolves.
-    set(ENGINE_INCLUDES ${GRAINCLOUD_DIR} ${GRAINCLOUD_TP} ${CMAKE_CURRENT_SOURCE_DIR}/src/engine/granular)
+    set(ENGINE_INCLUDES ${GRAINCLOUD_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/src/engine/granular)
+    set(ENGINE_SYSTEM_INCLUDES ${GRAINCLOUD_TP})
     # M_PI for gfSyn under strict -std=c++17 on arm-none-eabi.
     set(ENGINE_DEFINES M_PI=3.14159265358979323846 SPK_GRAIN_GF=1)
     # Granular + GrainflowLib templates overflow the execution SRAM at -O2; build at -Os.
@@ -213,7 +215,7 @@ elseif(ENGINE STREQUAL softcut)
     # arm-none-eabi (the same idiom reso uses).
     set(SOFTCUT_TP ${CMAKE_CURRENT_SOURCE_DIR}/src/engine/softcut/vendor)
     set(ENGINE_DEFINES SPK_USE_STREAM M_PI=3.14159265358979323846 M_PI_2=1.57079632679489661923)
-    set(ENGINE_INCLUDES ${SOFTCUT_TP}/include)
+    set(ENGINE_SYSTEM_INCLUDES ${SOFTCUT_TP}/include)
     file(GLOB SOFTCUT_VENDOR CONFIGURE_DEPENDS ${SOFTCUT_TP}/src/*.cpp)
     set(ENGINE_SOURCES src/engine/softcut/softcut_engine.cpp ${SOFTCUT_VENDOR})
     # PARITY (Makefile SOFTCUT_EXTRA): optional extra defines for diagnostics, passed through verbatim
@@ -237,7 +239,8 @@ elseif(ENGINE STREQUAL gigaverb)
     # gen~ codegen trips a raft of unused-function/variable/parameter warnings; the Make build silences
     # them for this engine, so match that to keep the build warning-clean.
     set(ENGINE_OPTIONS -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter)
-    set(ENGINE_INCLUDES ${GEN_DIR} ${GEN_DIR}/gen ${GEN_DIR}/gen/gen_dsp)
+    set(ENGINE_INCLUDES ${GEN_DIR})
+    set(ENGINE_SYSTEM_INCLUDES ${GEN_DIR}/gen ${GEN_DIR}/gen/gen_dsp)
     set(ENGINE_SOURCES ${GEN_DIR}/_ext_daisy.cpp src/engine/gen/genlib_arena.cpp)
 # >>> faust:chorus >>>
 elseif(ENGINE STREQUAL chorus)
@@ -261,7 +264,7 @@ elseif(ENGINE STREQUAL csound)
     # for the /csound/*.csd patch bank. Prereq: scripts/fetch_csound.sh has produced libcsound.a.
     set(CSOUND_BASE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/csound/Daisy)
     set(ENGINE_DEFINES SPK_USE_STREAM SPK_NO_ENGINE_ARENA)
-    set(ENGINE_INCLUDES ${CSOUND_BASE}/include/csound)
+    set(ENGINE_SYSTEM_INCLUDES ${CSOUND_BASE}/include/csound)
     set(ENGINE_LDSCRIPT linker/alt_qspi.lds)
     set(ENGINE_BOOT_QSPI TRUE)
     set(ENGINE_SOURCES
@@ -292,7 +295,7 @@ elseif(ENGINE STREQUAL chuck)
         __ALTER_HID__ __DISABLE_HID__ __DISABLE_SERIAL__ __DISABLE_ASYNCH_IO__ __DISABLE_THREADS__
         __DISABLE_KBHIT__ __DISABLE_PROMPTER__ __DISABLE_SHELL__ __OLDSCHOOL_RANDOM__
     )
-    set(ENGINE_INCLUDES ${CHUCK_BASE}/src/core ${CHUCK_BASE}/Daisy/shim)
+    set(ENGINE_SYSTEM_INCLUDES ${CHUCK_BASE}/src/core ${CHUCK_BASE}/Daisy/shim)
     set(ENGINE_LDSCRIPT linker/alt_qspi_chuck.lds)
     set(ENGINE_BOOT_QSPI TRUE)
     set(ENGINE_SOURCES
@@ -515,12 +518,23 @@ target_compile_options(${FIRMWARE_NAME} PRIVATE
     -fno-unwind-tables
     -fshort-enums
     -Wno-register
+    -Wextra
+    -Wno-missing-field-initializers
+    -Wno-unused-parameter
     ${APP_OPT}
     ${ENGINE_OPTIONS}
 )
 
 # PARITY: the Make build forces `-include stm32h7xx.h` globally and adds -Isrc/ -Ilib/.
 target_include_directories(${FIRMWARE_NAME} PRIVATE src lib ${ENGINE_INCLUDES})
+# PARITY (warnings): Make puts vendored trees and libDaisy/DaisySP behind -isystem; do the same here.
+# The daisy/DaisySP dirs reach the app through the link, so mark their interface dirs SYSTEM (the
+# SYSTEM target property needs CMake 3.25; this floor is 3.20).
+target_include_directories(${FIRMWARE_NAME} SYSTEM PRIVATE ${ENGINE_SYSTEM_INCLUDES})
+foreach(_lib daisy ${DAISYSP_LIB})
+    set_target_properties(${_lib} PROPERTIES
+        INTERFACE_SYSTEM_INCLUDE_DIRECTORIES $<TARGET_PROPERTY:${_lib},INTERFACE_INCLUDE_DIRECTORIES>)
+endforeach()
 target_compile_options(${FIRMWARE_NAME} PRIVATE -include stm32h7xx.h)
 
 # PARITY: the QSPI engines (csound/chuck) link an external static lib (libcsound.a / libchuck.a) and need

@@ -270,7 +270,7 @@ def _wire_makefile(root: Path, name: str, manifest: dict) -> None:
         f'C_DEFS += -DGEN_EXPORTED_CPP=\\"{gen_name}.cpp\\"\n'
         f"C_DEFS += -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter\n"
         f"GEN_DIR = src/engine/{engine}\n"
-        f"GEN_INC = -I$(GEN_DIR) -I$(GEN_DIR)/gen -I$(GEN_DIR)/gen/gen_dsp\n"
+        f"GEN_INC = -I$(GEN_DIR) -isystem $(GEN_DIR)/gen -isystem $(GEN_DIR)/gen/gen_dsp\n"
         f"ENGINE_SOURCES = $(GEN_DIR)/_ext_daisy.cpp src/engine/gen/genlib_arena.cpp\n"
         f"# <<< gen:{name} <<<\n"
     )
