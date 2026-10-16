@@ -10,6 +10,7 @@
 #include "mode.h"
 #include "dsp/divider.h"
 #include "dispatcher.h"
+#include "irq.queue.h"
 #include "xfade.h"
 #include "fx.h"
 #include "dsp/smooth.h"
@@ -40,11 +41,20 @@ public:
 
     void init(const Params p);
 
+    /* 
+    Applies the commands posted with set_mode, trigger, toggle_play, play, stop, toggle_recording
+    and clear_sequence.
+    Must be called from the audio callback, which is the only context allowed
+    to touch the dispatcher and the voices.
+    */
+    void process_commands();
+
     void process_out(const float in0, const float in1, float& out0, float& out1);
     void process_in(const float in0, const float in1);
 
     bool is_generating() const { return _generator.is_generating(); }
 
+    /* Safe to call from any context: these are deferred to process_commands. */
     void toggle_play();
     void play();
     void stop();
@@ -52,16 +62,16 @@ public:
     bool is_play_queued() const { return _is_play_queued; }
 
     bool is_armed() const { return _is_armed; }
-    void toggle_recording();
+    void toggle_recording(); // deferred to process_commands
     void disarm() { _set_buf_armed(false); }
     bool is_recording() const { return _buffer.is_recording(); }
     bool is_overdubbing() const { return is_playing() && is_recording(); }
     bool is_empty() const { return _buffer.is_empty(); }
 
-    void clear_sequence();
+    void clear_sequence(); // deferred to process_commands
     
     void tick(const bool common_tick, const bool is_key);
-    void trigger(Event *);
+    void trigger(const Event *); // deferred to process_commands
     void reset_track_divider() { _pattern_divider.reset(); }
 
     float norm_start() const;
@@ -87,7 +97,9 @@ public:
     float tempo_to_fit(const float frac);
 
     Mode mode() const { return _mode; }
-    void set_mode(const Mode val);
+    /* The mode the deck has been asked for. Can be ahead of mode() while a switch is in flight. */
+    Mode target_mode() const { return _target_mode; }
+    void set_mode(const Mode val); // deferred to process_commands
     void set_force_mono(const bool value)  { _force_mono = value; }
     bool force_mono() const { return _force_mono; }
 
@@ -104,7 +116,31 @@ public:
 private:
     NOCOPY(Deck)
 
+    struct Command {
+        enum class Type: uint8_t {
+            SetMode,
+            Trigger,
+            TogglePlay,
+            Play,
+            Stop,
+            ToggleRecording,
+            ClearSequence
+        };
+        Type type;
+        Mode mode;
+        Event event;
+    };
+    void _enqueue_command(const Command::Type, const Mode = Mode::None, const Event* = nullptr);
+
+    void _validate_mode(const Mode);
     void _set_mode(const Mode);
+
+    void _toggle_play();
+    void _play();
+    void _stop();
+    void _toggle_recording();
+    void _trigger(const Event*);
+    void _clear_sequence();
 
     void _start_recording();
     void _stop_recording();
@@ -128,6 +164,7 @@ private:
     void _on_vox_stop(const uint8_t vox_idx);
     bool _needs_kickstart() const;
 
+    IrqQueue<Command, 16> _commands;
     Dispatcher<Generator::kVoxCount> _dispatcher;
     Detector        _detector;
     Buffer          _buffer;
@@ -161,6 +198,7 @@ private:
 
     Mode _mode;
     Mode _pending_mode;
+    volatile Mode _target_mode;
 
     bool _is_armed;  
     bool _is_play_queued;

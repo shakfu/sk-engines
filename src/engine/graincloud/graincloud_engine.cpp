@@ -22,6 +22,7 @@ void GraincloudEngine::init(const EngineContext& ctx)
         // graincloud: lock the deck to Reel so the Play pad plays immediately (no slice-queue), and the
         // L/C/R switch is free to mean grain direction (set_config(Mode)) instead of the granular mode.
         deck.set_mode(Mode::Reel);
+        deck.process_commands();   // apply now: audio is not running yet, and init reads the mode
         auto& fx = deck.fx();
         _param_cache[static_cast<size_t>(ParamId::Pos)][ref]           = deck.norm_start();
         _param_cache[static_cast<size_t>(ParamId::GritMix)][ref]       = fx.grit_mix();

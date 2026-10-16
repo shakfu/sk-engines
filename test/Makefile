@@ -19,7 +19,7 @@ UNIT_SRC := ../src/dsp/divider.cpp ../src/transport/synclock.cpp \
 # Test sources.
 TEST_SRC := test_main.cpp test_divider.cpp test_synclock.cpp test_config.cpp \
             test_wav.cpp test_speedmap.cpp test_follower.cpp test_sample16.cpp \
-            test_pcmconvert.cpp test_pcmloader.cpp
+            test_pcmconvert.cpp test_pcmloader.cpp test_phasor.cpp
 
 runner: $(UNIT_SRC) $(TEST_SRC) check.h
 	$(CXX) $(CXXFLAGS) $(UNIT_SRC) $(TEST_SRC) -o runner

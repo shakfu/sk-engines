@@ -42,7 +42,7 @@ void GranularEngine::set_param(const ParamId id, const DeckRef::Ref ref, const f
     _param_cache[static_cast<size_t>(id)][deck_ref] = v;
 
     auto& deck = _core.deck(deck_ref);
-    const auto mode = deck.mode();
+    const auto mode = deck.target_mode();   // route to the selected mode, even while a switch is pending
 
     switch (id) {
         case ParamId::Pos:           deck.set_start(v); break;
@@ -118,7 +118,7 @@ bool GranularEngine::set_config(const ConfigId id, const DeckRef::Ref ref, const
         case ConfigId::Mode: {
             auto& deck = _core.deck(deck_ref);
             const Mode nm = v == 2 ? Mode::Drift : v == 1 ? Mode::Reel : Mode::Slice;
-            if (nm == deck.mode()) return false;
+            if (nm == deck.target_mode()) return false;
             deck.set_mode(nm);
             _core.infer_panner_mode();
             return true;
@@ -144,7 +144,7 @@ GritReseed GranularEngine::toggle_grit_mode(const DeckRef::Ref ref)
 
 DeckLayout GranularEngine::deck_layout(const DeckRef::Ref ref)
 {
-    switch (_core.deck(_safe_ref(ref)).mode()) {
+    switch (_core.deck(_safe_ref(ref)).target_mode()) {
         case Mode::Reel:  return DeckLayout::single;
         case Mode::Slice: return DeckLayout::slice;
         case Mode::Drift: return DeckLayout::chord;
@@ -156,7 +156,7 @@ DeckLayout GranularEngine::deck_layout(const DeckRef::Ref ref)
 bool GranularEngine::size_sets_tempo(const DeckRef::Ref ref)
 {
     auto& deck = _core.deck(_safe_ref(ref));
-    return deck.mode() == Mode::Slice && !deck.is_empty();
+    return deck.target_mode() == Mode::Slice && !deck.is_empty();
 }
 
 Capabilities GranularEngine::capabilities() const

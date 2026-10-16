@@ -693,11 +693,11 @@ void CoreUI::_process_switches()
     _engine.set_config(ConfigId::SizeModOn,  DeckRef::B, (sr2.test(0) || !sr2.test(1)) ? 1 : 0);
 
     // Manual tempo tap switch
-    // Update no faster than 500Hz
+    // Update no faster than 250Hz
     static auto is_tap_tapped = false;
     static uint32_t last_tap_update = 0;
     uint32_t now = System::GetNow();
-    if(now - last_tap_update >= 2)
+    if(now - last_tap_update >= 4)
     {
         last_tap_update = now;
         is_tap_tapped = sr2.test(6);

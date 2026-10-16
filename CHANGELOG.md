@@ -14,7 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Wider WAV acceptance on every card-reading engine** ([`docs/dev/unified-wav-reader.md`](docs/dev/unified-wav-reader.md)). tape, shuttle, softcut, granular and the `.wav` path of radio/bard/pstretch now load 8/16/24/32-bit integer or 32-bit float WAV, 1-8 channels, 4-192 kHz. Conversion runs in the main loop, not the audio ISR. Stereo folds to mono by averaging; an off-rate file is resampled to 48 kHz by linear interpolation. Resampling at load was chosen over rebasing each engine's playhead: loop lengths, RAM caps and softcut's buffer stay in device frames, so a loaded 44.1 kHz loop and an on-device take share one time base. radio/bard/pstretch already rebase pitch from the header rate and are not resampled. Write formats are unchanged, and a native file still streams with no conversion. Cost: +4.3-7.4 KB SRAM_EXEC per engine; pstretch is at 84.67% of its 200 KB region. `sk_card.py verify` and the web front-end follow the new rules. Not yet verified on hardware.
 
-- **granular: Alt+POS start-offset walk** (`CapAltPos`, [`docs/engines/granular.md`](docs/engines/granular.md)). In Slice mode or on a manually sliced buffer, every 1-8 triggers the snapped start advances by the slices the current size spans, wrapping at the buffer end. A fixed slice loop then moves through the recording. At 0 the walk is off; stopping the deck or returning the knob to 0 rewinds it to the POS point. Not yet verified on hardware.
+- **granular: Alt+POS start-offset walk** (`CapAltPos`, [`docs/engines/granular.md`](docs/engines/granular.md)). In Slice mode or on a manually sliced buffer, every 1-8 triggers the snapped start advances by the slices the current size spans, wrapping at the buffer end. A fixed slice loop then moves through the recording. At 0 the walk is off; stopping the deck or returning the knob to 0 rewinds it to the POS point. Ported from upstream v1.2.1. Not yet verified on hardware.
 
 - **OSC codec for the terminal channel** (`make ENGINE=<e> TERMINAL=1 OSC=1`, [`docs/dev/terminal-osc.md`](docs/dev/terminal-osc.md)). An optional firmware variant that swaps layer [2] of the terminal channel from line-ASCII to OSC over SLIP, so the device can be a node in a Max/Pd/TouchOSC rig where a fader binds to an address once and then just sends floats. Line-ASCII remains the default and the floor.
 
@@ -216,6 +216,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **The tap switch is polled every 4 ms instead of 2 ms**, from upstream v1.3.0, so contact bounce is less likely to register as a second tap.
+
 - **The firmware build compiles with `-Wextra`**, using the same flags as `host/` (`-Wno-missing-field-initializers -Wno-unused-parameter`). Vendored trees and libDaisy/DaisySP moved from `-I` to `-isystem`, in both `Makefile` and `CMakeLists.txt`, so their warnings stay out of the count. Every CI target, plus `csound` and `chuck`, builds a byte-identical `.bin` with 0 warnings. CI builds with `WERROR=1` to keep it at 0; local builds only warn. The pass found no defects in `src/ui`, `src/hw`, `src/memory` or `app.cpp`.
 
 - **The front door.** `README.md` opens with a four-step quickstart — get a binary, flash it over the rear USB-C, build a card if the engine reads one, make a sound — above the engine catalogue rather than 250 lines below it. The material all existed; it was ordered for someone who already knew the project.
@@ -276,6 +278,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`docs/dev/terminal-impl.md` corrected: "every engine now fits" was true only of `SRAM_EXEC`.** pstretch fails on the data region instead, which the fit table was not measuring.
 
 ### Fixed
+
+- **granular and graincloud: upstream Spotykach v1.3.1 fixes** ([`docs/dev/1.2.0-upstream-sync.md`](docs/dev/1.2.0-upstream-sync.md)). Playheads are fixed-point, so pitch no longer drifts deep into a long buffer: a float position 2M frames in rounded every increment to 1/8 frame. Play, stop, trigger, mode, record and clear now run in the audio callback; gate triggers came from the TIM5 ISR and pads from the main loop while the audio ISR ran the same dispatcher. A switch to Drift waits for sounding voices from any mode, not only Slice. Upstream's version of that fix never completes Reel -> Drift during playback; sk applies the pending switch from any mode. Also: an empty-buffer guard in `Buffer::read_linear`, and two dispatcher guards against a hang and a count underflow. Not yet verified on hardware.
 
 - **granular slice state.** A buffer shorter than one slice gave `slice_count` 0, and the unsigned decrement wrapped `_auto_slice_max_idx` to SIZE_MAX, which `_snap()` used as a divisor. `clear_slices()` zeroed the points but kept `_slice_points_count`, so the manual branch indexed an array of zeros. Re-arming a deck kept the previous recording's slice points. `Storage::select_slot_at` now ignores an out-of-range index.
 

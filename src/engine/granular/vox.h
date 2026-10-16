@@ -82,7 +82,7 @@ private:
 
     void _seed();
 
-    void _activate(float playhead, const bool is_first = false);
+    void _activate(Phasor playhead, const bool is_first = false);
 
     void _do_trigger();
 

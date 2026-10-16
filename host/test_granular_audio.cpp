@@ -281,6 +281,24 @@ int main() {
         }
     }
 
+    // --- Reel -> Drift while playing lands -------------------------------------------------------
+    // A switch to Drift waits for the sounding voices to stop (Deck::_validate_mode). Upstream 1.3.1
+    // only applied the wait from Slice, so from Reel the voice was re-dispatched in Reel and the
+    // deck never left it.
+    {
+        load_buffer(e, 0.5f, 48000);
+        for (auto d : { DeckRef::A, DeckRef::B }) e.set_config(ConfigId::Mode, d, kSwitchReel);
+        for (auto d : { DeckRef::A, DeckRef::B })
+            if (!e.play_leds(d).playing) e.on_play_pad(d, false);
+        render(transport, e, 200);
+        check(e.play_leds(DeckRef::A).mode == Mode::Reel, "deck plays in Reel before the switch");
+        e.set_config(ConfigId::Mode, DeckRef::A, kSwitchDrift);
+        const Stats s = render(transport, e, 1200);
+        check(e.play_leds(DeckRef::A).mode == Mode::Drift, "Reel -> Drift while playing reaches Drift");
+        check(e.play_leds(DeckRef::A).playing, "the deck keeps playing across the switch");
+        check(s.finite, "the Reel -> Drift switch renders finite audio");
+    }
+
     // --- Alt+POS start-offset walk ---------------------------------------------------------------
     // With the walk off, every trigger replays the slice POS points at - the quiet head of the ramp.
     // With it on, the start advances one size-worth of slices per trigger, so the louder tail of the

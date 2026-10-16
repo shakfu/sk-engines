@@ -9,6 +9,7 @@ void run_follower_tests();
 void run_sample16_tests();
 void run_pcmconvert_tests();
 void run_pcmloader_tests();
+void run_phasor_tests();
 
 int main() {
   run_divider_tests();
@@ -20,6 +21,7 @@ int main() {
   run_sample16_tests();
   run_pcmconvert_tests();
   run_pcmloader_tests();
+  run_phasor_tests();
   std::printf("\n%d passed, %d failed\n", g_pass, g_fail);
   return g_fail ? 1 : 0;
 }
