@@ -192,7 +192,7 @@ Headerless `.raw` exists solely for RadioMusic card compatibility. Keep acceptin
 
 `scripts/card_layout.py` is the single source of truth the CLI, `make check-sdcard` and `web/` all read. The collapse there was not four specs becoming one — it was noticing that one dataclass had been doing **two jobs**, and that the widened read path pulled them apart:
 
-- **`Accepts`** — what the firmware will LOAD. Two instances now cover all ten engines, split on the only axis that still differs: `ACCEPT_48K` (the engines with no resampler) and `ACCEPT_SCANNED` (the ones that already resample, so any rate works). `verify` predicts against this.
+- **`Accepts`** — what the firmware will LOAD. Two instances now cover all ten engines, split on the only axis that still differs, the container: `ACCEPT_WAV` (WAV only) and `ACCEPT_SCANNED` (radio/bard/pstretch, which also take headerless `.raw`). Both accept any decodable depth and channel count at any rate; this pair was `ACCEPT_48K`/`ACCEPT_SCANNED` until step C. `verify` predicts against this.
 
 - **`Fmt`** — what `convert` WRITES, and what a README recommends. The four narrow native formats are unchanged, renamed `TARGET_*` to stop them reading as acceptance rules.
 
@@ -222,25 +222,23 @@ Listed so effort is not spent here.
 
 ## Risks
 
-- **SRAM_EXEC.** The firmware links at ~89% SRAM_EXEC at `-O2` ([`softcut-impl.md`](softcut-impl.md)), and `card.cpp` already carries `#pragma GCC optimize("Os")` to claw space back. The decorator is small (<1 KB expected) but not free — take a size measurement on-target before step B lands, and `-Os` the new TU by default since it is main-loop-only code.
+Written before the work; each item now carries its outcome.
 
-- **Scratch buffer growth.** The expansion ratios in step B are the one place this can quietly cost SDRAM or, worse, silently truncate a read. Cover it with a host test that runs every accepted format through the decorator at a chunk size that is *not* a multiple of the frame size.
+- **SRAM_EXEC.** The firmware linked at ~89% SRAM_EXEC at `-O2` ([`softcut-impl.md`](softcut-impl.md)), so the plan was to measure on-target before step B. Outcome: measured per step (tables above). pstretch is the tightest, at 84.67% of its 200 KB region.
 
-- **Fewer rejects means fewer diagnostics.** Today a wrong-format file strobes amber (`tape_engine.cpp` `_err_fmt`). Widening acceptance is a net improvement — a converted file beats a rejected one — but the strobe stops being the signal that something is off-spec. Off-rate playback in particular becomes *audible* rather than *refused*, which is the argument for gating step C per engine.
+- **Scratch buffer growth.** The plan feared conversion expansion would overflow or truncate the shared scratch. Outcome: did not arise. `ConvertingSource` sits behind `PlayStream` with its own 512-byte stage, so it is asked for destination bytes. The non-frame-aligned case is covered by `DribbleSource` in `host/test_stream.cpp`.
 
-- **Test surface.** `host/` covers the readers well. New cases needed: each depth × each channel count through the decorator, the non-frame-aligned chunk size above, and a fast-path assertion that a 48 k f32 mono file is still byte-identical end to end (the shuttle guarantee).
+- **Fewer rejects means fewer diagnostics.** Still true. A wrong-format file no longer strobes amber (`tape_engine.cpp` `_err_fmt`); it plays. The remaining rejects are an undecodable format (f64, ADPCM), more than 8 channels, and a rate outside 4-192 kHz. Step C was not gated per engine: resampling in the adapter removed the per-engine rate semantics that justified a gate.
+
+- **Test surface.** Outcome: every depth is covered in `test/test_pcmconvert.cpp`, channel folding and the straddle carry in `test/test_pcmloader.cpp`, and the decorator in `host/test_stream.cpp`. The fast path is asserted only as `is_identity` (no adapter in the path). There is no end-to-end byte-identity test of a 48 kHz f32 mono file.
+
+- **Open: resampled length.** `ConvertingSource` emits 1-2 frames fewer than `out_frames()` reports (1 s at 44.1 kHz: 47,999 vs 48,000). shuttle and softcut loads still end, via the idle path. tape's Faded de-click dip moves 1 frame later per loop pass.
+
+- **Open: hardware.** No on-device pass yet. Main-loop cost at high input rates is unmeasured: 192 kHz stereo i32 is ~1.5 MB/s of SD reads per deck.
 
 ## Order of work
 
-1. **A — one parser.** No behaviour change; existing host tests pass unmodified.
-
-2. **B — converting decorator**, depth + channels, 48 k gate still in place. This is where the user-visible win lands: stereo and 16/24-bit files start working on every engine.
-
-3. **C — rate**, per engine: tape and shuttle first, softcut on its own decision.
-
-4. **E — tooling and docs** collapse to match what the firmware actually accepts.
-
-Steps 1 and 2 are the high-value, low-risk core and are worth doing whether or not 3 ever happens.
+Done in this order: A (one parser), B (converting decorator, depth + channels), C (rate, in the adapter for all streaming engines at once rather than per engine), E (tooling and docs).
 
 ## See also
 

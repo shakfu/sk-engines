@@ -85,7 +85,7 @@ The ENV knob picks one of four loop behaviors by quadrant, from fully CCW:
 |---|---|---|
 | `< 0.25` | **None** | play once, stop at end |
 | `< 0.5` | **Plain loop** | seamless repeat at full level |
-| `< 0.75` | **Faded loop** | repeat with a ~50 ms fade across the layer (de-click) |
+| `< 0.75` | **Faded loop** | repeat with a ~50 ms fade across the loop boundary (de-click) |
 | `>= 0.75` | **Frippertronics** | each pass ~0.6x quieter; fades out over ~8 passes, then auto-stops |
 
 Loops are the *recorded take's* length (free-run, not tempo-aligned).
