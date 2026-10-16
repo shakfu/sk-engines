@@ -47,11 +47,11 @@ from pathlib import Path
 # Curated "mature" engine set: the engines stable enough to publish prebuilt. Others stay
 # buildable but unlisted. Override per-invocation with args or the RELEASE_ENGINES env var.
 #
+# granular ships: it tracks upstream Spotykach on the sk-engines platform, and it is the published
+# reader of the base card's `SK/{B,G,P,R,T,Y}` tape store
+# (test_every_card_bank_is_playable_by_a_published_engine).
+#
 # Deliberately NOT published (all still build via `make ENGINE=<name>`):
-#   - granular    : the stock/upstream spotykach firmware; releases ship engines NEW to sk-engines.
-#                   Its `SK/{B,G,P,R,T,Y}/` folders on the base card are NOT orphaned by this: they are
-#                   the platform's shared tape store (every engine with CapTapeStorage), and graincloud
-#                   ships and reads them. See test_every_card_bank_is_playable_by_a_published_engine.
 #   - passthrough : the minimal reference engine, not a playable instrument.
 #   - chorus      : the simplest single-deck Faust demo (the dual-deck demos `filter`/`voice` ship instead).
 #   - gigaverb    : the lone gen~ demo - left out until it is tested / optimized further (it builds fine,
@@ -69,7 +69,7 @@ DEFAULT_ENGINES = [
     "filter",
     "edrums",
     "glitch",
-    "graincloud",
+    "granular",
     "mosc",
     "pstretch",
     "qdelay",

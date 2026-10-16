@@ -148,6 +148,17 @@ int main() {
         printf("non-RIFF buffer -> empty: OK\n");
     }
 
+    // 8) The loader's tail scan: the bytes AFTER `data` (where most tools write `cue `) parsed on
+    //    their own, with no RIFF header in the buffer. Card::_finish_cues reads exactly this.
+    {
+        auto f = riff({ fmt_chunk(), data_chunk(64), cue_chunk({ 3, 9 }) });
+        const size_t tail = 12 + fmt_chunk().size() + data_chunk(64).size();
+        WavCues cues;
+        find_cue_chunk(f.data() + tail, f.size() - tail, 0, kLimit, cues);
+        assert(cues.count == 2 && cues.frames[0] == 3 && cues.frames[1] == 9);
+        printf("cue chunk found by a tail scan with no RIFF header: OK\n");
+    }
+
     printf("\nAll WAV cue-point tests passed.\n");
     return 0;
 }

@@ -84,7 +84,7 @@ The two paths get to "any rate" differently, which only matters if you are readi
 
 Plus `SK/config.txt` (settings) and `SK/MEM` (written by the device).
 
-`SK/{B,G,P,R,T,Y}` is listed under granular above, but it is really the **platform's** tape store — `kRootDir` in `src/memory/storage.cpp`, used by every engine that declares `CapTapeStorage`. Today that is granular *and* graincloud, which read and write the same six folders. That is why the folder is not named after an engine, and why renaming it would reach further than it looks.
+`SK/{B,G,P,R,T,Y}` is listed under granular above, but it is really the **platform's** tape store — `kRootDir` in `src/memory/storage.cpp`, used by every engine that declares `CapTapeStorage`. Today that is granular alone. That is why the folder is not named after an engine, and why renaming it would reach further than it looks.
 
 Note that **tape, shuttle and softcut share one native format** — 48 kHz mono 32-bit float WAV, written and read through the same streaming service. Only the folder and the filename prefix differ, and that separation is the point: it is what stops a softcut loop overwriting a tape take, and it is how `verify` knows which length limit to apply to bytes that are otherwise identical.
 

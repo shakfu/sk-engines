@@ -23,6 +23,8 @@ namespace spotykach
         void fill_brightness(const float brightness);
 
         void set_segment(float norm_start, float norm_size, const bool sharp = false);
+        // Upstream 1.3.0 segment anti-aliasing (smoothstep, leading LED fades in). Granular sets it.
+        void set_soft_edges(const bool on) { _soft = on; }
 
         void set_point_hex_color(const uint32_t);
 
@@ -68,5 +70,6 @@ namespace spotykach
         float _segment_brightness;
 
         bool _is_updated;
+        bool _soft = false;
     };
 }

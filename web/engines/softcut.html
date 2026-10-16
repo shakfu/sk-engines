@@ -23,7 +23,7 @@
 <ol><li>PITCH for varispeed/reverse, the FLUX pad to filter, Seq to re-sync against the other deck.</li></ol>
 <p>Each voice's buffer is <strong>~10.9 s</strong> (2^19 frames @ 48 kHz, 2 MB), so a single take can be up to ~10.9 s at the default 1x record speed.</p>
 <h3>Build / flash</h3>
-<pre><code>make ENGINE=softcut            # normal SRAM build (-O2, ~89% SRAM_EXEC)
+<pre><code class="lang-text">make ENGINE=softcut            # normal SRAM build (-O2, ~89% SRAM_EXEC)
 make ENGINE=softcut METER=1    # + on-device CPU load meter over USB serial / ring A
 make program-dfu               # flash (enter DFU first)</code></pre>
 <p>Loop clips are <strong>32-bit float, mono, 48 kHz</strong> WAVs at <code>softcut/loop_&lt;a|b&gt;_&lt;1..8&gt;.wav</code> on the SD card - the same format Alt+Seq/Alt+Rev save, so saved loops reload directly.</p>

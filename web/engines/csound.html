@@ -4,9 +4,9 @@
 <p>_Generated from <a href="https://github.com/shakfu/sk-engines/blob/main/docs/diagrams/controls/csound.json"><code>docs/diagrams/controls/csound.json</code></a> via <code>make diagrams</code>._</p>
 <h3>Build &amp; flash</h3>
 <p>One-time: build the Csound library (needs <code>cmake</code> and the <code>arm-none-eabi</code> GCC toolchain):</p>
-<pre><code>scripts/fetch_csound.sh          # download Csound 7 + cross-build libcsound.a</code></pre>
+<pre><code class="lang-text">scripts/fetch_csound.sh          # download Csound 7 + cross-build libcsound.a</code></pre>
 <p>Then build + flash the engine (put the board in DFU first):</p>
-<pre><code>make engine-csound               # clean + build the QSPI image + flash
+<pre><code class="lang-text">make engine-csound               # clean + build the QSPI image + flash
 make program-csound              # re-flash the last build without rebuilding</code></pre>
 <p>Recover the board at any time by flashing any normal engine.</p>
 <h3>Controls</h3>
@@ -15,7 +15,7 @@ make program-csound              # re-flash the last build without rebuilding</c
 <p>What each knob actually does is up to the patch (it reads named control channels) — the table above is the convention the bundled patches follow.</p>
 <h3>Loading patches from the SD card</h3>
 <p>Put full CSD documents in a <code>csound/</code> folder at the card root, named <code>0.csd</code> … <code>7.csd</code>:</p>
-<pre><code>&lt;card&gt;/csound/0.csd
+<pre><code class="lang-text">&lt;card&gt;/csound/0.csd
 &lt;card&gt;/csound/1.csd</code></pre>
 <p>Ready-to-copy examples are in <a href="https://github.com/shakfu/sk-engines/blob/main/examples/csound"><code>examples/csound/</code></a> — a drone+pluck, a fat bass, and a polyphonic MIDI lead, with a README.</p>
 <ul><li>At boot the engine <strong>auto-loads</strong> the lowest-numbered patch (or the built-in if the card has none).</li></ul>
@@ -29,7 +29,7 @@ make program-csound              # re-flash the last build without rebuilding</c
 <ul><li>Each section tag on its <strong>own line</strong>: <code>&lt;CsScore&gt;</code> then <code>&lt;/CsScore&gt;</code>, never <code>&lt;CsScore&gt;&lt;/CsScore&gt;</code> on one line (an empty section collapsed to one line won't compile).</li></ul>
 <ul><li>Include a <code>&lt;CsOptions&gt;&lt;/CsOptions&gt;</code> block (it can be empty).</li></ul>
 <ul><li>A UTF-8 BOM and CRLF (Windows) line endings are tolerated — the engine strips them on load.</li></ul>
-<pre><code>&lt;CsoundSynthesizer&gt;
+<pre><code class="lang-text">&lt;CsoundSynthesizer&gt;
 &lt;CsOptions&gt;
 &lt;/CsOptions&gt;
 &lt;CsInstruments&gt;

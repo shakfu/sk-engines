@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/shakfu/sk-engines/actions/workflows/ci.yml/badge.svg)](https://github.com/shakfu/sk-engines/actions/workflows/ci.yml)
 
-**One Spotykach, twenty-one instruments.** This firmware turns the hardware into a platform: the panel, pads, knobs, clock, CV and SD card stay exactly as they are, and the DSP engine underneath is swappable. Flash a different `.bin` and the same box is a granular looper, a dub delay, a Plaits macro-oscillator, a tape deck, a resonator, or a Csound/ChucK interpreter you write patches for.
+**One Spotykach, twenty instruments.** This firmware turns the hardware into a platform: the panel, pads, knobs, clock, CV and SD card stay exactly as they are, and the DSP engine underneath is swappable. Flash a different `.bin` and the same box is a granular looper, a dub delay, a Plaits macro-oscillator, a tape deck, a resonator, or a Csound/ChucK interpreter you write patches for.
 
 ## Quickstart — from nothing to a sound
 
@@ -69,14 +69,13 @@ Current engines include:
 
 18. [qdelay](docs/engines/qdelay.md): a dub/ambient **flavor of the delay** (inspired by [qdelay](https://github.com/tiagolr/qdelay)) — the same delay grammar (tempo-synced divisions, feedback, mix, PITCH, ENV tone, mod LFO, Freeze/Reverse pads, Stereo/DoubleMono/Ping-pong) with the character palette swapped to **Clean / Diffuse / Duck** (Reel/Slice/Drift switch). Diffuse runs the feedback through an 8-stage allpass diffuser (a JUCE-free port of qdelay's `Diffusor`) for a dense reverb-like wash; Duck attenuates the wet under the dry input so repeats bloom in the gaps. A normal **SRAM build** (the diffuser's buffers live in SDRAM)
 
-Four further engines live in the tree and build the same way, but are not (yet) part of the numbered list above: [bard](docs/engines/bard.md) (bookmark-navigated audiobook decks, SD-streamed), [glitch](docs/engines/glitch.md) (dual-deck lo-fi/circuit-bent noise voice, GPLv3), [pstretch](docs/engines/pstretch.md) (real-time PaulStretch ambient time-smear), and [graincloud](docs/engines/graincloud.md) (a granular-cloud variant of the looper).
+Three further engines live in the tree and build the same way, but are not (yet) part of the numbered list above: [bard](docs/engines/bard.md) (bookmark-navigated audiobook decks, SD-streamed), [glitch](docs/engines/glitch.md) (dual-deck lo-fi/circuit-bent noise voice, GPLv3), and [pstretch](docs/engines/pstretch.md) (real-time PaulStretch ambient time-smear).
 
 ### At a glance
 
 | Engine | Type | SD card | Build | Authored in | Notes |
 | --- | --- | --- | --- | --- | --- |
 | [granular](docs/engines/granular.md) | Looper / sampler | Optional (save/load loops) | SRAM | C++ | Default build; the original firmware as an engine |
-| [graincloud](docs/engines/graincloud.md) | Looper / sampler | Optional (save/load loops) | SRAM (`-Os`) | C++ | The granular tree built with `SPK_GRAIN_GF`: a GrainflowLib cloud replaces the grain core |
 | [tape](docs/engines/tape.md) | Looper / recorder | **Required** (streams) | SRAM | C++ | Two SD-streamed decks, no length cap |
 | [shuttle](docs/engines/shuttle.md) | Looper | Optional (load slots) | SRAM | C++ | Four in-SDRAM tracks, bipolar varispeed |
 | [softcut](docs/engines/softcut.md) | Looper (overdub) | Optional (load/save clips) | SRAM | C++ | Vendored monome softcut-lib, 4 voices |

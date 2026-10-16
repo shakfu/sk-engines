@@ -92,7 +92,7 @@ void Core::infer_panner_mode()
 
 void Core::prepare()
 {
-
+    for (auto& d: _decks) d.prepare();
 }
 
 // Clock fan-out: the granular half of the old Driver::_on_clock_tick / _send_tick. Order is preserved

@@ -16,13 +16,14 @@ static const char* const kParamNames[] = {
     "pos", "fluxfb", "env", "envsize", "size", "win", "polyslice", "speed",
     "fluxint", "gritint", "fluxmix", "gritmix", "feedback", "mix", "modspeed", "modamp",
     "tempo", "clickmix", "panspeed", "panrange", "keyinterval", "crossfade", "altpos", "aux",
+    "gritchar",
 };
 static_assert(sizeof(kParamNames) / sizeof(kParamNames[0]) == static_cast<size_t>(ParamId::Count),
               "kParamNames out of sync with ParamId");
 
 // index == (uint8_t)ConfigId.
 static const char* const kConfigNames[] = {
-    "route", "modtype", "lfoshape", "mode", "startmodon", "sizemodon",
+    "route", "modtype", "lfoshape", "mode", "startmodon", "sizemodon", "altsize",
 };
 static_assert(sizeof(kConfigNames) / sizeof(kConfigNames[0]) == static_cast<size_t>(ConfigId::Count),
               "kConfigNames out of sync with ConfigId");
@@ -36,6 +37,7 @@ static const char* const kConfigLabels[] = {
     "0:slice 1:reel 2:drift",         // mode
     "0:off 1:on",                     // startmodon
     "0:off 1:on",                     // sizemodon
+    "0:off 1:on",                     // altsize
 };
 static_assert(sizeof(kConfigLabels) / sizeof(kConfigLabels[0]) == static_cast<size_t>(ConfigId::Count),
               "kConfigLabels out of sync with ConfigId");

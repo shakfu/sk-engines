@@ -12,15 +12,6 @@
 
 namespace spotykach {
 
-#if SPK_GRAIN_GF
-// ENGINE=graincloud only. graincloud is this same engine tree compiled with SPK_GRAIN_GF, where the
-// per-sample Vox array is replaced by a per-block GrainflowLib cloud; the only source file it
-// substitutes is generator.cpp (see src/engine/graincloud/). This forward declaration keeps the
-// GrainflowLib templates out of every other translation unit - only graincloud's generator.cpp and
-// gf_cloud.cpp ever see the definition. Nothing here is compiled into a granular image.
-class GfCloud;
-#endif
-
 class Generator {
 
 friend class Deck;
@@ -34,6 +25,7 @@ public:
   };
 
   static constexpr uint8_t kVoxCount = 3;
+  static constexpr size_t kMaxSpread = 144000; // 3sec @48K
 
   Generator();
   ~Generator() = default;
@@ -44,35 +36,41 @@ public:
 
   void init(Buffer*, size_t* slice_points);
 
+  float norm_spread() const;
+
   // float start() { return static_cast<float>(_start); }
   void pitch_speed_mod_in(const float value);
   
+  float norm_start() const;
+  void set_start(float);
+  void set_start_mod(const float);
+  void set_start_mod_on(const bool);
+  void set_start_mod_cont(const bool val) { _cont_start_mod = val; }; // If set to false (default), start is applied once at the beginning of the slice
+  void set_start_offset_interval(const float norm);
+  uint8_t start_offset_interval() const { return _offset_interval; }
+
+  float norm_size() const;
+  void set_size(const float, const bool alt);
+  void set_size_mod(const float);
+  void set_size_mod_on(const bool);
+  void set_env_size(const float);
+
   void set_shape(const float);
   void set_win_size(const float);
-  void set_win_spread(const float);
-  float win_spread() const { return _input_spread; }
 
   void set_pitch(const float);
 
   void set_is_wide(const bool);
 
-  bool set_speed(float);
+  void set_speed(float);
   void apply_speed() { set_speed(_norm_pitch_speed); }
 
-  void slice();
-  void auto_slice(const size_t slice_size, const size_t slice_count);
-  void clear_slices();
-  void set_snap_to_slice(const bool value) { _snap_to_slice = value; }
-
-  // True when a snapped start has slice boundaries to land on - auto-sliced (Slice mode) or manually
-  // sliced. The start-offset walk is meaningless without them, so both the engine and Deck gate on it.
-  bool has_slices() const { return _slice_points_count || _snap_to_slice; }
-
-  // Start-offset walk (Alt+POS). Every `interval` triggers the snapped start advances by the slice
-  // span the current size covers, wrapping at the end of the buffer - so a static slice loop becomes
-  // a moving one. norm 0 disables it and rewinds the walk to where the POS knob points.
-  void set_start_offset_interval(const float norm);
-  uint8_t start_offset_interval() const { return _offset_interval; }
+  bool has_cue() const { return _cue_points_count || _snap_to_cue; }
+  void auto_cue(const size_t slice_size, const size_t slice_count);
+  void clear_cue();
+  void set_snap_to_cue(const bool value) { _snap_to_cue = value; }
+  size_t* cue_points() const { return _cue_points; }
+  uint8_t* cue_count() { return &_cue_points_count; }
 
   float increment() const { return _increment; }
 
@@ -90,32 +88,17 @@ public:
 
   void process(float& out0, float& out1);
 
-#if SPK_GRAIN_GF
-  // graincloud: the Play pad gates the cloud. Deck sets this from its _is_playing state; process()
-  // emits silence (and clears the "generating" flag) when not playing. Without it the cloud would
-  // granulate the buffer continuously - including a preloaded sample - with Play off.
-  void set_playing(bool p) { _playing = p; }
-#endif
-
 protected:
   void set_mode(const Vox::Mode);
 
-  float start() const { return _input_start; }
-  void set_start(float);
-  void set_start_offset(const float);
-  void set_cont_start_mod(const bool val) { _cont_start_mod = val; }; // If set to false (default), start is applied once at the beginning of the slice
-
-  float size() const { return _input_size; }
-  void set_size(float);
-  void set_size_offset(const float);
+  void apply_dimensions();
+  void reset_start_offset();
 
   bool is_reverse() const { return _reverse; }
   void set_reverse(const bool);
 
-  void reset_start_offset();
-
   void apply_pitch() { set_pitch(_norm_pitch_speed); }
-  void set_cont_pitch_mod(const bool val) { _cont_speed_mod = val; }
+  void set_pitch_mod_cont(const bool val) { _cont_speed_mod = val; }
   
   void trigger(const uint8_t vox_idx, const Event* event);
 
@@ -129,51 +112,33 @@ protected:
 private:
   NOCOPY(Generator)
 
-  size_t _abs_start();
-  size_t _abs_size();
-  size_t _abs_spread();
-  size_t _snap(const float norm_value);
-
-  void _apply_start();
-  void _apply_size();
-  void _apply_spread();
-
   Buffer* _buffer;
   std::array<Vox, kVoxCount> _voxs;
-#if SPK_GRAIN_GF
-  GfCloud* _gf = nullptr; // process() sums this GrainflowLib cloud instead of the Vox array
-  bool _playing = false;  // Play-pad gate (set by Deck::play/stop); the cloud is silent when false
-#endif
 
   std::function<void(const uint8_t)> _on_vox_stop;
 
-  float _input_start;
+  float _abs_start;
   bool _cont_start_mod;
   float _norm_start;
   float _norm_start_offset;
 
-  float _input_size;
+  float _abs_size;
   float _norm_size;
   float _norm_size_offset;
-  float _norm_spread;
-  float _input_spread;
+  float _abs_spread;
+  float _env_norm_size;
 
-  size_t* _slice_points;
   size_t  _slice_size;
-  size_t  _auto_slice_max_idx;
-  uint8_t _slice_points_count;
-  bool    _is_auto_slice;
-  bool    _snap_to_slice;
+  size_t  _auto_cue_max_idx;
+  size_t* _cue_points;
+  uint8_t _cue_points_count;
+  uint8_t _cue_size_delta;
+  bool    _is_auto_cue;
+  bool    _snap_to_cue;
 
-  // Start-offset walk. _slice_delta is how many slices the current size spans, recomputed in _snap()
-  // so a step of the walk advances by exactly one slice-length of audio. _offset_count starts at -1
-  // so the first advance lands on the (interval+1)-th trigger, not the first. _offset is 32-bit and
-  // reduced modulo the slice count in _snap(): a narrower counter would wrap at a value that is not
-  // a multiple of the count, putting a silent skip in an otherwise even walk.
-  uint8_t  _slice_delta;
-  uint32_t _offset;
-  int8_t   _offset_count;
-  uint8_t  _offset_interval;
+  uint32_t _offset;   // 32-bit: a uint8 wraps at 256, not a multiple of the cue count, and skips a step
+  int8_t _offset_count;
+  uint8_t _offset_interval;
 
   float _norm_pitch_speed;
 
@@ -194,5 +159,8 @@ private:
 
   bool _reverse;
   bool _is_triggered;
+  bool _is_start_mod_on;
+  bool _is_size_mod_on;
+  bool _alt_size;
 };
 };

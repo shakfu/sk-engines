@@ -276,11 +276,10 @@ LAYOUT: tuple[Bank, ...] = (
         # The folder name is the PLATFORM's, not granular's: `kRootDir = "SK"` in
         # src/memory/storage.cpp serves every engine with CapTapeStorage. That is why it is not named
         # after an engine, and why renaming it would reach further than it looks.
-        also_read_by=("graincloud",),
         source="src/hw/card.cpp:61-66,131; src/memory/storage.cpp:14",
         blurb="Six colour-coded tapes (B G P R T Y), six slots each. Save with Alt+Play, load with Play. "
-              "This is the platform's shared tape store, so the graincloud engine reads and writes the "
-              "same folders.",
+              "This is the platform's shared tape store: any engine with tape storage reads and writes "
+              "the same folders.",
     ),
     Bank(
         engine="tape",
@@ -411,6 +410,10 @@ CONFIG_PROPERTIES = {
     "mid_ps_a": (0, 1),
     "mid_ps_b": (0, 1),
     "pre_load": (0, 1),
+    "slc_mn_a": (0, 1),
+    "slc_mn_b": (0, 1),
+    "cue_sm_a": (0, 2),
+    "cue_sm_b": (0, 2),
 }
 """SK/config.txt properties and their legal ranges (docs/manual.md; src/memory/storage.h)."""
 
@@ -432,6 +435,14 @@ mid_ps_b
 0
 pre_load
 1
+slc_mn_a
+0
+slc_mn_b
+0
+cue_sm_a
+0
+cue_sm_b
+0
 """
 
 

@@ -93,7 +93,7 @@ ENGINE ?= granular
 ifeq ($(ENGINE), granular)
 C_DEFS += -DSPK_ENGINE_GRANULAR
 # Granular engine = its IEngine wrapper (granular_engine.cpp) + all the DSP, all under src/engine/granular/.
-ENGINE_SOURCES = $(wildcard src/engine/granular/*.cpp)
+ENGINE_SOURCES = $(wildcard src/engine/granular/*.cpp src/engine/granular/fx/*.cpp)
 else ifeq ($(ENGINE), passthrough)
 C_DEFS += -DSPK_ENGINE_PASSTHROUGH
 # Passthrough engine is header-only (src/engine/passthrough/); no engine .cpp to compile.
@@ -246,33 +246,6 @@ ENGINE_SOURCES = src/engine/mosc/mosc_engine.cpp src/engine/csound/spotykach_qsp
 	$(MOSC_TP)/plaits/dsp/fm/algorithms.cc $(MOSC_TP)/plaits/dsp/fm/dx_units.cc \
 	$(MOSC_TP)/plaits/resources.cc \
 	$(STMLIB_TP)/dsp/units.cc $(STMLIB_TP)/utils/random.cc $(STMLIB_TP)/dsp/atan.cc
-else ifeq ($(ENGINE), graincloud)
-# graincloud is THE GRANULAR ENGINE TREE compiled with -DSPK_GRAIN_GF, not a copy of it. Under that
-# flag Generator's per-sample Vox array is replaced by a per-block GrainflowLib cloud (gf_cloud.*) and
-# Deck gates it from the Play pad; every other file - Core, Buffer, Track, Vox, the FX, the modulators
-# - is the same source, compiled twice into two different images. Its vendored GrainflowLib lives in
-# src/engine/graincloud/thirdparty/grainflow/.
-#
-# It used to be a byte-for-byte fork: 35 of 42 files identical, ~3,400 duplicated lines that a fix to
-# granular/ silently did not reach (and graincloud is the PUBLISHED one of the pair). The three files
-# that genuinely differ now carry `#if SPK_GRAIN_GF` blocks in the granular tree - generator.h,
-# generator.cpp and two lines of deck.cpp - so granular/ stays exactly where upstream put it and stays
-# diffable against it, which a shared "graincore" directory would have cost.
-#
-# Include order matters: src/engine/graincloud comes FIRST so granular/generator.cpp's guarded
-# `#include "gf_cloud.h"` resolves (it is not in granular/, so the quoted lookup falls through to -I).
-C_DEFS += -DSPK_ENGINE_GRAINCLOUD -DSPK_GRAIN_GF=1
-# gfSyn pulls M_PI via <cmath>, which strict -std=c++17 does not expose on arm-none-eabi.
-C_DEFS += -DM_PI=3.14159265358979323846
-# Granular + the GrainflowLib templates overflow the execution SRAM at -O2; build at -Os to fit
-# (as reso/reverb do). The M7 @ 480 MHz has ample compute headroom.
-OPT = -Os
-GRAINCLOUD_TP  = src/engine/graincloud/thirdparty
-GRAINCLOUD_INC = -Isrc/engine/graincloud -isystem $(GRAINCLOUD_TP) -Isrc/engine/granular
-# The granular tree MINUS its IEngine wrapper (graincloud_engine.cpp replaces granular_engine.cpp),
-# plus graincloud's own two files. generator.cpp is shared - the SPK_GRAIN_GF branches are inside it.
-ENGINE_SOURCES = $(filter-out src/engine/granular/granular_engine.cpp, $(wildcard src/engine/granular/*.cpp)) \
-                 $(wildcard src/engine/graincloud/*.cpp)
 # gen~ engines (ENGINE=gen_<name>) are appended below by scripts/gen_engine.py, one marker-delimited
 # `else ifeq` block per export. They use the genlib-isolation bridge from gen-dsp + the shared
 # src/engine/gen/ family (GenEngine<W> + the arena-bound genlib runtime). See `make gen-engines`.
@@ -376,7 +349,7 @@ LDFLAGS += -u _printf_float
 # Route ChucK's C-malloc family to the SDRAM pool (chuck_alloc.cpp); the platform heap stays in SRAM.
 LDFLAGS += -Wl,--wrap=malloc,--wrap=free,--wrap=calloc,--wrap=realloc
 else
-$(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', 'qdelay', 'edrums', 'reso', 'mosc', 'graincloud', 'tape', 'radio', 'bard', 'glitch', 'pstretch', 'reverb', 'shuttle', 'softcut', 'gigaverb', 'chorus', 'filter', 'voice', 'csound', or 'chuck')
+$(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', 'qdelay', 'edrums', 'reso', 'mosc', 'tape', 'radio', 'bard', 'glitch', 'pstretch', 'reverb', 'shuttle', 'softcut', 'gigaverb', 'chorus', 'filter', 'voice', 'csound', or 'chuck')
 endif
 # The engine list in that error is HAND-MAINTAINED and had drifted (it was missing glitch, pstretch,
 # softcut and gigaverb). Add a new engine's name to it, and to the matching message in CMakeLists.txt.
@@ -463,7 +436,7 @@ ifeq ($(USB_MIDI),1)
 C_DEFS += -DSPK_USB_MIDI
 endif
 
-C_INCLUDES = -Isrc/ -Ilib/ $(RESO_INC) $(MOSC_INC) $(GRAINCLOUD_INC) $(SOFTCUT_INC) $(GEN_INC) $(CSOUND_INC) $(CHUCK_INC)
+C_INCLUDES = -Isrc/ -Ilib/ $(RESO_INC) $(MOSC_INC) $(SOFTCUT_INC) $(GEN_INC) $(CSOUND_INC) $(CHUCK_INC)
 # NOTE: there used to be `C_USR_FLAGS = -ffast-math -funroll-loops` here, but the core Makefile reads
 # C_USER_FLAGS (with the E), so it was dead - those flags never reached the compiler and the shipping
 # firmware was built without them. Removed to stop it reading as active. The device meets its CPU/SRAM
@@ -584,28 +557,16 @@ build/.version-stamp: FORCE | $(BUILD_DIR)
 # The stamps are prerequisites of every object, so all the recipes run before any compilation starts;
 # the rm therefore cannot race a concurrent -j compile.
 #
-# -DSPK_GRAIN_GF is in the same class and is why granular <-> graincloud needs one. Those two engines
-# compile THE SAME granular tree to the same object basenames (build/generator.o, build/deck.o, ...),
-# and the flag adds members to Generator - so a `make ENGINE=granular` over a stale graincloud tree
-# would otherwise reuse objects whose Generator is two members longer, i.e. the layout mismatch above.
-# The .engine-stamp above cannot cover this: it only re-makes a named handful of objects, and here the
-# whole shared tree is affected. (Before the dedup the two engines had separate directories and this
-# could not arise; deleting ~3,400 duplicated lines is what makes the stamp necessary.)
-#
 # -DSPK_USB_MIDI needs one for a subtler reason than layout: it defaults ON for BOOT_QSPI and OFF
 # otherwise (see USB_MIDI below), so switching from any SRAM engine to a QSPI one reuses platform
 # objects compiled WITHOUT it. The result builds, links, boots, and silently ignores device MIDI -
 # byte-for-byte the failure the CMake gap produced (see CHANGELOG), reachable from the Makefile too:
 # a clean `mosc` image is ~304 KB, the same image built over a stale reso tree ~292 KB.
 $(OBJECTS): build/.terminal-stamp build/.osc-stamp build/.usbdiag-stamp build/.termport-stamp \
-            build/.grainflavor-stamp build/.usbmidi-stamp
+            build/.usbmidi-stamp
 
 build/.usbmidi-stamp: FORCE | $(BUILD_DIR)
 	@echo '$(USB_MIDI)' | cmp -s - $@ 2>/dev/null || { echo '$(USB_MIDI)' > $@; rm -f $(BUILD_DIR)/*.o; }
-
-build/.grainflavor-stamp: FORCE | $(BUILD_DIR)
-	@echo '$(ENGINE)' | grep -qx graincloud && echo 1 > $(BUILD_DIR)/.gf-want || echo 0 > $(BUILD_DIR)/.gf-want
-	@cmp -s $(BUILD_DIR)/.gf-want $@ 2>/dev/null || { cp $(BUILD_DIR)/.gf-want $@; rm -f $(BUILD_DIR)/*.o; }
 
 build/.terminal-stamp: FORCE | $(BUILD_DIR)
 	@echo '$(TERMINAL)' | cmp -s - $@ 2>/dev/null || { echo '$(TERMINAL)' > $@; rm -f $(BUILD_DIR)/*.o; }
@@ -686,7 +647,7 @@ test-tools:
 
 # One-shot variant flash: clean -> build -> flash over DFU. Put the device in DFU mode first
 # (hold Reset ~3s until the bottom pad LEDs breathe white), then `make granular` / `make passthrough`.
-.PHONY: engine-granular engine-passthrough engine-delay engine-qdelay engine-edrums engine-reso engine-mosc program-mosc engine-graincloud engine-tape engine-shuttle engine-softcut engine-reverb engine-radio engine-bard engine-glitch engine-pstretch engine-chorus engine-filter engine-voice engine-gigaverb engine-csound program-csound engine-chuck program-chuck
+.PHONY: engine-granular engine-passthrough engine-delay engine-qdelay engine-edrums engine-reso engine-mosc program-mosc engine-tape engine-shuttle engine-softcut engine-reverb engine-radio engine-bard engine-glitch engine-pstretch engine-chorus engine-filter engine-voice engine-gigaverb engine-csound program-csound engine-chuck program-chuck
 engine-granular:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=granular
@@ -729,11 +690,6 @@ engine-mosc:
 # Re-flash the last mosc build without rebuilding (board in DFU).
 program-mosc:
 	-$(MAKE) $(MOSC_FLAGS) program-dfu
-
-engine-graincloud:
-	$(MAKE) clean
-	$(MAKE) -j8 ENGINE=graincloud
-	$(MAKE) ENGINE=graincloud program-dfu
 
 engine-tape:
 	$(MAKE) clean
@@ -1189,7 +1145,7 @@ help:
 	@echo '  make engine-<name>            clean + build + flash in one step, e.g. make engine-delay'
 	@echo ''
 	@echo 'SRAM engines (ENGINE=):'
-	@echo '  granular graincloud tape shuttle softcut radio bard pstretch'
+	@echo '  granular tape shuttle softcut radio bard pstretch'
 	@echo '  delay qdelay reverb gigaverb chorus filter voice'
 	@echo '  edrums reso glitch passthrough'
 	@echo 'QSPI engines (own one-shot target, too large for execution SRAM):'

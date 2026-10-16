@@ -8,7 +8,7 @@ This is the in-repo manual for the **platform** — the parts of the instrument 
 |---|---|
 | the default build (`make`) | [granular](engines/granular.md) — the stock looper/sampler |
 | an effect | [delay](engines/delay.md) · [qdelay](engines/qdelay.md) · [reverb](engines/reverb.md) · [gigaverb](engines/gigaverb.md) · [chorus](engines/chorus.md) · [filter](engines/filter.md) · [pstretch](engines/pstretch.md) |
-| a looper or player | [tape](engines/tape.md) · [shuttle](engines/shuttle.md) · [softcut](engines/softcut.md) · [radio](engines/radio.md) · [bard](engines/bard.md) · [graincloud](engines/graincloud.md) |
+| a looper or player | [tape](engines/tape.md) · [shuttle](engines/shuttle.md) · [softcut](engines/softcut.md) · [radio](engines/radio.md) · [bard](engines/bard.md) |
 | an instrument | [edrums](engines/edrums.md) · [reso](engines/reso.md) · [mosc](engines/mosc.md) · [glitch](engines/glitch.md) · [voice](engines/voice.md) · [csound](engines/csound.md) · [chuck](engines/chuck.md) |
 
 Unlike the published manual, this document is kept in sync with the firmware in this repository: when you change behaviour, update it in the same commit. Where this document and the published manual (<https://tsemah.notion.site/Spotykach-Manual-22c6331933b880c59108c0de25102bb5>) disagree, this one describes what the current code actually does. The published manual documents the granular engine, so the differences are called out in [the granular page](engines/granular.md#notes-vs-the-published-manual).
@@ -104,6 +104,10 @@ Plain text, one property name per line followed by its value on the next line:
 | `mid_ps_a` | 0 or 1     | enable MIDI Start/Stop control for deck A | 0       |
 | `mid_ps_b` | 0 or 1     | enable MIDI Start/Stop control for deck B | 0       |
 | `pre_load` | 0 or 1     | auto-preload last sample on boot          | 1       |
+| `slc_mn_a` | 0 or 1     | granular: deck A plays Slice mode mono    | 0       |
+| `slc_mn_b` | 0 or 1     | granular: deck B plays Slice mode mono    | 0       |
+| `cue_sm_a` | 0, 1 or 2  | granular: deck A's use of WAV cue markers: 0 ignore, 1 SIZE snaps to cues, 2 snaps only with Alt | 0 |
+| `cue_sm_b` | 0, 1 or 2  | granular: the same for deck B             | 0       |
 
 ## MIDI implementation
 

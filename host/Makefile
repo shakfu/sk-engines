@@ -11,8 +11,6 @@ RESO_TP   = $(ROOT)/src/engine/reso/thirdparty
 # stmlib (the Mutable Instruments support lib) is vendored ONCE under common/ and shared by reso + mosc
 # (relocated there in the mosc-engine commit); mirror the firmware Makefile's $(STMLIB_TP).
 STMLIB_TP = $(ROOT)/src/engine/common/thirdparty/stmlib
-# graincloud's vendored, de-STL'd GrainflowLib (header-only) - the grain-cloud kernel.
-GRAINCLOUD_TP = $(ROOT)/src/engine/graincloud/thirdparty
 BUILD     = build
 TARGET    = $(BUILD)/host_spotykach
 
@@ -25,7 +23,7 @@ DAISYSP   = $(ROOT)/lib/DaisySP/Source
 # their warnings are not ours to fix and would bury the ones that are: DaisySP alone emits ~2,900 under
 # -Wextra, against a handful from this project. -isystem suppresses them without suppressing ours.
 DAISYSP_INC = $(addprefix -isystem,$(wildcard $(DAISYSP)/*/))
-VENDOR_INC  = -isystem$(RESO_TP) -isystem$(ROOT)/src/engine/common/thirdparty -isystem$(GRAINCLOUD_TP) \
+VENDOR_INC  = -isystem$(RESO_TP) -isystem$(ROOT)/src/engine/common/thirdparty \
               -isystem$(ROOT)/src/engine/softcut/vendor/include -isystem$(DAISYSP) $(DAISYSP_INC)
 INCLUDES  = -Ishim -I$(ROOT)/src -I$(ROOT)/src/transport -I. $(VENDOR_INC)
 # -DTEST selects stmlib's portable C paths (the ARM ssat/usat asm is gated behind #ifndef TEST), so
@@ -38,7 +36,7 @@ INCLUDES  = -Ishim -I$(ROOT)/src -I$(ROOT)/src/transport -I. $(VENDOR_INC)
 CXXFLAGS  = -std=c++17 -O2 -DTEST -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable \
             -Wno-unused-but-set-variable -Wno-missing-field-initializers $(INCLUDES)
 
-CORE_SRC    = $(wildcard $(ROOT)/src/engine/granular/*.cpp)
+CORE_SRC    = $(wildcard $(ROOT)/src/engine/granular/*.cpp $(ROOT)/src/engine/granular/fx/*.cpp)
 # Engine-agnostic shared primitives (biquad/follower/adenv/cpattern + header-only siblings) live in
 # src/dsp/ and are consumed by the granular engine via "dsp/..." includes, so compile them here too.
 DSP_SRC     = $(wildcard $(ROOT)/src/dsp/*.cpp)
@@ -50,16 +48,6 @@ TRANSPORT_SRC = $(wildcard $(ROOT)/src/transport/*.cpp)
 ENGINE_SRC  = $(wildcard $(ROOT)/src/engine/*.cpp)
 DAISYSP_SRC = $(wildcard $(DAISYSP)/*/*.cpp)
 LIB_SRC     = $(CORE_SRC) $(DSP_SRC) $(TRANSPORT_SRC) $(ENGINE_SRC) $(DAISYSP_SRC)
-# graincloud is the granular tree compiled with -DSPK_GRAIN_GF (Generator's Vox array swapped for the
-# GrainflowLib cloud), plus its own two files. It used to be a byte-for-byte copy of the tree; the
-# duplication is gone, so this is the same CORE_SRC with the IEngine wrapper swapped. Never link both
-# wrappers into one binary - the granular classes are shared and would be defined twice.
-GC_CORE_SRC = $(filter-out $(ROOT)/src/engine/granular/granular_engine.cpp, $(CORE_SRC)) \
-              $(wildcard $(ROOT)/src/engine/graincloud/*.cpp)
-GC_LIB_SRC  = $(GC_CORE_SRC) $(DSP_SRC) $(TRANSPORT_SRC) $(ENGINE_SRC) $(DAISYSP_SRC)
-# The flag + the include dir that makes granular/generator.cpp's guarded `#include "gf_cloud.h"`
-# resolve (gf_cloud.h is not in granular/, so the quoted lookup falls through to -I).
-GC_FLAGS    = -DSPK_GRAIN_GF=1 -I$(ROOT)/src/engine/graincloud -I$(ROOT)/src/engine/granular
 # The edrums/reso/reverb engines live under src/engine/<name>/ (outside the wildcards above); add for tests.
 DELAY_SRC   = $(ROOT)/src/engine/delay/delay_engine.cpp
 # The terminal channel's hardware-free layers: codec (command.h/fmt), names/describe metadata, reply
@@ -93,8 +81,6 @@ MOSC_SRC    = $(ROOT)/src/engine/mosc/mosc_engine.cpp \
               $(MOSC_TP)/plaits/resources.cc \
               $(STMLIB_TP)/dsp/units.cc $(STMLIB_TP)/utils/random.cc $(STMLIB_TP)/dsp/atan.cc
 MOSC_FLAGS  = -I$(MOSC_TP) -DPLAITS_USER_DATA_STUB -DM_PI=3.14159265358979323846
-# graincloud is the granular engine built with SPK_GRAIN_GF (gf_cloud.cpp swaps the grain DSP); there is
-# no separate engine .cpp. Its GrainflowLib DSP is exercised on the host by test_graincloud_kernel.
 # The reverb engine's adapter; its Faust kernels are checked-in headers (engine/reverb/faust_kernel_*.h,
 # portable C++) pulled by the .cpp, so no extra sources are needed.
 REVERB_SRC  = $(ROOT)/src/engine/reverb/reverb_engine.cpp
@@ -160,27 +146,25 @@ TEST_OSC_LABELS = $(BUILD)/test_osc_labels
 TEST_OSC_ADDR = $(BUILD)/test_osc_addr
 TEST_QDELAY  = $(BUILD)/test_qdelay
 TEST_DIFFUSER = $(BUILD)/test_diffuser
-TEST_GRAINCLOUD_KERNEL = $(BUILD)/test_graincloud_kernel
 TEST_CSOUND_ALLOC = $(BUILD)/test_csound_alloc
 TEST_CSOUND_PATCH = $(BUILD)/test_csound_patch
 TEST_CSOUND_MIDI  = $(BUILD)/test_csound_midi
 TEST_CSOUND_RELOAD = $(BUILD)/test_csound_reload
 TEST_CHUCK_PATCH = $(BUILD)/test_chuck_patch
 BENCH_REVERB     = $(BUILD)/bench_reverb
-BENCH_GRAINCLOUD = $(BUILD)/bench_graincloud
 
-.PHONY: all build-all clean run bard-card-check test test-softcut test-terminal test-terminal-osc test-osc-labels test-osc-addr test-granular test-granular-audio test-edrums test-reso test-mosc test-graincloud-kernel test-graincloud test-reverb test-delay test-qdelay test-diffuser test-tape test-stream test-wav-cues test-shuttle test-radio test-bard test-glitch test-pstretch test-chorus test-filter test-voice test-gigaverb test-csound-alloc test-csound-patch test-csound-midi test-csound-reload test-chuck-patch bench-reverb bench-graincloud
+.PHONY: all build-all clean run bard-card-check test test-softcut test-terminal test-terminal-osc test-osc-labels test-osc-addr test-granular test-granular-audio test-edrums test-reso test-mosc test-reverb test-delay test-qdelay test-diffuser test-tape test-stream test-wav-cues test-shuttle test-radio test-bard test-glitch test-pstretch test-chorus test-filter test-voice test-gigaverb test-csound-alloc test-csound-patch test-csound-midi test-csound-reload test-chuck-patch bench-reverb
 all: $(TARGET)
 
-# Everything in here that is NOT an assertion suite: the WAV harness, the card validator, and the two
-# micro-benchmarks. `test` deliberately does not name them - they print measurements or need a card
+# Everything in here that is NOT an assertion suite: the WAV harness, the card validator, and the
+# micro-benchmark. `test` deliberately does not name them - they print measurements or need a card
 # rather than passing or failing - so before this target nothing built them at all, and both
-# main_host.cpp and bench_graincloud.cpp had rotted into non-compiling states (a missing <memory> and
-# a missing <initializer_list>) without anything noticing. CI runs this to compile them; it does not
+# main_host.cpp and a since-removed benchmark had rotted into non-compiling states (a missing <memory>
+# and a missing <initializer_list>) without anything noticing. CI runs this to compile them; it does not
 # RUN the benchmarks, whose own headers are explicit that a desktop timing is a lower bound and a
 # scaling signal, never a device load %.
 .PHONY: build-all
-build-all: $(TARGET) $(BARD_CARD_CHECK) $(BENCH_REVERB) $(BENCH_GRAINCLOUD)
+build-all: $(TARGET) $(BARD_CARD_CHECK) $(BENCH_REVERB)
 
 $(TARGET): $(SRC) | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(SRC) -o $@
@@ -200,7 +184,7 @@ $(TEST_MOSC): test_mosc.cpp $(LIB_SRC) $(MOSC_SRC) | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(MOSC_FLAGS) test_mosc.cpp $(LIB_SRC) $(MOSC_SRC) -o $@
 
 # granular's AUDIO path (load/play/record). test_engine_params covers its parameter surface but never
-# puts a sample through it; this is the companion to test_graincloud for the shared source tree.
+# puts a sample through it.
 $(TEST_GRAN_AUDIO): test_granular_audio.cpp $(LIB_SRC) | $(BUILD)
 	$(CXX) $(CXXFLAGS) test_granular_audio.cpp $(LIB_SRC) -o $@
 
@@ -240,21 +224,6 @@ $(TEST_CHUCK_PATCH): test_chuck_patch.cpp $(ROOT)/src/engine/chuck/chuck_patch.h
 test-chuck-patch: $(TEST_CHUCK_PATCH)
 	./$(TEST_CHUCK_PATCH)
 
-# graincloud kernel smoke test (the de-STL'd GrainflowLib only; no engine/LIB deps).
-$(TEST_GRAINCLOUD_KERNEL): test_graincloud_kernel.cpp $(wildcard $(GRAINCLOUD_TP)/grainflow/*.h) | $(BUILD)
-	$(CXX) $(CXXFLAGS) test_graincloud_kernel.cpp -o $@
-
-# graincloud full-engine test (links the graincloud tree, NOT granular).
-TEST_GRAINCLOUD = $(BUILD)/test_graincloud
-$(TEST_GRAINCLOUD): test_graincloud.cpp $(GC_LIB_SRC) | $(BUILD)
-	$(CXX) $(CXXFLAGS) $(GC_FLAGS) test_graincloud.cpp $(GC_LIB_SRC) -o $@
-test-graincloud: $(TEST_GRAINCLOUD)
-	./$(TEST_GRAINCLOUD)
-
-# graincloud scattered-read benchmark (self-contained; the #11 feasibility gate).
-$(BENCH_GRAINCLOUD): bench_graincloud.cpp | $(BUILD)
-	$(CXX) $(CXXFLAGS) bench_graincloud.cpp -o $@
-
 # The generated Faust kernels are headers (not in $(*_SRC)), so list them explicitly as prerequisites
 # - else `make faust-gen` followed by `make test-*` would relink against a stale binary.
 $(TEST_REVERB): test_reverb.cpp $(LIB_SRC) $(REVERB_SRC) $(wildcard $(ROOT)/src/engine/reverb/faust_kernel_*.h) | $(BUILD)
@@ -289,8 +258,7 @@ $(TEST_TERMINAL_OSC): test_terminal_osc.cpp $(TERMINAL_SRC) $(TERMINAL_OSC_SRC) 
 # The per-engine param_label() tables, checked against the REAL radio and tape engines rather than a
 # mock - the tables are hand-maintained, which the spec names as the one part of the OSC design that can
 # rot. Links the two engines (and the granular tree they share via LIB_SRC) against the OSC codec.
-# Every engine whose param_label() table can be linked here. graincloud is absent because it shares
-# granular's classes and cannot be linked alongside it; mosc/csound/chuck are absent because they need
+# Every engine whose param_label() table can be linked here. mosc/csound/chuck are absent because they need
 # a vendored or fetched runtime, which would make this test the slowest in the suite for no extra
 # coverage of the thing under test (a table of string literals).
 OSC_LABEL_ENGINES = $(RADIO_SRC) $(TAPE_SRC) $(DELAY_SRC) $(QDELAY_SRC) $(REVERB_SRC) \
@@ -409,7 +377,7 @@ run: $(TARGET)
 
 # `test` runs both engine harnesses. Both inject the transport via EngineContext (granular drives the
 # real platform Transport; edrums uses a small stub ITransport) - the post-transport-decoupling way.
-test: test-terminal test-terminal-osc test-osc-labels test-osc-addr test-granular test-granular-audio test-edrums test-reso test-mosc test-graincloud-kernel test-graincloud test-reverb test-delay test-qdelay test-diffuser test-tape test-stream test-wav-cues test-shuttle test-softcut test-radio test-bard test-glitch test-pstretch test-chorus test-filter test-voice test-gigaverb test-csound-alloc test-csound-patch test-csound-midi test-csound-reload test-chuck-patch
+test: test-terminal test-terminal-osc test-osc-labels test-osc-addr test-granular test-granular-audio test-edrums test-reso test-mosc test-reverb test-delay test-qdelay test-diffuser test-tape test-stream test-wav-cues test-shuttle test-softcut test-radio test-bard test-glitch test-pstretch test-chorus test-filter test-voice test-gigaverb test-csound-alloc test-csound-patch test-csound-midi test-csound-reload test-chuck-patch
 
 test-granular: $(TEST)
 	./$(TEST)
@@ -425,12 +393,6 @@ test-mosc: $(TEST_MOSC)
 
 test-granular-audio: $(TEST_GRAN_AUDIO)
 	./$(TEST_GRAN_AUDIO)
-
-test-graincloud-kernel: $(TEST_GRAINCLOUD_KERNEL)
-	./$(TEST_GRAINCLOUD_KERNEL)
-
-bench-graincloud: $(BENCH_GRAINCLOUD)
-	./$(BENCH_GRAINCLOUD)
 
 test-reverb: $(TEST_REVERB)
 	./$(TEST_REVERB)

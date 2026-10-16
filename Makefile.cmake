@@ -51,7 +51,7 @@ CMAKE_FLAGS := \
 	-DSPK_VERSION=$(SPK_VERSION)
 
 .PHONY: all build configure clean check-boundary program-dfu program-boot \
-        engine-granular engine-passthrough engine-delay engine-qdelay engine-edrums engine-reso engine-mosc engine-graincloud engine-tape \
+        engine-granular engine-passthrough engine-delay engine-qdelay engine-edrums engine-reso engine-mosc engine-tape \
         engine-reverb engine-shuttle engine-softcut engine-radio engine-bard engine-glitch engine-pstretch engine-gigaverb engine-csound engine-chuck \
         engine-chorus engine-filter engine-voice \
         program-mosc program-csound program-chuck \
@@ -102,8 +102,6 @@ engine-edrums:
 	$(MAKE) -f $(THIS) ENGINE=edrums build program-dfu
 engine-reso:
 	$(MAKE) -f $(THIS) ENGINE=reso build program-dfu
-engine-graincloud:
-	$(MAKE) -f $(THIS) ENGINE=graincloud build program-dfu
 engine-tape:
 	$(MAKE) -f $(THIS) ENGINE=tape build program-dfu
 engine-reverb:

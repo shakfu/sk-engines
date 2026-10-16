@@ -85,7 +85,6 @@ void CoreUI::_init_values()
         mv(ParamId::Env)[ref].set(_engine.param(ParamId::Env, ref));
         mv(ParamId::EnvSize)[ref].set(1.f);
         mv(ParamId::Win)[ref].set(.2f);
-        mv(ParamId::PolySlice)[ref].set(.51f);
 
         // Engine-seeded (like Pos/ModAmp/Aux): the MODFREQ/"cycle" default comes from each engine's
         // cache, not a shared literal. reso seeds 0 so its Slice arp / Drift scatter starts OFF (a
@@ -103,6 +102,7 @@ void CoreUI::_init_values()
 
         mv(ParamId::GritMix)[ref].set(_engine.param(ParamId::GritMix, ref));
         mv(ParamId::GritIntensity)[ref].set(_engine.param(ParamId::GritIntensity, ref));
+        mv(ParamId::GritChar)[ref].set(_engine.param(ParamId::GritChar, ref));
         mv(ParamId::FluxMix)[ref].set(_engine.param(ParamId::FluxMix, ref));
         mv(ParamId::FluxIntensity)[ref].set(_engine.param(ParamId::FluxIntensity, ref));
         mv(ParamId::FluxFb)[ref].set(_engine.param(ParamId::FluxFb, ref));
@@ -127,7 +127,7 @@ void CoreUI::_reseed_focus(const DeckRef::Ref ref)
                         ParamId::Mix, ParamId::ModAmp, ParamId::ModSpeed, ParamId::Aux, ParamId::AltPos,
                         // grit/flux modifier channels too, so an engine that maps them per focused
                         // voice (edrums/shuttle macros) re-picks-up cleanly on a swap or reset.
-                        ParamId::GritIntensity, ParamId::GritMix, ParamId::FluxIntensity,
+                        ParamId::GritIntensity, ParamId::GritMix, ParamId::GritChar, ParamId::FluxIntensity,
                         ParamId::FluxMix, ParamId::FluxFb }) {
         mv(id)[ref].set(_engine.param(id, ref));
     }
@@ -201,6 +201,9 @@ void CoreUI::process()
         if (_touched.test(FluxA)) {
             _engine.set_param(ParamId::FluxFb, DeckRef::A, mv(ParamId::FluxFb)[DeckRef::A].value());
         }
+        else if (_touched.test(GritA)) {
+            _engine.set_param(ParamId::GritChar, DeckRef::A, mv(ParamId::GritChar)[DeckRef::A].value());
+        }
         else if (_alt_pos && _touched.test(Alt)) {
             _engine.set_param(ParamId::AltPos, DeckRef::A, mv(ParamId::AltPos)[DeckRef::A].value());
         }
@@ -211,6 +214,9 @@ void CoreUI::process()
     if (_apply.test(Hardware::CTRL_POS_B)) {
         if (_touched.test(FluxB)) {
             _engine.set_param(ParamId::FluxFb, DeckRef::B, mv(ParamId::FluxFb)[DeckRef::B].value());
+        }
+        else if (_touched.test(GritB)) {
+            _engine.set_param(ParamId::GritChar, DeckRef::B, mv(ParamId::GritChar)[DeckRef::B].value());
         }
         else if (_alt_pos && _touched.test(Alt)) {
             _engine.set_param(ParamId::AltPos, DeckRef::B, mv(ParamId::AltPos)[DeckRef::B].value());
@@ -228,24 +234,22 @@ void CoreUI::process()
         _engine.set_param(ParamId::Env, DeckRef::B, mv(ParamId::Env)[DeckRef::B].value());
     }
     if (_apply.test(Hardware::CTRL_SIZE_A)) {
+        // Alt is a SIZE modifier the engine interprets (granular: the 1/16 Slice snap, cue snap/free).
+        _engine.set_config(ConfigId::AltSize, DeckRef::A, _touched.test(Alt) ? 1 : 0);
         if (is_chord_a) {
             _engine.set_param(ParamId::Win, DeckRef::A, mv(ParamId::Win)[DeckRef::A].value());
             _engine.set_param(ParamId::Size, DeckRef::A, mv(ParamId::Size)[DeckRef::A].value());
-        }
-        else if (layout_a == DeckLayout::slice && _touched.test(Alt)) {
-            _engine.set_param(ParamId::PolySlice, DeckRef::A, mv(ParamId::PolySlice)[DeckRef::A].value());
         }
         else {
             _engine.set_param(ParamId::Size, DeckRef::A, mv(ParamId::Size)[DeckRef::A].value());
         }
     }
     if (_apply.test(Hardware::CTRL_SIZE_B)) {
+        // Alt is a SIZE modifier the engine interprets (granular: the 1/16 Slice snap, cue snap/free).
+        _engine.set_config(ConfigId::AltSize, DeckRef::B, _touched.test(Alt) ? 1 : 0);
         if (is_chord_b) {
             _engine.set_param(ParamId::Win, DeckRef::B, mv(ParamId::Win)[DeckRef::B].value());
             _engine.set_param(ParamId::Size, DeckRef::B, mv(ParamId::Size)[DeckRef::B].value());
-        }
-        else if (layout_b == DeckLayout::slice && _touched.test(Alt)) {
-            _engine.set_param(ParamId::PolySlice, DeckRef::B, mv(ParamId::PolySlice)[DeckRef::B].value());
         }
         else {
             _engine.set_param(ParamId::Size, DeckRef::B, mv(ParamId::Size)[DeckRef::B].value());
@@ -473,8 +477,7 @@ void CoreUI::_process_ui_queue()
                                 _set_tempo_by_size(DeckRef::A, val);
                             }
                             else {
-                                mv(ParamId::Size)[DeckRef::A].process(val, !is_alt_touched, changing_id_a);
-                                mv(ParamId::PolySlice)[DeckRef::A].process(val, is_alt_touched, changing_id_a);
+                                mv(ParamId::Size)[DeckRef::A].process(val, true, changing_id_a);
                                 _size_quarters[DeckRef::A].set(val);
                             }
                         }
@@ -495,6 +498,7 @@ void CoreUI::_process_ui_queue()
                     mv(ParamId::Pos)[DeckRef::A].process(val, !fx_a_touched && !(_alt_pos && is_alt_touched), changing_id_a);
                     if (_alt_pos) mv(ParamId::AltPos)[DeckRef::A].process(val, !fx_a_touched && is_alt_touched, changing_id_a);
                     mv(ParamId::FluxFb)[DeckRef::A].process(val, _touched.test(FluxA), changing_id_a);
+                    mv(ParamId::GritChar)[DeckRef::A].process(val, _touched.test(GritA), changing_id_a);
                     break;
 
                 case Hardware::CTRL_ENV_A:
@@ -563,8 +567,7 @@ void CoreUI::_process_ui_queue()
                                 _set_tempo_by_size(DeckRef::B, val);
                             }
                             else {
-                                mv(ParamId::Size)[DeckRef::B].process(val, !is_alt_touched, changing_id_b);
-                                mv(ParamId::PolySlice)[DeckRef::B].process(val, is_alt_touched, changing_id_b);
+                                mv(ParamId::Size)[DeckRef::B].process(val, true, changing_id_b);
                                 _size_quarters[DeckRef::B].set(val);
                             }
                         }
@@ -582,6 +585,7 @@ void CoreUI::_process_ui_queue()
                     mv(ParamId::Pos)[DeckRef::B].process(val, !fx_b_touched && !(_alt_pos && is_alt_touched), changing_id_b);
                     if (_alt_pos) mv(ParamId::AltPos)[DeckRef::B].process(val, !fx_b_touched && is_alt_touched, changing_id_b);
                     mv(ParamId::FluxFb)[DeckRef::B].process(val, _touched.test(FluxB), changing_id_b);
+                    mv(ParamId::GritChar)[DeckRef::B].process(val, _touched.test(GritB), changing_id_b);
                     break;
 
                 case Hardware::CTRL_ENV_B:
@@ -715,11 +719,19 @@ void CoreUI::_process_switches()
             auto rs = _engine.toggle_grit_mode(DeckRef::A);
             mv(ParamId::GritIntensity)[DeckRef::A].set(rs.intensity);
             mv(ParamId::GritMix)[DeckRef::A].set(rs.mix);
+            mv(ParamId::GritChar)[DeckRef::A].set(rs.character);
         }
         else if (_touched.test(GritB)) {
             auto rs = _engine.toggle_grit_mode(DeckRef::B);
             mv(ParamId::GritIntensity)[DeckRef::B].set(rs.intensity);
             mv(ParamId::GritMix)[DeckRef::B].set(rs.mix);
+            mv(ParamId::GritChar)[DeckRef::B].set(rs.character);
+        }
+        else if (_touched.test(FluxA)) {
+            _engine.toggle_flux_mode(DeckRef::A);
+        }
+        else if (_touched.test(FluxB)) {
+            _engine.toggle_flux_mode(DeckRef::B);
         }
         else {
             if (!_transport.is_external_sync()) {

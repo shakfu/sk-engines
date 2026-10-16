@@ -546,7 +546,7 @@ def test_softcut_reuses_the_tape_format_rather_than_declaring_its_own():
 
 
 # The two ways an engine can reach the card. Both must be searched: matching only the streaming
-# service would miss granular and graincloud, which go through the platform's own save/load path.
+# service would miss granular, which goes through the platform's own save/load path.
 CARD_ACCESS_PATTERNS = (
     r"ctx\.stream|_stream->|scan_bank|IStreamDeck",          # the streaming service (stream_deck.cpp)
     r"audio_apply_loaded|audio_capacity_bytes|audio_raw_bytes",  # the platform tape/slot path (hw/card.cpp)
@@ -591,9 +591,9 @@ def test_every_card_reading_engine_has_a_bank():
 def test_the_shared_tape_store_is_recorded_as_shared():
     """The fact that cost a design decision: `SK/{B,G,P,R,T,Y}` looks like granular's folder and is
     actually the PLATFORM's, shared by every engine with CapTapeStorage. Renaming it to `granular/`
-    would therefore have broken graincloud - which ships - and every card the stock upstream firmware
-    ever wrote. Pinned so the sharing is not rediscovered the hard way."""
-    assert cl.BANKS["granular"].readers == ("granular", "graincloud")
+    would break every card the stock upstream firmware ever wrote, and any future engine with tape
+    storage. Pinned so the sharing is not rediscovered the hard way."""
+    assert cl.BANKS["granular"].readers == ("granular",)
     src = REPO / "src/memory/storage.cpp"
     if not src.exists():
         pytest.skip("firmware source absent")
@@ -612,7 +612,7 @@ def test_the_card_access_patterns_actually_match_the_known_readers():
     and the test above passes while checking nothing at all."""
     import re
     pattern = re.compile("|".join(CARD_ACCESS_PATTERNS))
-    for engine in ("tape", "softcut", "radio", "granular", "graincloud"):
+    for engine in ("tape", "softcut", "radio", "granular"):
         d = REPO / "src/engine" / engine
         if not d.is_dir():
             pytest.skip(f"{engine} source absent")

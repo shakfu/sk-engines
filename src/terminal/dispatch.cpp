@@ -163,6 +163,14 @@ void verb_fx(const Command& c, Ctx& x) {
         return;
     }
 
+    // `fx fluxmode <deck>` - cycle the flux sub-effect (free / clocked delay).
+    if (!strcmp(c.arg(1), "fluxmode")) {
+        DeckRef::Ref d;  if (!parse_deck(c.arg(2), d)) { x.reply.err("bad-deck"); return; }
+        x.engine.toggle_flux_mode(d);
+        x.reply.ok();
+        return;
+    }
+
     // `fx gritmode <deck>` - cycle the grit sub-effect. An ACTION that returns values: the platform
     // normally uses them to reseed its MValue pickup after the switch, so a test wants them too.
     if (!strcmp(c.arg(1), "gritmode")) {

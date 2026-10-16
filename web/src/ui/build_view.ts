@@ -50,8 +50,8 @@ export function mountBuild(root: HTMLElement, ctx: ViewContext): void {
     el('thead', {}, el('tr', {}, el('th', {}, 'Folder'), el('th', {}, 'Engine'), el('th', {}, 'Format'))),
     el('tbody', {}, ctx.layout.banks.map((bank) => el('tr', {},
       el('td', { class: 'mono' }, folderLabel(bank.dirs)),
-      // Readers, not the owning engine alone: SK/{B,G,P,R,T,Y} is the platform's shared tape store,
-      // so listing only "granular" there makes graincloud's loops look like they belong nowhere.
+      // Readers, not the owning engine alone: a bank that other engines also read (`also_read_by`)
+      // names all of them.
       el('td', {}, bank.readers.join(', ')),
       el('td', { class: 'muted' }, bank.fmt.describe)))));
 

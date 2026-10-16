@@ -10,12 +10,21 @@ namespace spotykach {
 class Config
 {
 public:
+    // How pre-sliced (WAV cue) buffers treat SIZE: ignore the cues, snap to them, or snap only with Alt.
+    enum CueSizeMode: uint8_t {
+        ignore  = 0,
+        snap    = 1,
+        free    = 2
+    };
+
     struct Values {
         uint8_t midi_channel_a = 0; // Actual 1
         uint8_t midi_channel_b = 1; // Actual 2
         uint8_t midi_play_stop_a = 0;
         uint8_t midi_play_stop_b = 0;
         bool is_preload_on = true;
+        bool is_slice_mono[2] = { false, false };
+        uint8_t cue_size_mode[2] = { ignore, ignore };
     };
 
     uint8_t midi_channel_a() const { return _vals.midi_channel_a; }
@@ -23,6 +32,11 @@ public:
     uint8_t midi_play_stop_a() const { return _vals.midi_play_stop_a; }
     uint8_t midi_play_stop_b() const { return _vals.midi_play_stop_b; }
     bool is_preload_on() const { return _vals.is_preload_on; }
+    bool is_slice_mono(const int idx) const { return _vals.is_slice_mono[idx & 1]; }
+    void set_slice_mono(const int idx, const bool on) { _vals.is_slice_mono[idx & 1] = on; }
+    CueSizeMode cue_size_mode(const int idx) const {
+        return static_cast<CueSizeMode>(std::min<uint8_t>(_vals.cue_size_mode[idx & 1], free));
+    }
 
     bool is_loaded() const { return _is_loaded; }
 
@@ -87,6 +101,10 @@ public:
             else if (memcmp(prop, "mid_ps_a", line_size) == 0) { _vals.midi_play_stop_a = val;   _is_loaded = true; }
             else if (memcmp(prop, "mid_ps_b", line_size) == 0) { _vals.midi_play_stop_b = val;   _is_loaded = true; }
             else if (memcmp(prop, "pre_load", line_size) == 0) { _vals.is_preload_on = val;      _is_loaded = true; }
+            else if (memcmp(prop, "slc_mn_a", line_size) == 0) { _vals.is_slice_mono[0] = val;   _is_loaded = true; }
+            else if (memcmp(prop, "slc_mn_b", line_size) == 0) { _vals.is_slice_mono[1] = val;   _is_loaded = true; }
+            else if (memcmp(prop, "cue_sm_a", line_size) == 0) { _vals.cue_size_mode[0] = val;   _is_loaded = true; }
+            else if (memcmp(prop, "cue_sm_b", line_size) == 0) { _vals.cue_size_mode[1] = val;   _is_loaded = true; }
         }
     }
 
@@ -130,16 +148,9 @@ static constexpr float kLFOFreqRange = 11.99f;
 // Overdub ......................................
 static constexpr float kDefaultFeedback = 0.95f; //-3db at -60...0dB scale
 
-// Drift .........................................
-static constexpr float kDriftStartOffsetL1  = .08f;
-static constexpr float kDriftStartOffsetL2  = .15f;
-static constexpr float kDriftStartKofL1     = 1.42f;
-static constexpr float kDriftStartKofL2     = 1.85f;
-static constexpr float kDriftSizeKofL1      = .62f;
-static constexpr float kDriftSizeKofL2      = .38f;
-
-// Slice points ..................................
-static constexpr uint8_t kMaxSlicePointCount = 32;
+// Cue points ...................................
+// The generator's count is a uint8_t, so a load delivers at most 255 (cues plus the end marker).
+static constexpr uint16_t kMaxSlicePointCount = 256;
 
 // Loop buffer length, in seconds (the granular engine sizes its per-deck source buffer from this and
 // the sample rate). Moved here from the SDRAM pool so the engine owns its buffer sizing, not the HAL.

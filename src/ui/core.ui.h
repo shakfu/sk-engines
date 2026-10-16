@@ -117,6 +117,7 @@ private:
 
     void _draw_ring(const DeckRef::Ref);
     void _show_pitch(const DeckRef::Ref);
+    void _show_filter(const DeckRef::Ref);
     void _show_slots(const DeckRef::Ref);
     void _show_key_intervals();
     void _show_size_quarters(const DeckRef::Ref, const uint32_t color);

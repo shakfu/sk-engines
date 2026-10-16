@@ -40,7 +40,7 @@ The bare-metal budget (see [Feasibility](#feasibility-the-shared-constraints)) r
 | 8 | **Drone bank** *(partial: `voice`)* | additive/modal oscillator bank, slow evolving pad; the `voice` generated-Faust demo (osc → filter drone) covers the simplest case | yes (2 banks) | optional (LFO) | STK modal, madronalib generators | low-med |
 | 9 | **Euclidean delay** | multi-tap delay whose taps sit on a Euclidean grid | yes (2 lines) | yes (subscribe) | `dsp/cpattern` + delay line | low |
 | 10 | **Spectral freeze** | STFT freeze/blur of the live input, pad = capture | yes (2 freezes) | no | [signalsmith](https://github.com/shakfu/nanodsp/tree/main/thirdparty/signalsmith) STFT | high |
-| 11 | **Grain cloud** *(shipped: `graincloud`)* | polyphonic grain cloud (per-grain pitch/pan/position), the granular the looper *isn't* | yes (2 clouds) | optional | shipped on a de-STL'd GrainflowLib port | med-high |
+| 11 | **Grain cloud** *(shipped as `graincloud`, removed 2026-10)* | polyphonic grain cloud (per-grain pitch/pan/position), the granular the looper *isn't* | yes (2 clouds) | optional | shipped on a de-STL'd GrainflowLib port | med-high |
 | 12 | **Radio** *(shipped)* | dual virtual RadioMusic: two SD radios, free-running playhead, raw 16-bit stations | yes (2 radios) | no | SD streaming + raw codec | low |
 
 "Cost" is rough per-sample CPU + memory + integration effort, low to high. Tiers below group them.
@@ -269,7 +269,7 @@ The three modes are not a metaphor for the switch's labels — they *are* those 
 
 ### 11. Grain cloud (GrainflowLib)
 
-> **Shipped as `ENGINE=graincloud`** - see [`docs/engines/graincloud.md`](engines/graincloud.md) and [`docs/dev/graincloud-impl.md`](dev/graincloud-impl.md). The de-STL'd GrainflowLib port (heap/throw/RTTI removed) was done as designed; but rather than a standalone engine (which kept hitting platform-integration bugs in recording/storage/crossfade), it shipped as a **variant of the granular engine** (`SPK_GRAIN_GF`): granular's `Generator::process` is swapped for a GrainflowLib cloud reading granular's `Buffer`, inheriting granular's recording / SD-storage / dual-deck / UI verbatim. Builds at -Os (~97% SRAM_EXEC); on-device scattered-read cost still needs a `METER` confirmation.
+> **Shipped as `ENGINE=graincloud`, then removed (2026-10).** It ran as the granular tree compiled with `SPK_GRAIN_GF`, a de-STL'd GrainflowLib cloud replacing the Vox array. It was dropped as not worth its slot on this device; a Mutable Instruments Beads port (`kuskus`) is planned in its place. The last tree with it is commit `6ff1e88` (`src/engine/graincloud/`, `docs/engines/graincloud.md`, `docs/dev/graincloud-impl.md`).
 
 **Concept.** A *second* granular engine — but a genuinely different model from the existing one. The shipping `granular` engine, despite its name, is a **dual tape-loop scanner**: even its cloud-like Drift mode runs a single voice with up to six overlapping windows that **share one pitch, one start position, one speed** (the "spray" is start-position jitter only). It cannot do per-grain pitch, per-grain pan, or dense polyphony. A grain-cloud engine fills exactly that gap: dozens of independent grains, each with its own pitch/transpose, buffer position, pan, duration, direction, and per-grain randomization — a synthesizer-style grain cloud rather than a looper. Two decks = two clouds (or one cloud + its modulator), morphed by the crossfader.
 

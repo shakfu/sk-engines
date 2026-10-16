@@ -61,6 +61,9 @@
 /sk/a/param/aux param float
 /sk/b/param/aux param float
 /sk/ab/param/aux param float
+/sk/a/param/gritchar param float
+/sk/b/param/gritchar param float
+/sk/ab/param/gritchar param float
 /sk/param/clickmix param float
 /sk/param/panspeed param float
 /sk/param/panrange param float
@@ -76,6 +79,8 @@
 /sk/b/cfg/startmodon cfg enum
 /sk/a/cfg/sizemodon cfg enum
 /sk/b/cfg/sizemodon cfg enum
+/sk/a/cfg/altsize cfg enum
+/sk/b/cfg/altsize cfg enum
 /sk/a/state/empty state bool
 /sk/b/state/empty state bool
 /sk/state/mix state float
@@ -107,6 +112,7 @@
 /sk/a/fx/grit stim bool
 /sk/a/fx/lock/flux stim trigger
 /sk/a/fx/lock/grit stim trigger
+/sk/a/fx/fluxmode stim trigger
 /sk/a/fx/gritmode stim trigger
 /sk/a/modspeed stim float
 /sk/b/cv/voct stim float
@@ -126,6 +132,7 @@
 /sk/b/fx/grit stim bool
 /sk/b/fx/lock/flux stim trigger
 /sk/b/fx/lock/grit stim trigger
+/sk/b/fx/fluxmode stim trigger
 /sk/b/fx/gritmode stim trigger
 /sk/b/modspeed stim float
 /sk/midi/note stim int2

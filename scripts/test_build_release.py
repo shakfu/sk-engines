@@ -121,11 +121,8 @@ def test_every_card_bank_is_playable_by_a_published_engine():
     together. A folder with demo content on that card that NO published binary can open is a release
     that contradicts itself.
 
-    The check is per folder, not per engine, because a bank can have more than one reader: granular is
-    deliberately unpublished (it is the upstream firmware), but its `SK/{B,G,P,R,T,Y}` folders are the
-    platform's shared tape store and graincloud - which does ship - reads them. So the content is
-    reachable and the release is consistent. Drop graincloud from the list without noticing this and
-    the base card starts carrying tapes nothing can play.
+    The check is per folder, not per engine, because a bank can have more than one reader.
+    `SK/{B,G,P,R,T,Y}` is the platform's shared tape store; granular is its published reader.
     """
     import card_layout as cl
 
@@ -139,12 +136,11 @@ def test_every_card_bank_is_playable_by_a_published_engine():
 
 def test_the_unpublished_engines_are_unpublished_on_purpose():
     # The complement: nothing should silently drop OFF the list either. Each of these is excluded for a
-    # stated reason in build_release.py's header comment, granular because it is the stock/upstream
-    # firmware rather than something new to this fork.
-    assert set(m.DEFAULT_ENGINES).isdisjoint({"granular", "passthrough", "chorus", "gigaverb"})
-    # ... but the engine that keeps granular's folders usable MUST ship, or the test above is the only
+    # stated reason in build_release.py's header comment.
+    assert set(m.DEFAULT_ENGINES).isdisjoint({"passthrough", "chorus", "gigaverb"})
+    # ... but the engine that keeps the SK/ tape store usable MUST ship, or the test above is the only
     # thing standing between the base card and unplayable content.
-    assert "graincloud" in m.DEFAULT_ENGINES
+    assert "granular" in m.DEFAULT_ENGINES
 
 
 def test_default_engines_needs_no_special_flags_beyond_the_qspi_three():

@@ -324,9 +324,8 @@ test('the reference search matches folders and formats, not just engine names', 
   m.setQuery('headerless');
   eq(m.visible().map((e) => e.doc.name), ['radio'], '"I have raw files, who wants those?"');
   m.setQuery('sk/b');
-  // Both, and correctly so: SK/{B,G,P,R,T,Y} is the platform's shared tape store and graincloud reads
-  // it too. The old version listed banks, so it could only ever have answered with the owning engine.
-  eq(m.visible().map((e) => e.doc.name).sort(), ['graincloud', 'granular']);
+  // SK/{B,G,P,R,T,Y} is the platform's shared tape store; granular is its one reader today.
+  eq(m.visible().map((e) => e.doc.name).sort(), ['granular']);
 });
 
 test('the reference status counts what is shown against the whole', () => {

@@ -83,6 +83,7 @@ The first segment is a deck, a kind, or `dev` - disjoint sets, so the parse is u
 | `/sk/<deck>/seq/trig\|arm\|clear\|disarm` | *(none)* | `seq <kind> <deck>` |
 | `/sk/<deck>/fx/flux\|grit` | `,T`/`,F`/`,i` | `fx <kind> <deck> on\|off` |
 | `/sk/<deck>/fx/lock/flux\|grit` | *(none)* | `fx lock <kind> <deck>` |
+| `/sk/<deck>/fx/fluxmode` | *(none)* | `fx fluxmode <deck>` |
 | `/sk/<deck>/fx/gritmode` | *(none)* | `fx gritmode <deck>` |
 | `/sk/<deck>/modspeed` | `,f` / `,fT` / `,fF` | `set modspeed <deck> <f> [sync]` |
 
@@ -149,8 +150,9 @@ Traceable to `src/engine/engine_params.h` (`ParamId`/`ConfigId`) and `src/termin
 | `/sk/a/param/modamp` | `ModAmp` | modulator depth |
 | `/sk/a/param/altpos` | `AltPos` | the Alt+POS knob layer (`CapAltPos`) - engine-interpreted |
 | `/sk/a/param/aux` | `Aux` | per-deck Alt+PITCH selector (`CapAux`) - engine-interpreted |
+| `/sk/a/param/gritchar` | `GritChar` | grit character, POS while Grit is held (granular: DJ-filter resonance) |
 
-Seventeen deck-scoped slots, each also reachable on `b` and `ab`. `altpos` and `aux` are the two the platform *declares* engine-interpreted, so they are the two whose label is least likely to match the slot name.
+Eighteen deck-scoped slots, each also reachable on `b` and `ab`. `altpos` and `aux` are the two the platform *declares* engine-interpreted, so they are the two whose label is least likely to match the slot name.
 
 ### Params, global - `/sk/param/<slot>` (no deck segment)
 
@@ -181,6 +183,7 @@ These three are why every addressable param is uniformly `0..1`. `terminal-dispa
 | `/sk/a/cfg/mode` | `Mode` | `0:slice 1:reel 2:drift` |
 | `/sk/a/cfg/startmodon` | `StartModOn` | `0:off 1:on` |
 | `/sk/a/cfg/sizemodon` | `SizeModOn` | `0:off 1:on` |
+| `/sk/a/cfg/altsize` | `AltSize` | `0:off 1:on` (Alt held while SIZE applies) |
 
 Labels come from `kConfigLabels` (`names.cpp`), which `describe` already emits. A write replies with whether the value changed only under `dev/mode/ack`; otherwise it is silent like any other write.
 
@@ -212,7 +215,7 @@ This is rule 4 made visible - the reason `param`/`cfg`/`state` is a segment rath
 
 ### Stimulus verbs (closed set, no slot name)
 
-`/sk/<deck>/` + `cv/voct`, `cv/mix`, `cv/size`, `cv/xfade`, `gate`, `pad/play`, `pad/rec`, `pad/stop`, `pad/clear`, `seq/trig`, `seq/arm`, `seq/clear`, `seq/disarm`, `fx/flux`, `fx/grit`, `fx/lock/flux`, `fx/lock/grit`, `fx/gritmode`, `modspeed`.
+`/sk/<deck>/` + `cv/voct`, `cv/mix`, `cv/size`, `cv/xfade`, `gate`, `pad/play`, `pad/rec`, `pad/stop`, `pad/clear`, `seq/trig`, `seq/arm`, `seq/clear`, `seq/disarm`, `fx/flux`, `fx/grit`, `fx/lock/flux`, `fx/lock/grit`, `fx/fluxmode`, `fx/gritmode`, `modspeed`.
 
 Global: `/sk/midi/note`, `/sk/midi/msg`, `/sk/midi/transport`.
 

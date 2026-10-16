@@ -35,6 +35,7 @@ enum class ParamId : uint8_t {
     Crossfade,      // global deck A/B mix
     AltPos,         // the Alt+POS knob layer (CapAltPos); engine-interpreted, e.g. tape uses it as pan
     Aux,            // per-deck Alt+PITCH selector (engines with CapAux; e.g. edrums model select / tape slot)
+    GritChar,       // grit character (POS while Grit is held); granular: DJ-filter resonance
     Count
 };
 
@@ -53,12 +54,13 @@ enum class ConfigId : uint8_t {
     Mode,        // per-deck: 0=Slice, 1=Reel, 2=Drift
     StartModOn,  // per-deck: 0/1
     SizeModOn,   // per-deck: 0/1
+    AltSize,     // per-deck: 0/1, Alt held while SIZE applies (granular: the finer Slice snap)
     Count
 };
 
-// Returned by toggle_grit_mode: the now-active grit sub-effect's intensity/mix, so the platform
-// can reseed its MValue pickup to the values the live effect reports after the mode switch.
-struct GritReseed { float intensity; float mix; };
+// Returned by toggle_grit_mode: the now-active grit sub-effect's intensity/mix/character, so the
+// platform can reseed its MValue pickup to the values the live effect reports after the mode switch.
+struct GritReseed { float intensity; float mix; float character; };
 
 // Engine-declared layout of the mode-dependent SIZE/ENV knobs (item 3a-3), so the platform stops
 // reading Core's Mode to branch the pot queue / apply pass. It describes how those knobs behave,

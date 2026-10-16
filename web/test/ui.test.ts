@@ -318,12 +318,11 @@ test('the build view labels granular as a set under SK, not a two-folder range',
   ok(!text.includes('SK/B .. SK/Y'), 'the old range form is gone');
 });
 
-test('the build view names every engine that reads a folder, not just the owning one', async () => {
-  // SK/{B,G,P,R,T,Y} is the platform's shared tape store. Listing only "granular" makes graincloud's
-  // loops look like they belong nowhere - and granular is not even a published engine.
+test('the build view names the engines that read each folder', async () => {
+  // Readers, not the owning engine: a bank another engine also reads (`also_read_by`) lists both.
   const { root } = await mount('build_view');
-  ok(textOf(root).includes('granular, graincloud'), 'both readers of the shared tape store are named');
-  eq(layout.bank('granular')!.readers, ['granular', 'graincloud']);
+  ok(textOf(root).includes('granular'), 'the shared tape store names its reader');
+  eq(layout.bank('granular')!.readers, ['granular']);
   eq(layout.bank('tape')!.readers, ['tape'], 'a bank with one reader stays unadorned');
 });
 

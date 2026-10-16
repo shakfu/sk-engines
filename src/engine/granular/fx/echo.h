@@ -1,9 +1,9 @@
 #pragma once
-#include <cstddef>   // size_t (transitive-include hygiene; host build)
 
+#include <cstddef>   // size_t (transitive-include hygiene; host build)
 #include "dsp/biquad.h"
 #include "dsp/deline.h"
-#include "../../common.h"
+#include "common.h"
 
 namespace infrasonic {
 

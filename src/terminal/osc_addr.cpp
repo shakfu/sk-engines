@@ -317,6 +317,12 @@ bool do_stimulus(Req& r, Deck deck, const Segments& g, uint8_t k) {
             r.run(l, false);
             return true;
         }
+        if (!std::strcmp(what, "fluxmode")) {
+            bool usable; if (!trigger_fires(r, usable)) return true;
+            Line l; l.tok("fx"); l.tok("fluxmode"); l.tok(deck_tok(deck));
+            r.run(l, false);
+            return true;
+        }
         if (!std::strcmp(what, "gritmode")) {
             bool usable; if (!trigger_fires(r, usable)) return true;
             Line l; l.tok("fx"); l.tok("gritmode"); l.tok(deck_tok(deck));

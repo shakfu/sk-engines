@@ -56,7 +56,7 @@ set(ENGINE_LINK_OPTIONS "")        # extra link options (QSPI: -u _printf_float 
 set(ENGINE_BOOT_QSPI FALSE)        # QSPI-execute engines (mosc/csound/chuck); drives the USB_MIDI default below
 if(ENGINE STREQUAL granular)
     set(ENGINE_DEFINE SPK_ENGINE_GRANULAR)
-    file(GLOB ENGINE_SOURCES CONFIGURE_DEPENDS src/engine/granular/*.cpp)
+    file(GLOB ENGINE_SOURCES CONFIGURE_DEPENDS src/engine/granular/*.cpp src/engine/granular/fx/*.cpp)
 elseif(ENGINE STREQUAL passthrough)
     set(ENGINE_DEFINE SPK_ENGINE_PASSTHROUGH)
     set(ENGINE_SOURCES "")
@@ -129,23 +129,6 @@ elseif(ENGINE STREQUAL mosc)
         ${STMLIB_TP}/utils/random.cc
         ${STMLIB_TP}/dsp/atan.cc
     )
-elseif(ENGINE STREQUAL graincloud)
-    # graincloud = THE GRANULAR ENGINE TREE built with -DSPK_GRAIN_GF, not a copy of it: that flag
-    # swaps Generator's per-sample Vox array for a per-block GrainflowLib cloud (gf_cloud.*) and gates
-    # it from the Play pad. Only the IEngine wrapper is substituted. Mirrors the Makefile branch.
-    set(ENGINE_DEFINE SPK_ENGINE_GRAINCLOUD)
-    set(GRAINCLOUD_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/engine/graincloud)
-    set(GRAINCLOUD_TP ${GRAINCLOUD_DIR}/thirdparty)
-    file(GLOB ENGINE_SOURCES CONFIGURE_DEPENDS src/engine/granular/*.cpp src/engine/graincloud/*.cpp)
-    list(REMOVE_ITEM ENGINE_SOURCES
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/engine/granular/granular_engine.cpp)
-    # graincloud's own dir first, so granular/generator.cpp's guarded `#include "gf_cloud.h"` resolves.
-    set(ENGINE_INCLUDES ${GRAINCLOUD_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/src/engine/granular)
-    set(ENGINE_SYSTEM_INCLUDES ${GRAINCLOUD_TP})
-    # M_PI for gfSyn under strict -std=c++17 on arm-none-eabi.
-    set(ENGINE_DEFINES M_PI=3.14159265358979323846 SPK_GRAIN_GF=1)
-    # Granular + GrainflowLib templates overflow the execution SRAM at -O2; build at -Os.
-    set(APP_OPT -Os)
 elseif(ENGINE STREQUAL tape)
     set(ENGINE_DEFINE SPK_ENGINE_TAPE)
     # Engine wrapper (tape_engine.cpp); its SD streaming service lives in src/hw/ (stream_deck.cpp,
@@ -310,7 +293,7 @@ elseif(ENGINE STREQUAL chuck)
     # firmware keeps them off, so libstdc++'s exception machinery does not bloat the SRAM-tight platform).
     set_source_files_properties(src/engine/chuck/chuck_engine.cpp PROPERTIES COMPILE_OPTIONS "-fexceptions;-frtti")
 else()
-    message(FATAL_ERROR "Unknown ENGINE '${ENGINE}' - use granular, passthrough, delay, qdelay, edrums, reso, mosc, graincloud, tape, radio, bard, glitch, pstretch, reverb, shuttle, softcut, gigaverb, chorus, filter, voice, csound, or chuck")
+    message(FATAL_ERROR "Unknown ENGINE '${ENGINE}' - use granular, passthrough, delay, qdelay, edrums, reso, mosc, tape, radio, bard, glitch, pstretch, reverb, shuttle, softcut, gigaverb, chorus, filter, voice, csound, or chuck")
 endif()
 
 # Source list = the Makefile's CPP_SOURCES, with the wildcard dirs expanded the same way.
@@ -366,7 +349,7 @@ target_compile_definitions(daisy PRIVATE BOOT_APP)
 target_compile_definitions(daisy PRIVATE DSY_DISABLE_USB_HOST)
 
 # SIZE PARITY: the Make build compiles FatFs (ff.c/diskio.c/...) as ordinary app sources at the APP opt
-# level (-O2, or -Os for reso/mosc/graincloud), whereas CMake builds it as a sub-library that inherits the
+# level (-O2, or -Os for reso/mosc), whereas CMake builds it as a sub-library that inherits the
 # directory -O3 -- so its f_*/dir_* functions come out ~2.4 KB larger. Force the FatFs target to the same
 # APP_OPT so the FatFs .text matches the canonical build. (FatFs is the only libDaisy component the Make
 # build compiles at app opt; everything else in libdaisy.a is -O3 in both.)

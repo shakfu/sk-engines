@@ -6,9 +6,6 @@
 // it green. Granular is the default `make` target and the tree every other looper was cloned from,
 // and until now nothing off-target asserted that it makes a sound at all.
 //
-// This is deliberately the same shape as test_graincloud.cpp, which does the equivalent job for the
-// engine that shares this source tree - so the two can be compared when one of them regresses.
-//
 // What it pins:
 //   1. **Load -> play produces audio that tracks the buffer.** A known DC level goes in through the
 //      storage port (audio_data + audio_apply_loaded, i.e. a simulated SD load, no card involved) and
@@ -30,9 +27,12 @@
 #include <functional>
 #include <new>
 #include <utility>
+#include <vector>
 
 #include "engine/granular/granular_engine.h"
 #include "engine/granular/buffer.h"
+#include "engine/led.ring.h"
+#include "config.h"
 #include "transport/transport.h"
 #include "host_setup.h"
 
@@ -103,6 +103,7 @@ Stats render(Transport& transport, GranularEngine& e, int blocks, float in_level
     Stats s; double acc = 0; size_t n = 0;
     for (int b = 0; b < blocks; b++) {
         transport.tick(false);
+        e.prepare();                       // the platform main loop calls this between blocks
         e.process(in, out, host::kBlock);
         for (size_t i = 0; i < host::kBlock; i++) {
             for (float v : { ol[i], orr[i] }) if (!std::isfinite(v)) s.finite = false;
@@ -152,6 +153,50 @@ void setup_wet(GranularEngine& e) {
         e.set_param(ParamId::Speed, d, 0.5f);   // unity
         e.set_param(ParamId::Env,   d, 0.0f);   // no loop envelope - keep the level flat
     }
+}
+
+// One engine + transport, isolated from the shared one in main(). Scoped, so the 48 MB arena goes too.
+struct Rig {
+    host::HostArena arena; host::TimeSource time;
+    ZeroInit<Transport> transport_store;
+    ZeroInit<GranularEngine> engine_store;
+    Transport& transport = transport_store.get();
+    GranularEngine& e = engine_store.get();
+    Rig(const float bpm = 120.f) {
+        EngineContext ctx = host::make_context(arena, time);
+        transport.init(host::kSampleRate, static_cast<float>(host::kBlock), &time);
+        transport.set_tempo_norm(tempo_abs_to_norm(bpm));
+        ctx.transport = &transport;
+        e.init(ctx);
+    }
+    // Render `n` samples of `in(i)` (both channels), returning the left output.
+    template <typename F> std::vector<float> run(const size_t n, F in) {
+        std::vector<float> out_all;
+        float il[host::kBlock], ir[host::kBlock], ol[host::kBlock], orr[host::kBlock];
+        const float* ins[2] = { il, ir }; float* outs[2] = { ol, orr };
+        for (size_t done = 0; done < n; done += host::kBlock) {
+            for (size_t i = 0; i < host::kBlock; i++) il[i] = ir[i] = in(done + i);
+            transport.tick(false);
+            e.prepare();
+            e.process(ins, outs, host::kBlock);
+            out_all.insert(out_all.end(), ol, ol + host::kBlock);
+        }
+        return out_all;
+    }
+    std::vector<float> run_silence(const size_t n) { return run(n, [](size_t) { return 0.f; }); }
+};
+
+float rms_of(const std::vector<float>& v, size_t from) {
+    double acc = 0; size_t n = 0;
+    for (size_t i = from; i < v.size(); i++) { acc += double(v[i]) * v[i]; n++; }
+    return n ? static_cast<float>(std::sqrt(acc / n)) : 0.f;
+}
+
+// Sample index of the loudest output after `from` - the echo of an impulse.
+size_t peak_index(const std::vector<float>& v, size_t from) {
+    size_t best = from;
+    for (size_t i = from; i < v.size(); i++) if (std::fabs(v[i]) > std::fabs(v[best])) best = i;
+    return best;
 }
 
 } // namespace
@@ -334,6 +379,115 @@ int main() {
         std::printf("  start-offset walk: off rms=%.5f, on rms=%.5f\n", off.first, on.first);
         check(off.second && on.second, "the start-offset walk renders finite audio");
         check(on.first > off.first, "the start-offset walk moves the start into the buffer");
+    }
+
+    // --- Flux clocked delay follows the clock (upstream v1.3.0, wired here) ----------------------
+    // An impulse through an empty deck's dry path into the flux delay. In ClockedDelay the time is a
+    // note value of the TRANSPORT tempo; upstream never fed it the tempo, so it stayed at 120 BPM.
+    {
+        auto echo_at = [](const float bpm) {
+            Rig r(bpm);
+            r.e.set_config(ConfigId::Mode, DeckRef::A, kSwitchReel);
+            r.e.set_param(ParamId::Mix, DeckRef::A, 0.f);                // dry input through the fx
+            r.e.toggle_flux_mode(DeckRef::A);                              // FreeDelay -> ClockedDelay
+            r.e.set_param(ParamId::FluxIntensity, DeckRef::A, 5.f / 7.f);  // index 5 of 8: one quarter
+            r.e.set_param(ParamId::FluxFb, DeckRef::A, 0.f);               // a single echo
+            r.e.set_param(ParamId::FluxMix, DeckRef::A, 1.f);
+            r.e.set_fx(DeckRef::A, FxKind::Flux, true);
+            r.run_silence(24000);                                          // settle tempo, lag, send
+            const auto out = r.run(96000, [](size_t i) { return i == 0 ? 1.f : 0.f; });
+            return std::pair<size_t, bool>{ peak_index(out, 1000), r.e.fx_leds(DeckRef::A).flux_mode == FluxMode::ClockedDelay };
+        };
+        const auto e120 = echo_at(120.f), e60 = echo_at(60.f);
+        std::printf("  clocked flux echo: 120 BPM at %zu, 60 BPM at %zu samples\n", e120.first, e60.first);
+        check(e120.second, "Flux+Tap switches the delay to ClockedDelay");
+        check(e120.first > 23500 && e120.first < 24500, "a quarter at 120 BPM echoes after ~0.5 s");
+        check(e60.first > 47000 && e60.first < 49000, "a quarter at 60 BPM echoes after ~1 s");
+    }
+
+    // --- Grit DJ filter (upstream v1.3.0) ------------------------------------------------------
+    // Grit cycles Drive -> Reduce -> Filter. Intensity below .5 is the low-pass half: at 0 it cuts
+    // to 60 Hz, so a Nyquist-rate square all but vanishes; at .5 the high-pass is fully open.
+    {
+        auto level = [](const float intensity) {
+            Rig r;
+            r.e.set_config(ConfigId::Mode, DeckRef::A, kSwitchReel);
+            r.e.set_param(ParamId::Mix, DeckRef::A, 0.f);
+            r.e.toggle_grit_mode(DeckRef::A);
+            const GritReseed g = r.e.toggle_grit_mode(DeckRef::A);
+            r.e.set_param(ParamId::GritIntensity, DeckRef::A, intensity);
+            r.e.set_param(ParamId::GritMix, DeckRef::A, 1.f);
+            r.e.set_fx(DeckRef::A, FxKind::Grit, true);
+            const auto out = r.run(24000, [](size_t i) { return (i & 1) ? .25f : -.25f; });
+            return std::pair<float, bool>{ rms_of(out, 12000), r.e.fx_leds(DeckRef::A).grit_mode == GritMode::Filter && g.mix >= 0.f };
+        };
+        const auto shut = level(0.f), open = level(.5f);
+        std::printf("  dj filter at Nyquist: lp-shut rms=%.5f, open rms=%.5f\n", shut.first, open.first);
+        check(shut.second, "two Grit+Tap presses reach the DJ filter");
+        check(open.first > .1f, "the filter at centre passes the signal");
+        check(shut.first < open.first * .05f, "the filter fully left cuts the top end");
+    }
+
+    // --- Slice size snaps to 1/8, and to 1/16 with Alt (upstream v1.3.0) ----------------------
+    // 1 s at 120 BPM is 4 eighths of 12000 frames. SIZE .3 asks for 15120 frames: one eighth by
+    // default, three sixteenths with Alt.
+    {
+        Rig r(120.f);
+        r.e.set_config(ConfigId::Mode, DeckRef::A, kSwitchSlice);
+        r.run_silence(4800);                                           // mode lands, tempo arrives
+        load_buffer(r.e, .5f, 48000);
+        LEDRing ring;
+        auto size_at = [&](const bool alt) {
+            r.e.set_config(ConfigId::AltSize, DeckRef::A, alt ? 1 : 0);
+            r.e.set_param(ParamId::Size, DeckRef::A, .3f);
+            r.run_silence(960);
+            return r.e.render_ring(ring, DeckRef::A, 1.f).size;
+        };
+        const float plain = size_at(false), fine = size_at(true);
+        std::printf("  slice size snap: plain=%.4f alt=%.4f\n", plain, fine);
+        check(std::fabs(plain - .25f) < .002f, "Slice SIZE snaps to whole eighths");
+        check(std::fabs(fine - .375f) < .002f, "Alt+SIZE snaps to sixteenths");
+    }
+
+    // --- WAV cues slice the buffer (upstream v1.1.0 import, cue_sm_a 1) -------------------------
+    // Markers at 0, 12000, 30000 plus the end marker on_wav_cues appends. POS .5 picks the middle cue
+    // of the two starts the snap offers, so the segment starts at 12000/48000 instead of .5.
+    {
+        Rig r;
+        r.e.set_config(ConfigId::Mode, DeckRef::A, kSwitchReel);
+        r.run_silence(960);
+        load_buffer(r.e, .5f, 48000);
+        r.e.set_param(ParamId::Pos, DeckRef::A, .5f);
+        LEDRing ring;
+        r.run_silence(960);
+        const float free_start = r.e.render_ring(ring, DeckRef::A, 1.f).start;
+
+        const char on[] = "cue_sm_a\n1\n";
+        Config::dynamic().fill(reinterpret_cast<const uint8_t*>(on), sizeof(on) - 1);
+        WavCues cues; cues.frames[0] = 0; cues.frames[1] = 12000; cues.frames[2] = 30000; cues.count = 3;
+        r.e.on_wav_cues(DeckRef::A, cues);
+        r.run_silence(960);
+        const float cue_start = r.e.render_ring(ring, DeckRef::A, 1.f).start;
+        const char off[] = "cue_sm_a\n0\n";
+        Config::dynamic().fill(reinterpret_cast<const uint8_t*>(off), sizeof(off) - 1);
+        std::printf("  cue import: start without cues=%.4f, with cues=%.4f\n", free_start, cue_start);
+        check(std::fabs(free_start - .5f) < .002f, "without cues POS .5 starts mid-buffer");
+        check(std::fabs(cue_start - .25f) < .002f, "with cue_sm_a 1 the start snaps to a WAV cue");
+    }
+
+    // --- MIDI CC (upstream v1.1.0 map) ----------------------------------------------------------
+    {
+        Rig r;
+        const uint8_t ch_a = Config::dynamic().midi_channel_a();
+        r.e.handle_midi_message(0xB0 | ch_a, 22, 127);                 // CC 22: Size
+        check(r.e.param(ParamId::Size, DeckRef::A) == 1.f, "CC 22 sets deck A Size");
+        check(r.e.take_param_reseed(DeckRef::A), "a CC asks the platform to re-pick its knob pickup");
+        check(!r.e.take_param_reseed(DeckRef::A), "the reseed request clears once taken");
+        r.e.handle_midi_message(0xB0 | 9, 22, 0);                      // a channel no deck listens on
+        check(r.e.param(ParamId::Size, DeckRef::A) == 1.f, "a CC on an unmapped channel is ignored");
+        r.e.set_param(ParamId::PolySlice, DeckRef::A, 0.f);
+        check(Config::dynamic().is_slice_mono(DeckRef::A), "PolySlice writes the per-deck slc_mn setting");
+        r.e.set_param(ParamId::PolySlice, DeckRef::A, 1.f);
     }
 
     if (g_failures == 0) { std::printf("\nAll granular audio tests passed.\n"); return 0; }

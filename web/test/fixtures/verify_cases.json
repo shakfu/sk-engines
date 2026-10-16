@@ -169,7 +169,7 @@
       "level": "warn",
       "path": "SK/config.txt",
       "problem": "unknown property 'nonsense'",
-      "fix": "Known: mid_ch_a, mid_ch_b, mid_ps_a, mid_ps_b, pre_load"
+      "fix": "Known: mid_ch_a, mid_ch_b, mid_ps_a, mid_ps_b, pre_load, slc_mn_a, slc_mn_b, cue_sm_a, cue_sm_b"
     },
     {
       "level": "error",

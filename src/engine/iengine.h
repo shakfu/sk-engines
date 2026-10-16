@@ -81,6 +81,7 @@ public:
     virtual bool       set_config(ConfigId, DeckRef::Ref, int) { return false; }
     virtual float      tempo_to_fit(DeckRef::Ref, float fraction) { return 0.f; }
     virtual GritReseed toggle_grit_mode(DeckRef::Ref) { return {}; }
+    virtual void       toggle_flux_mode(DeckRef::Ref) {}   // cycle the flux sub-effect (Flux+Tap)
 
     // --- Knob layout (item 3a-3): lets the platform branch the SIZE/ENV pot handling and the apply
     //     pass without reading Core's Mode. deck_layout describes how those knobs behave for this
@@ -191,10 +192,12 @@ public:
     // Liveness masks for `describe`: a bitset over ParamId/ConfigId marking what this engine actually
     // implements, so the descriptor lists only real params (a generic round-trip sweep would else get
     // false failures on ignored params). Default "all live" - describe over-reports and the host sweep
-    // must tolerate ignored params until an engine narrows these. (ParamId has 24 values < 32,
-    // ConfigId has 6 < 8, so uint32_t/uint8_t suffice.)
+    // must tolerate ignored params until an engine narrows these. (ParamId has 25 values < 32,
+    // ConfigId has 7 < 8, so uint32_t/uint8_t suffice.)
     using ParamMask  = uint32_t;
     using ConfigMask = uint8_t;
+    static_assert(static_cast<uint32_t>(ParamId::Count) <= 32, "ParamMask is too narrow");
+    static_assert(static_cast<uint32_t>(ConfigId::Count) <= 8, "ConfigMask is too narrow");
     // The value `reset` writes for this param. Default 0.5 - the midpoint of the normalized range:
     // deterministic, which is what a test baseline needs, but not necessarily musical. An engine with
     // real neutral values should override (a delay whose feedback default is 0.5 will self-oscillate

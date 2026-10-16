@@ -112,12 +112,12 @@ inline bool wav_header(const uint8_t* bytes, size_t size, WavHeader& header, siz
 //
 // A WAV `cue ` chunk body is: uint32 numCuePoints, then numCuePoints * 24-byte cue points; each cue
 // point carries its dwSampleOffset (the sample-frame position) at byte offset 20 within the point.
-inline void find_cue_points(const uint8_t* bytes, size_t size, size_t frame_limit, spotykach::WavCues& out)
+// The chunk walk behind find_cue_points, starting at any chunk boundary `cursor` rather than past the
+// RIFF header - so a loader can scan the bytes AFTER the `data` chunk, where most tools put `cue `.
+inline void find_cue_chunk(const uint8_t* bytes, size_t size, size_t cursor, size_t frame_limit,
+                           spotykach::WavCues& out)
 {
     out.count = 0;
-    if (size < 12 || !check_id(bytes, 0, "RIFF")) return;
-
-    size_t cursor = 12;   // past RIFF + riffSize + WAVE
     while (cursor + 8 <= size) {
         char chunkID[4];
         std::memcpy(chunkID, bytes + cursor, 4);
@@ -137,4 +137,11 @@ inline void find_cue_points(const uint8_t* bytes, size_t size, size_t frame_limi
 
         cursor = body + chunkSize + (chunkSize & 1u);   // chunks are word-aligned
     }
+}
+
+inline void find_cue_points(const uint8_t* bytes, size_t size, size_t frame_limit, spotykach::WavCues& out)
+{
+    out.count = 0;
+    if (size < 12 || !check_id(bytes, 0, "RIFF")) return;
+    find_cue_chunk(bytes, size, 12, frame_limit, out);   // 12: past RIFF + riffSize + WAVE
 }

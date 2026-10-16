@@ -1,4 +1,6 @@
 #include "led.ring.h"
+#include <algorithm>
+#include <utility>
 #include "expose.h"
 
 // Size-optimize: ring drawing primitives feed only the 62 Hz LED render, never the audio path.
@@ -7,13 +9,22 @@
 using namespace spotykach;
 using namespace infrasonic;
 
-inline void extrapolate(const float p, const float b, int32_t& p1, int32_t& p2, float& b1, float& b2)
+// `soft` is upstream Spotykach 1.3.0's anti-aliasing: a smoothstep across the two LEDs, and a segment
+// START extrapolated backwards (`reverse`) so the leading LED fades in. Off by default.
+inline float smoothstep_frac(const float frac)
+{
+    return frac * frac * (3.f - 2.f * frac);
+}
+inline void extrapolate(const float p, const float b, int32_t& p1, int32_t& p2, float& b1, float& b2,
+                        const bool soft = false, const bool reverse = false)
 {
     p1 = static_cast<int32_t>(p);
-    p2 = p1 + 1;
-    auto frac = p - p1;
+    if (soft && reverse) p2 = std::max<int32_t>(p1 - 1, 0);
+    else p2 = p1 + 1;
+    auto frac = soft ? smoothstep_frac(p - p1) : p - p1;
     b1 = (1.f - frac) * b;
     b2 = frac * b;
+    if (soft && reverse) std::swap(b1, b2);
 }
 
 LEDRing::LEDRing():
@@ -52,7 +63,7 @@ void LEDRing::set_segment(float norm_start, float norm_end, const bool sharp)
         sb1 = sb2 = _segment_brightness;
     }
     else {
-        extrapolate(norm_start * kUpperBound, _segment_brightness, sp1, sp2, sb1, sb2);
+        extrapolate(norm_start * kUpperBound, _segment_brightness, sp1, sp2, sb1, sb2, _soft, true);
     }
     sp1 %= kCount;
     sp2 %= kCount;
@@ -65,7 +76,7 @@ void LEDRing::set_segment(float norm_start, float norm_end, const bool sharp)
         eb1 = eb2 = _segment_brightness;
     }
     else {
-        extrapolate(norm_end * kUpperBound, _segment_brightness, ep1, ep2, eb1, eb2);
+        extrapolate(norm_end * kUpperBound, _segment_brightness, ep1, ep2, eb1, eb2, _soft);
     }
     ep1 %= kCount;
     ep2 %= kCount;
@@ -74,7 +85,7 @@ void LEDRing::set_segment(float norm_start, float norm_end, const bool sharp)
         _set(sp1, _segment_color, sb1);
     }
     else {
-        if (sb1 > sb2) sb2 = _segment_brightness;
+        if (!_soft && sb1 > sb2) sb2 = _segment_brightness;
         _set(sp1, _segment_color, sb1);
         _set(sp2, _segment_color, sb2);
 
@@ -106,7 +117,7 @@ void LEDRing::add_point(float norm_position, const float brightness, const bool 
         _set(std::round(norm_position * kCount), _point_color, brightness, over);
     } 
     else {
-        extrapolate(norm_position * kUpperBound, brightness, p1, p2, b1, b2);
+        extrapolate(norm_position * kUpperBound, brightness, p1, p2, b1, b2, _soft);
         _set(p1, _point_color, b1, over);
         _set(p2, _point_color, b2, over);
     }

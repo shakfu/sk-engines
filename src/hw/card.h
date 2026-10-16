@@ -5,6 +5,7 @@
 #include <daisy_seed.h>
 #include "nocopy.h"
 #include "memory/pcm_loader.h"
+#include "engine/wav_cues.h"
 
 namespace spotykach {
 
@@ -55,6 +56,8 @@ class Card
     void init_read_audio(const AudioData data);
     void read_audio();
     size_t size_audio() const { return _size_read_audio; }
+    // Cue markers of the last completed load, in BUFFER frames (rescaled when the file was resampled).
+    const WavCues& cues() const { return _cues; }
 
     void init_write_audio(AudioData data);
     void write_audio();
@@ -70,6 +73,7 @@ class Card
     NOCOPY(Card)
 
     void _close_file();
+    void _finish_cues();
 
     daisy::SdmmcHandler   _sd;
     daisy::FatFSInterface _fsi;
@@ -83,6 +87,9 @@ class Card
     size_t    _size_read_audio;
 
     PcmLoader _loader;  // audio-load accounting + on-the-fly width conversion
+    WavCues   _cues;
+    uint32_t  _cue_scan_from = 0;   // first byte past the `data` chunk
+    uint32_t  _src_rate = 0;
 
     bool _notify_finish_processing;
 };

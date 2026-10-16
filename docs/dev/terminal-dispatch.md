@@ -107,9 +107,10 @@ static const char* const kParamNames[] = {   // index == (uint8_t)ParamId
     "pos","fluxfb","env","envsize","size","win","polyslice","speed",
     "fluxint","gritint","fluxmix","gritmix","feedback","mix","modspeed","modamp",
     "tempo","clickmix","panspeed","panrange","keyinterval","crossfade","altpos","aux",
+    "gritchar",
 };
 static const char* const kConfigNames[] = {   // index == (uint8_t)ConfigId
-    "route","modtype","lfoshape","mode","startmodon","sizemodon",
+    "route","modtype","lfoshape","mode","startmodon","sizemodon","altsize",
 };
 bool param_from_name (const char*, spotykach::ParamId&);   // linear scan
 bool config_from_name(const char*, spotykach::ConfigId&);
@@ -139,6 +140,7 @@ Deck token is `A`/`B`; global params ignore it (pass `A`). Values are floats unl
 | `pad stop\|clear <deck>` | `stop_if_generating/clear_buffer(deck)` (:100-101) | `ok` |
 | `fx flux\|grit <deck> on\|off` | `set_fx(deck, kind, on)` (:96) | `ok` |
 | `fx lock <flux\|grit> <deck>` | `toggle_fx_lock(deck, kind)` | `ok` |
+| `fx fluxmode <deck>` | `toggle_flux_mode(deck)` | `ok` |
 | `fx gritmode <deck>` | `toggle_grit_mode(deck)` | `ok intensity=<f> mix=<f>` |
 | `seq trig\|arm\|clear\|disarm <deck>` | `on_seq_trigger` / `on_seq_toggle_arm` / `clear_sequence` / `disarm_track` | `ok` |
 | `query recorded\|capacity <deck>` | `audio_recorded_bytes` / `audio_capacity_bytes` | `ok <int>` |

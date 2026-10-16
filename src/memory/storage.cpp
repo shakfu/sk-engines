@@ -271,6 +271,8 @@ void DeckStorage::process()
             else { 
                 if (_card->notify_finish_processing()) {
                     _engine->audio_apply_loaded(_ref, _card->size_audio());
+                    // Every load replaces the buffer, so an empty list also clears the previous cues.
+                    if (_engine->capabilities() & CapWavCues) _engine->on_wav_cues(_ref, _card->cues());
                     if (!_is_preloading && Config::dynamic().is_preload_on()) _save_preload_source();
                 }
                 _is_preloading = false;

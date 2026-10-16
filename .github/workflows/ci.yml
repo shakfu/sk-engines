@@ -83,9 +83,9 @@ jobs:
         run: make check-boundary
 
       # The host binaries that are NOT assertion suites: the WAV harness (host_spotykach), the bard card
-      # validator, and the two micro-benchmarks. `make -C host test` does not name them, so until this
+      # validator, and the micro-benchmark. `make -C host test` does not name them, so until this
       # step nothing compiled them at all - and three had rotted into non-compiling states unnoticed
-      # (main_host.cpp missing <memory>, bench_graincloud.cpp missing <initializer_list>,
+      # (main_host.cpp missing <memory>, a since-removed benchmark missing <initializer_list>,
       # bard_card_check.cpp with its <algorithm> included AFTER the std::sort that needs it). Build
       # only: a benchmark prints a host timing its own header calls a lower bound rather than a device
       # load %, and the card validator wants a card.
@@ -126,7 +126,6 @@ jobs:
         target:
           # SRAM engines
           - ENGINE=granular
-          - ENGINE=graincloud
           - ENGINE=passthrough
           - ENGINE=delay
           - ENGINE=qdelay
@@ -212,13 +211,13 @@ jobs:
       fail-fast: false
       matrix:
         # Chosen for the flags they exercise, not for coverage: pstretch has its own linker script,
-        # reverb and graincloud force -Os, softcut has extra sources, mosc is the QSPI boot path, and
+        # reverb forces -Os, softcut has extra sources, mosc is the QSPI boot path, and
         # granular is the default. Every past divergence would have been caught by one of these.
         #
         # `mosc` takes no extra flags here, unlike the Makefile job above: CMake drives the QSPI boot
         # path off an ENGINE_BOOT_QSPI property on the engine rather than off APP_TYPE/LDSCRIPT passed
         # on the command line. That asymmetry is intentional and is itself worth having under test.
-        engine: [granular, graincloud, pstretch, reverb, softcut, mosc]
+        engine: [granular, pstretch, reverb, softcut, mosc]
     steps:
       - uses: actions/checkout@v7
         with:

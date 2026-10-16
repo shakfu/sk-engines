@@ -35,7 +35,13 @@ enum class ModType: uint8_t {   // was Modulator::Type
 
 enum class GritMode: uint8_t {  // was Fx::GritMode
     Drive,
-    Reduce
+    Reduce,
+    Filter      // DJ filter: intensity < .5 is low-pass, above is high-pass (upstream v1.3.0)
+};
+
+enum class FluxMode: uint8_t {  // granular's Flux delay (upstream v1.3.0)
+    FreeDelay,
+    ClockedDelay
 };
 
 enum class DeckSource: uint8_t { // was Deck::Source (recording input select)

@@ -304,6 +304,7 @@ STIMULUS: tuple[tuple[str, str], ...] = (
     ("fx/grit", "bool"),
     ("fx/lock/flux", "trigger"),
     ("fx/lock/grit", "trigger"),
+    ("fx/fluxmode", "trigger"),
     ("fx/gritmode", "trigger"),
     ("modspeed", "float"),        # routes to set_mod_speed, not set_param
 )

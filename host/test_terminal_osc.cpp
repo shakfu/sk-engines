@@ -761,8 +761,8 @@ void test_describe() {
         // It must also fit the TX FIFO whole, since a bundle cannot be streamed the way lines can.
         TxFifo fifo;
         check(fifo.free_space() >= bytes + 2, "the unmasked descriptor fits the TX FIFO in one piece");
-        check(count_rows(rows, "/sk/reply/dev/describe/param") == 2 * 17 + 4,
-              "17 deck-scoped params x 2 decks + 4 global, with the platform-owned ids excluded");
+        check(count_rows(rows, "/sk/reply/dev/describe/param") == 2 * 18 + 4,
+              "18 deck-scoped params x 2 decks + 4 global, with the platform-owned ids excluded");
     }
     {
         // A FIFO that cannot take the whole frame must refuse it, not write a corrupt half-frame: a

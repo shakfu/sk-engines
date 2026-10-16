@@ -188,10 +188,10 @@ test('a valid image with no banner flashes, but warns that it cannot be identifi
 test('the banner is found wherever the linker put it', () => {
   // Scanned rather than read at a fixed offset: .rodata lands differently per engine and per build.
   const big = new Uint8Array(200_000);
-  const s = 'spotykach 0.6.1-2-gb7d494d engine=graincloud';
+  const s = 'spotykach 0.6.1-2-gb7d494d engine=granular';
   for (let i = 0; i < s.length; i++) big[187_000 + i] = s.charCodeAt(i);
   const found = readBanner(big);
-  eq(found?.engine, 'graincloud');
+  eq(found?.engine, 'granular');
   eq(found?.version, '0.6.1-2-gb7d494d');
 });
 

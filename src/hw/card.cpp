@@ -81,6 +81,10 @@ void Card::init_read_audio(const AudioData data)
             _offset = 0;
             _size   = _loader.size_bytes();  // keep progress() in sync
             _state  = State::read_audio;
+            // A `cue ` chunk ahead of `data` is in this first read; one after it is scanned at the end.
+            find_cue_points(_buffer, bytesread, UINT32_MAX, _cues);
+            _cue_scan_from = info.data_start + info.data_size + (info.data_size & 1u);
+            _src_rate = info.sample_rate;
     }
     else {
         _state = State::failed;
@@ -113,11 +117,31 @@ void Card::read_audio()
     _size_read_audio = _loader.frames();
 
     if (bytesread < kChunk || buffer_full) {
+        _finish_cues();
         _notify_finish_processing = true;
         _state = State::idle;
         _close_file();
         return;
     }
+}
+
+// Cues come in SOURCE frames. Rescale them to the buffer's device-rate frames (the loader resampled
+// the audio) and drop any past what was actually loaded.
+void Card::_finish_cues()
+{
+    if (_cues.count == 0) {
+        size_t n = 0;
+        if (f_lseek(&_sdfile, _cue_scan_from) == FR_OK && f_read(&_sdfile, _buffer, kChunk, &n) == FR_OK) {
+            find_cue_chunk(_buffer, n, 0, UINT32_MAX, _cues);
+        }
+    }
+    uint8_t kept = 0;
+    for (uint8_t i = 0; i < _cues.count; i++) {
+        const uint64_t f = _src_rate ? static_cast<uint64_t>(_cues.frames[i]) * kDeviceRate / _src_rate
+                                     : _cues.frames[i];
+        if (f < _size_read_audio) _cues.frames[kept++] = static_cast<size_t>(f);
+    }
+    _cues.count = kept;
 }
 
 void Card::init_write_audio(const AudioData data)

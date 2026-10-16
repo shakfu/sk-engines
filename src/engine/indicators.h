@@ -55,6 +55,8 @@ namespace pal {
     inline constexpr uint32_t kFlux     = 0xFF6565; // tape-delay (coral)
     inline constexpr uint32_t kSoftFx   = 0xFFD524; // grit — drive (yellow)
     inline constexpr uint32_t kHarshFx  = 0xFF9A24; // grit — reduce (orange)
+    inline constexpr uint32_t kFilterLP = 0x7F1EA6; // grit — DJ filter, low-pass half
+    inline constexpr uint32_t kFilterHP = 0x29C745; // grit — DJ filter, high-pass half
 
     // Tape/SD folders — lexicographic so card folders (B G P R T Y) sort in visual order.
     inline constexpr uint32_t kTape[6] = { kBlue, kGreen, kPink, kRed, kTurq, 0xffDE21 /*yellow*/ };
@@ -62,7 +64,14 @@ namespace pal {
     inline constexpr uint32_t mode(Mode m) {
         switch (m) { case Mode::Slice: return kSlice; case Mode::Drift: return kDrift; default: return kReel; }
     }
-    inline constexpr uint32_t grit(GritMode g) { return g == GritMode::Reduce ? kHarshFx : kSoftFx; }
+    // `amount01` picks the DJ filter's half: below .5 is low-pass (upstream v1.3.0).
+    inline constexpr uint32_t grit(GritMode g, float amount01 = 0.f) {
+        switch (g) {
+            case GritMode::Reduce: return kHarshFx;
+            case GritMode::Filter: return amount01 < .5f ? kFilterLP : kFilterHP;
+            default:               return kSoftFx;
+        }
+    }
     inline constexpr uint32_t clock(ClockSource::Source s) {
         switch (s) { case ClockSource::internal: return kGreen; case ClockSource::ts4: return kPink;
                      case ClockSource::midi: return kTurq; default: return kWhite; }

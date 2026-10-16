@@ -14,7 +14,7 @@ namespace spotykach {
 // LED migration's intermediate channel: the engine reports state, the platform owns the color
 // palette + blink/timer/storage/_touched compositing. The end state (engine fills DisplayModel
 // via render()) plus the MValue->ParamId value-display toolkit will retire these in item 3.
-struct FxLeds   { GritMode grit_mode; bool grit_on; bool flux_on; };
+struct FxLeds   { GritMode grit_mode; bool grit_on; bool flux_on; FluxMode flux_mode; };
 struct PlayLeds { Mode mode; bool playing; bool play_queued; bool reverse; bool armed; bool recording; DeckSource source; };
 struct AltLeds  { bool track_armed; bool track_recording; };
 

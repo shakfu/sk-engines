@@ -12,7 +12,7 @@
 #include "dispatcher.h"
 #include "irq.queue.h"
 #include "xfade.h"
-#include "fx.h"
+#include "fx/fx.h"
 #include "dsp/smooth.h"
 #include "daisysp.h"
 #include "engine/deck_ref.h"
@@ -41,6 +41,8 @@ public:
 
     void init(const Params p);
 
+    void prepare();
+
     /* 
     Applies the commands posted with set_mode, trigger, toggle_play, play, stop, toggle_recording
     and clear_sequence.
@@ -68,23 +70,13 @@ public:
     bool is_overdubbing() const { return is_playing() && is_recording(); }
     bool is_empty() const { return _buffer.is_empty(); }
 
+    void make_grid();
+
     void clear_sequence(); // deferred to process_commands
     
     void tick(const bool common_tick, const bool is_key);
     void trigger(const Event *); // deferred to process_commands
     void reset_track_divider() { _pattern_divider.reset(); }
-
-    float norm_start() const;
-    void set_start(const float);
-    void start_mod_in(const float);
-    void set_start_mod_on(const bool);
-
-    float norm_size(const bool incl_mod) const;
-    void set_size(const float);
-    void size_mod_in(const float);
-    void set_size_mod_on(const bool on);
-
-    void apply_start_size();
 
     float norm_playhead_at(const uint8_t idx) const;
     float envelope_at(const uint8_t idx) const { return _generator.envelope_at(idx); };
@@ -100,8 +92,6 @@ public:
     /* The mode the deck has been asked for. Can be ahead of mode() while a switch is in flight. */
     Mode target_mode() const { return _target_mode; }
     void set_mode(const Mode val); // deferred to process_commands
-    void set_force_mono(const bool value)  { _force_mono = value; }
-    bool force_mono() const { return _force_mono; }
 
     void set_inout_mix(const float val);
     void inout_mix_mod_in(const float val);
@@ -146,9 +136,6 @@ private:
     void _stop_recording();
     void _clock_recording();
     void _set_buf_armed(const bool val);
-    void _set_grid(const bool round = false);
-    void _set_size();
-    void _set_start();
 
     void _resolve_in_out_mix();
 
@@ -178,12 +165,7 @@ private:
     float _tempo;
     float _record_tempo;
     
-    float _norm_start;
     float _start_step_kof;
-
-    float _norm_size;
-    float _norm_size_mod;
-    float _size_mod_on;
 
     float _in_out_mix;
     float _in_out_mix_offset;
@@ -205,9 +187,6 @@ private:
     bool _is_record_queued;
     bool _is_playing;
     bool _adjust_count;
-    bool _start_mod_on;
-    bool _length_mod_on;
     bool _is_cut_queued;
-    bool _force_mono;
 };
 };

@@ -19,12 +19,13 @@ void GranularEngine::init(const EngineContext& ctx)
     for (auto ref : { DeckRef::A, DeckRef::B }) {
         auto& deck = _core.deck(ref);
         auto& fx = deck.fx();
-        _param_cache[static_cast<size_t>(ParamId::Pos)][ref]           = deck.norm_start();
-        _param_cache[static_cast<size_t>(ParamId::GritMix)][ref]       = fx.grit_mix();
-        _param_cache[static_cast<size_t>(ParamId::GritIntensity)][ref] = fx.grit_intensity();
-        _param_cache[static_cast<size_t>(ParamId::FluxMix)][ref]       = fx.flux_mix();
-        _param_cache[static_cast<size_t>(ParamId::FluxIntensity)][ref] = fx.flux_intensity();
-        _param_cache[static_cast<size_t>(ParamId::FluxFb)][ref]        = fx.flux_fb();
+        _param_cache[static_cast<size_t>(ParamId::Pos)][ref]           = 0.f;   // upstream 1.1.0: POS seeds at 0
+        _param_cache[static_cast<size_t>(ParamId::GritMix)][ref]       = fx.grit().mix();
+        _param_cache[static_cast<size_t>(ParamId::GritIntensity)][ref] = fx.grit().intensity();
+        _param_cache[static_cast<size_t>(ParamId::GritChar)][ref]      = fx.grit().character();
+        _param_cache[static_cast<size_t>(ParamId::FluxMix)][ref]       = fx.flux().mix_norm();
+        _param_cache[static_cast<size_t>(ParamId::FluxIntensity)][ref] = fx.flux().time_norm();
+        _param_cache[static_cast<size_t>(ParamId::FluxFb)][ref]        = fx.flux().fb_norm();
         // Preserve granular's prior MODFREQ default (was a shared 0.3 literal in core.ui; now that the
         // cycle knob is engine-seeded, granular must carry its own default so its behaviour is unchanged).
         _param_cache[static_cast<size_t>(ParamId::ModSpeed)][ref]      = 0.3f;
@@ -44,25 +45,27 @@ void GranularEngine::set_param(const ParamId id, const DeckRef::Ref ref, const f
     auto& deck = _core.deck(deck_ref);
     const auto mode = deck.target_mode();   // route to the selected mode, even while a switch is pending
 
+    // Mirrors upstream 1.3.1's CoreUI apply pass. The generator only stores start/size here;
+    // Deck::prepare -> Generator::apply_dimensions turns them into voice positions.
     switch (id) {
-        case ParamId::Pos:           deck.set_start(v); break;
-        case ParamId::FluxFb:        deck.fx().set_flux_fb(v); break;
+        case ParamId::Pos:           deck.voxs().set_start(v); break;
+        case ParamId::FluxFb:        deck.fx().flux().set_fb_norm(v); break;
         case ParamId::Env:           deck.voxs().set_shape(v); break;
-        case ParamId::EnvSize:       deck.set_size(v); break;
-        case ParamId::Size:
-            if (mode == Mode::Drift) deck.voxs().set_win_spread(v);
-            else                     deck.set_size(v);
-            break;
+        case ParamId::EnvSize:       deck.voxs().set_env_size(v); break;
+        case ParamId::Size:          deck.voxs().set_size(v, _alt_size[deck_ref]); break;
         case ParamId::Win:           deck.voxs().set_win_size(v); break;
-        case ParamId::PolySlice:     deck.set_force_mono((1.f - v) > .5f); break;
+        // Upstream 1.1.0 moved Slice mono/poly from Alt+SIZE to config.txt (slc_mn_a/b); this keeps
+        // it reachable from the terminal by writing the same per-deck config value.
+        case ParamId::PolySlice:     Config::dynamic().set_slice_mono(deck_ref, (1.f - v) > .5f); break;
         case ParamId::Speed:
             if (mode == Mode::Slice) deck.voxs().set_pitch(v);
             else                     deck.voxs().set_speed(v);
             break;
-        case ParamId::FluxIntensity: deck.fx().set_flux_intensity(v); break;
-        case ParamId::GritIntensity: deck.fx().set_grit_intensity(v); break;
-        case ParamId::FluxMix:       deck.fx().set_flux_mix(v); break;
-        case ParamId::GritMix:       deck.fx().set_grit_mix(v); break;
+        case ParamId::FluxIntensity: deck.fx().flux().set_time_norm(v); break;
+        case ParamId::GritIntensity: deck.fx().grit().set_intensity(v); break;
+        case ParamId::FluxMix:       deck.fx().flux().set_mix_norm(v); break;
+        case ParamId::GritMix:       deck.fx().grit().set_mix(v); break;
+        case ParamId::GritChar:      deck.fx().grit().set_character(v); break;
         case ParamId::Feedback:      deck.set_feedback(v); break;
         case ParamId::Mix:           deck.set_inout_mix(v); break;
         case ParamId::ModSpeed:      set_mod_speed(ref, v, false); break; // sync comes via set_mod_speed live
@@ -123,8 +126,9 @@ bool GranularEngine::set_config(const ConfigId id, const DeckRef::Ref ref, const
             _core.infer_panner_mode();
             return true;
         }
-        case ConfigId::StartModOn: _core.deck(deck_ref).set_start_mod_on(v != 0); return false;
-        case ConfigId::SizeModOn:  _core.deck(deck_ref).set_size_mod_on(v != 0);  return false;
+        case ConfigId::StartModOn: _core.deck(deck_ref).voxs().set_start_mod_on(v != 0); return false;
+        case ConfigId::SizeModOn:  _core.deck(deck_ref).voxs().set_size_mod_on(v != 0);  return false;
+        case ConfigId::AltSize:    _alt_size[deck_ref] = v != 0; return false;
         case ConfigId::Count: break;
     }
     return false;
@@ -137,9 +141,19 @@ float GranularEngine::tempo_to_fit(const DeckRef::Ref ref, const float fraction)
 
 GritReseed GranularEngine::toggle_grit_mode(const DeckRef::Ref ref)
 {
-    auto& fx = _core.deck(_safe_ref(ref)).fx();
-    fx.switch_grit_mode();
-    return { fx.grit_intensity(), fx.grit_mix() };
+    const auto r = _safe_ref(ref);
+    auto& grit = _core.deck(r).fx().grit();
+    grit.switch_mode();
+    // Each sub-effect keeps its own settings; the cache must follow, or param() reports the old one.
+    _param_cache[static_cast<size_t>(ParamId::GritIntensity)][r] = grit.intensity();
+    _param_cache[static_cast<size_t>(ParamId::GritMix)][r]       = grit.mix();
+    _param_cache[static_cast<size_t>(ParamId::GritChar)][r]      = grit.character();
+    return { grit.intensity(), grit.mix(), grit.character() };
+}
+
+void GranularEngine::toggle_flux_mode(const DeckRef::Ref ref)
+{
+    _core.deck(_safe_ref(ref)).fx().flux().switch_mode();
 }
 
 DeckLayout GranularEngine::deck_layout(const DeckRef::Ref ref)
@@ -162,7 +176,7 @@ bool GranularEngine::size_sets_tempo(const DeckRef::Ref ref)
 Capabilities GranularEngine::capabilities() const
 {
     return CapRecording | CapTapeStorage | CapStepSequencer
-         | CapLaunchQuant | CapTransport | CapDualDeck | CapAltPos;
+         | CapLaunchQuant | CapTransport | CapDualDeck | CapAltPos | CapWavCues;
 }
 
 DeckRef::Ref GranularEngine::handle_midi_note(const uint8_t channel, const uint8_t note)
@@ -179,6 +193,68 @@ DeckRef::Ref GranularEngine::handle_midi_note(const uint8_t channel, const uint8
     e.p3_on = true;
     _core.deck(ref).trigger(&e);
     return ref;
+}
+
+// Upstream 1.1.0's MIDI CC map (src/core/config.h `enum CC` there), per deck by MIDI channel.
+namespace {
+enum CC : uint8_t {
+    CrossFade = 3,   RecExt = 14,    RecInt = 15,    Start = 20,     Offset = 21,
+    Size = 22,       Env = 23,       Pitch = 24,     IOMix = 25,     DeckFB = 26,
+    EnvSize = 27,    WinSize = 28,   Fwd = 85,       Rev = 86,       ModCycle = 89,
+    ModGlow = 90,    GritOn = 102,   GritIntens = 103, GritMix = 104, FluxOn = 105,
+    FluxIntes = 106, FluxFB = 107,   FluxMix = 108,  GritChar = 109
+};
+}
+
+void GranularEngine::handle_midi_message(const uint8_t status, const uint8_t data1, const uint8_t data2)
+{
+    if ((status & 0xF0) != 0xB0) return;
+    auto& c = Config::dynamic();
+    const uint8_t channel = status & 0x0F;
+    DeckRef::Ref ref;
+    if (channel == c.midi_channel_a())      ref = DeckRef::A;
+    else if (channel == c.midi_channel_b()) ref = DeckRef::B;
+    else return;   // upstream indexes its UI arrays with Deck::Count here
+
+    const float v = std::clamp(data2 / 127.f, 0.f, 1.f);
+    auto param = ParamId::Count;
+    switch (data1) {
+        case RecExt:     if (data2 > 0) on_record_pad(ref, false); return;
+        case RecInt:     if (data2 > 0) on_record_pad(ref, true);  return;
+        case Fwd:        if (data2 > 0) on_play_pad(ref, false);   return;
+        case Rev:        if (data2 > 0) on_play_pad(ref, true);    return;
+        case GritOn:     set_fx(ref, FxKind::Grit, data2 > 0);     return;
+        case FluxOn:     set_fx(ref, FxKind::Flux, data2 > 0);     return;
+        case ModCycle:   set_mod_speed(ref, v, false); _want_reseed[ref] = true; return;
+        case CrossFade:  param = ParamId::Crossfade;     break;
+        case Start:      param = ParamId::Pos;           break;
+        case Offset:     param = ParamId::AltPos;        break;
+        case Size:       param = ParamId::Size;          break;
+        case Env:        param = ParamId::Env;           break;
+        case Pitch:      param = ParamId::Speed;         break;
+        case IOMix:      param = ParamId::Mix;           break;
+        case DeckFB:     param = ParamId::Feedback;      break;
+        case EnvSize:    param = ParamId::EnvSize;       break;
+        case WinSize:    param = ParamId::Win;           break;
+        case ModGlow:    param = ParamId::ModAmp;        break;
+        case GritIntens: param = ParamId::GritIntensity; break;
+        case GritMix:    param = ParamId::GritMix;       break;
+        case GritChar:   param = ParamId::GritChar;      break;
+        case FluxIntes:  param = ParamId::FluxIntensity; break;
+        case FluxFB:     param = ParamId::FluxFb;        break;
+        case FluxMix:    param = ParamId::FluxMix;       break;
+        default: return;
+    }
+    set_param(param, ref, v);
+    _want_reseed[ref] = true;   // the platform re-picks its knob pickup, as upstream's MValue::set did
+}
+
+bool GranularEngine::take_param_reseed(const DeckRef::Ref ref)
+{
+    const auto r = _safe_ref(ref);
+    const bool want = _want_reseed[r];
+    _want_reseed[r] = false;
+    return want;
 }
 
 void GranularEngine::stop_if_generating(const DeckRef::Ref ref)
@@ -248,9 +324,9 @@ void GranularEngine::cv_mix(const DeckRef::Ref ref, const float value)
 
 void GranularEngine::cv_size_pos(const DeckRef::Ref ref, const float value)
 {
-    auto& deck = _core.deck(_safe_ref(ref));
-    deck.size_mod_in(value);
-    deck.start_mod_in(value);
+    auto& g = _core.deck(_safe_ref(ref)).voxs();
+    g.set_start_mod(value);
+    g.set_size_mod(value);
 }
 
 void GranularEngine::cv_voct(const DeckRef::Ref ref, const float value)
@@ -304,13 +380,28 @@ void GranularEngine::audio_apply_loaded(const DeckRef::Ref ref, const size_t fra
 {
     auto& deck = _core.deck(_safe_ref(ref));
     deck.buffer().set_rec_size(frames);
-    deck.apply_start_size();
+    if (deck.mode() == Mode::Slice) deck.make_grid();   // as upstream storage.cpp does after a load
+}
+
+// Upstream 1.1.0's cue import: the markers become the generator's cue points, followed by the end of
+// the buffer, so the last cue spans to the end. Called on the main loop after audio_apply_loaded.
+void GranularEngine::on_wav_cues(const DeckRef::Ref ref, const WavCues& cues)
+{
+    auto& g = _core.deck(_safe_ref(ref)).voxs();
+    auto* points = g.cue_points();
+    auto* count = g.cue_count();
+    *count = 0;   // publish the count last, so a reader never sees it ahead of the points
+    const size_t end = _core.deck(_safe_ref(ref)).buffer().rec_size();
+    uint8_t n = 0;
+    for (uint8_t i = 0; i < cues.count && n < kMaxSlicePointCount - 1; i++) points[n++] = cues.frames[i];
+    if (n > 0 && points[n - 1] < end && n < kMaxSlicePointCount - 1) points[n++] = end;
+    *count = n;
 }
 
 FxLeds GranularEngine::fx_leds(const DeckRef::Ref ref)
 {
     auto& fx = _core.deck(_safe_ref(ref)).fx();
-    return { fx.grit_mode(), fx.is_grit_on(), fx.is_flux_on() };
+    return { fx.grit().mode(), fx.is_grit_on(), fx.is_flux_on(), fx.flux().mode() };
 }
 
 PlayLeds GranularEngine::play_leds(const DeckRef::Ref ref)
@@ -348,6 +439,7 @@ RingGeometry GranularEngine::render_ring(LEDRing& ring, const DeckRef::Ref ref_i
 {
     auto& deck = _core.deck(_safe_ref(ref_in));
     const auto mode = deck.mode();
+    ring.set_soft_edges(true);   // upstream 1.3.0's segment anti-aliasing, for granular's rings only
 
     if (deck.is_empty() && !deck.is_armed()) {
         ring.set_brightness(breathe_brightness * .5f);
@@ -362,15 +454,15 @@ RingGeometry GranularEngine::render_ring(LEDRing& ring, const DeckRef::Ref ref_i
         return {};
     }
     if (!deck.is_empty()) {
-        const float start = deck.norm_start();
+        const float start = deck.voxs().norm_start();
         float size;
         float seg_start = start;
         if (mode == Mode::Drift) {
-            size = deck.voxs().win_spread() * .95f;
+            size = std::clamp(deck.voxs().norm_spread(), 0.f, .92f);
             seg_start = start - size * .5f;
         }
         else {
-            size = deck.norm_size(true);
+            size = deck.voxs().norm_size();
         }
         ring.set_segment(seg_start, seg_start + size);
         ring.set_point_hex_color(0xffffff); // kWhite

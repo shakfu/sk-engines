@@ -14,7 +14,8 @@ namespace spotykach {
 // shuttle's jump markers, softcut loop points, a slicer's pad regions, etc. Parsing is generic and
 // engine-agnostic; only the interpretation is per-engine.
 struct WavCues {
-    static constexpr uint8_t kMax = 32;   // WAV `cue ` chunks are small; 32 covers musical use
+    // 255: the most a uint8_t count holds. A cue-sliced loop (upstream granular 1.3.0) can use many.
+    static constexpr uint8_t kMax = 255;
     size_t  frames[kMax];
     uint8_t count = 0;
 };

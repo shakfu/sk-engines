@@ -32,10 +32,6 @@ static uint32_t clock_color(const TransportLeds& t, const bool is_key)
         return src_color;
     }
 }
-static uint32_t count_in_color(const bool is_key)
-{
-    return is_key ? pal::kWhite : pal::kGreen;
-}
 static uint32_t mode_color(const spotykach::Mode mode)
 {
     switch (mode) {
@@ -44,12 +40,9 @@ static uint32_t mode_color(const spotykach::Mode mode)
         default:                       return pal::kReel;
     };
 }
-static uint32_t grit_color(const GritMode mode)
+static uint32_t grit_color(const GritMode mode, const float intensity)
 {
-      switch (mode) {
-        case GritMode::Reduce: return pal::kHarshFx;
-        default: return pal::kSoftFx;
-    }
+    return pal::grit(mode, intensity);
 }
 
 #if SPK_TERMINAL && TERM_USBDIAG
@@ -274,8 +267,11 @@ void CoreUI::_draw_fx(const DeckRef::Ref ref)
     auto fx = _engine.fx_leds(ref);
     auto grit_id = ref == DeckRef::A ? Hardware::LED_GRIT_A : Hardware::LED_GRIT_B;
     auto flux_id = ref == DeckRef::A ? Hardware::LED_FLUX_A : Hardware::LED_FLUX_B;
-    _led[grit_id].on(grit_color(fx.grit_mode), fx.grit_on ? 1.f : 0.5f);
-    _led[flux_id].on(pal::kFlux, fx.flux_on ? 1.f : 0.5f);
+    _led[grit_id].on(grit_color(fx.grit_mode, mv(ParamId::GritIntensity)[ref].value()), fx.grit_on ? 1.f : 0.5f);
+    // The clocked delay blinks the flux LED in the clock colour on each quarter (upstream v1.3.0).
+    auto flux_color = pal::kFlux;
+    if (fx.flux_mode == FluxMode::ClockedDelay && _clock_led_on) flux_color = clock_color(_transport.leds(), _show_key_quarter);
+    _led[flux_id].on(flux_color, fx.flux_on ? 1.f : 0.5f);
 }
 void CoreUI::_draw_play(const DeckRef::Ref ref, const bool blink)
 {
@@ -342,7 +338,7 @@ void  CoreUI::_draw_alt(const DeckRef::Ref ref)
     if (is_armed || is_recording) {
         uint32_t color = 0;
         if (is_armed && !is_recording && _clock_led_on) {
-            color = count_in_color(_show_key_quarter);
+            color = clock_color(_transport.leds(), _show_key_quarter);   // upstream v1.3.0
         }
         else if (is_armed && is_recording) {
             color = pal::kRed;
@@ -401,8 +397,14 @@ void CoreUI::_draw_ring(const DeckRef::Ref ref)
         _show_size_quarters(ref, default_color);
     }
     else if (_touched.test(ref == DeckRef::A ? GritA : GritB)) {
-        auto fx_color = grit_color(_engine.fx_leds(ref).grit_mode);
+        const auto grit_mode = _engine.fx_leds(ref).grit_mode;
+        auto fx_color = grit_color(grit_mode, mv(ParamId::GritIntensity)[ref].value());
         _show_value(mv(ParamId::GritIntensity)[ref], ring, fx_color, ValueDisplay::Always);
+        if (grit_mode == GritMode::Filter) {
+            _show_filter(ref);
+            _show_value(mv(ParamId::GritIntensity)[ref], ring, fx_color, ValueDisplay::OnMoveDiffOnly);
+            _show_value(mv(ParamId::GritChar)[ref], ring, fx_color, ValueDisplay::OnMove);
+        }
         _show_value(mv(ParamId::GritMix)[ref], ring, fx_color);
     }
     else if (_touched.test(ref == DeckRef::A ? FluxA : FluxB)) {
@@ -483,29 +485,6 @@ void CoreUI::_draw_ring(const DeckRef::Ref ref)
     _show_value(mv(ParamId::EnvSize)[ref], ring);
     _show_pitch(ref);
 
-    if (_is_changing(mv(ParamId::PolySlice)[ref])) 
-    {
-        ring.clear();
-        auto start = 0.f;
-        if (!mv(ParamId::PolySlice)[ref].is_tracking()) {
-            start = mv(ParamId::PolySlice)[ref].in_value() < .5f ? 0.f : .5f;    
-            ring.set_brightness(.6f);
-            ring.set_hex_color(pal::kRed);
-            ring.set_segment(start, start + .495f);
-        }
-        ring.set_brightness(.6f);
-        ring.set_hex_color(pal::kWhite);
-        if (mv(ParamId::PolySlice)[ref].value() < .5f) {
-            ring.set_segment(.2f, .3f, true);
-        }
-        else {
-            ring.set_segment(.5f, .535f, true);
-            ring.set_segment(.65f, .7f, true);
-            ring.set_segment(.825f, .855f, true);
-            ring.set_segment(.97f, 1.f, true);
-        }
-    }
-    
     ring.set_updated();
 }
 void CoreUI::_show_value(const MValue& val, LEDRing& ring, const uint32_t def_color, const ValueDisplay display)
@@ -533,27 +512,49 @@ void CoreUI::_show_value(const MValue& val, LEDRing& ring, const uint32_t def_co
 void CoreUI::_show_pitch(const DeckRef::Ref ref)
 {
     if (!_is_changing(mv(ParamId::Speed)[ref])) return;
-    auto& ring = _display.ring[ref];
 
-    ring.set_hex_color(pal::kWhite);
-    ring.set_segment(0.f, 0.998f);
-    ring.fill_brightness(0.2f);
-
+    // Upstream v1.3.0: a short segment at the value, no white background (it washed the ring out).
+    float spread, value;
     if (_touched.test(Alt)) {
-        ring.set_brightness(.5f);
-        
         auto steps = kSpeedSteps.size() - 1;
-        auto norm_step = std::round(steps * mv(ParamId::Speed)[ref].value()) / steps;
-        auto spread = 0.05f;
-        if (norm_step == 0.f) ring.set_segment(0.f, 2.f * spread, true);
-        else if (norm_step == 1.f) ring.set_segment(1.f - 2.f * spread, 1.f, true);
-        else ring.set_segment(norm_step - spread, norm_step + spread, true);
+        value = std::round(steps * mv(ParamId::Speed)[ref].value()) / steps;
+        spread = 0.05f;
     }
     else {
-        ring.set_point_hex_color(pal::kWhite);
-        ring.add_point(mv(ParamId::Speed)[ref].value(), 1.0f, true);
+        value = mv(ParamId::Speed)[ref].value();
+        spread = 0.01f;
     }
+
+    auto& ring = _display.ring[ref];
+    ring.clear();
+    ring.set_hex_color(pal::kWhite);
+    ring.set_brightness(.6f);
+    if (value - spread < 0) ring.set_segment(0.f, 2.f * spread, true);
+    else if (value + spread > 1.f) ring.set_segment(1.f - 2.f * spread, .998f, true);
+    else ring.set_segment(value - spread, value + spread, true);
     _show_value(mv(ParamId::Speed)[ref], ring, pal::kWhite, ValueDisplay::OnMoveDiffOnly);
+}
+// DJ filter: a dim low-pass half and high-pass half, with the active side lit from the centre.
+void CoreUI::_show_filter(const DeckRef::Ref ref)
+{
+    auto& ring = _display.ring[ref];
+    const auto val = mv(ParamId::GritIntensity)[ref].value();
+
+    ring.set_brightness(.25f);
+    ring.set_hex_color(pal::kFilterLP);
+    ring.set_segment(0.f, .5f);
+    ring.set_hex_color(pal::kFilterHP);
+    ring.set_segment(.5f, .998f);
+
+    ring.set_brightness(.6f);
+    if (val < .5f) {
+        ring.set_hex_color(pal::kFilterLP);
+        ring.set_segment(val, .5f);
+    }
+    else {
+        ring.set_hex_color(pal::kFilterHP);
+        ring.set_segment(.5f, val);
+    }
 }
 void CoreUI::_show_slots(const DeckRef::Ref ref)
 {   

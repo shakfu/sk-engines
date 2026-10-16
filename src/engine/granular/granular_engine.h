@@ -43,6 +43,7 @@ public:
     bool       set_config(ConfigId id, DeckRef::Ref deck, int value) override;
     float      tempo_to_fit(DeckRef::Ref deck, float fraction) override;
     GritReseed toggle_grit_mode(DeckRef::Ref deck) override;
+    void       toggle_flux_mode(DeckRef::Ref deck) override;
 
     // Knob layout (item 3a-3): map the deck's granular Mode to the platform-facing DeckLayout, and
     // report tempo-fit eligibility (Slice && non-empty), so the platform stops reading Core's Mode.
@@ -74,6 +75,7 @@ public:
              | (1u << static_cast<uint32_t>(ParamId::GritIntensity))
              | (1u << static_cast<uint32_t>(ParamId::FluxMix))
              | (1u << static_cast<uint32_t>(ParamId::GritMix))
+             | (1u << static_cast<uint32_t>(ParamId::GritChar))
              | (1u << static_cast<uint32_t>(ParamId::Feedback))
              | (1u << static_cast<uint32_t>(ParamId::Mix))
              | (1u << static_cast<uint32_t>(ParamId::ModAmp))
@@ -88,7 +90,8 @@ public:
                                      | (1u << static_cast<uint32_t>(ConfigId::LfoShape))
                                      | (1u << static_cast<uint32_t>(ConfigId::Mode))
                                      | (1u << static_cast<uint32_t>(ConfigId::StartModOn))
-                                     | (1u << static_cast<uint32_t>(ConfigId::SizeModOn)));
+                                     | (1u << static_cast<uint32_t>(ConfigId::SizeModOn))
+                                     | (1u << static_cast<uint32_t>(ConfigId::AltSize)));
     }
     // NO param_label() here, deliberately. The shared ParamId vocabulary IS granular's own: the enum
     // header states that it "mirrors the granular engine's MValue-backed set", and every other engine
@@ -104,6 +107,9 @@ public:
     // handle_midi_note: channel->deck, note->speed, trigger. Returns the triggered deck
     // (or DeckRef::Count if the channel is unmatched) so the platform can flash the gate LED.
     DeckRef::Ref handle_midi_note(uint8_t channel, uint8_t note) override;
+    // Upstream 1.1.0's per-deck MIDI CC map (play/record pads, every knob, fx on/off).
+    void handle_midi_message(uint8_t status, uint8_t data1, uint8_t data2) override;
+    bool take_param_reseed(DeckRef::Ref deck) override;
     void handle_midi_transport(bool start) override; // true=start/continue, false=stop
 
     // FX pads (Phase 3c). The platform owns the pad gesture + modifier state; the engine
@@ -169,6 +175,7 @@ public:
     // LED indicator state (LED migration Round 2). The platform reads these to render the
     // flux/grit, play/rev, and alt indicators; it keeps the colors + blink/timer/storage logic.
     FxLeds   fx_leds(DeckRef::Ref) override;
+    void     on_wav_cues(DeckRef::Ref, const WavCues&) override;
     PlayLeds play_leds(DeckRef::Ref) override;
     AltLeds  alt_leds(DeckRef::Ref) override;
 
@@ -191,6 +198,8 @@ private:
     Core _core;
     SpeedMap<60> _speed_map;
     float _voct_speed[DeckRef::Count] = { 1.f, 1.f }; // last V/Oct CV speed, used by gate triggers
+    bool  _alt_size[DeckRef::Count] = {};              // ConfigId::AltSize: Alt held while SIZE applies
+    volatile bool _want_reseed[DeckRef::Count] = {};   // a MIDI CC moved a param (audio ISR -> main loop)
     float _param_cache[static_cast<size_t>(ParamId::Count)][DeckRef::Count] = {};
 };
 

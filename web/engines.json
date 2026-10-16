@@ -102,25 +102,14 @@
       "bank": null
     },
     {
-      "name": "graincloud",
-      "title": "graincloud",
-      "summary": "",
-      "body": "A polyphonic grain **cloud** (engine #11 in [`docs/engine-ideas.md`](../engine-ideas.md)) - the granular the looper isn't: dozens of grains with independent pitch / pan / position scattered over the recorded buffer. It is built as a **self-contained variant of the `granular` engine**: `src/engine/graincloud/` is a copy of the granular tree (so it keeps granular's recording, SD save/load, dual-deck, crossfade, FX and UI verbatim) with only the grain-generation core replaced - `Generator::process` sums a GrainflowLib cloud (`gf_cloud.{h,cpp}`) reading the recorded `Buffer` instead of driving the granular Vox. It is its own engine (`SPK_ENGINE_GRAINCLOUD`); plain `granular` is untouched.",
-      "source": "`ENGINE=graincloud` \u00b7 `src/engine/graincloud/` \u00b7 class `GraincloudEngine`",
-      "doc": "docs/engines/graincloud.md",
-      "page": "engines/graincloud.html",
-      "released": true,
-      "bank": "granular"
-    },
-    {
       "name": "granular",
       "title": "Granular",
       "summary": "dual granular looper / sampler",
-      "body": "The original instrument and the default build: a two-deck granular looper/sampler with recording, overdub, feedback, a per-deck step sequencer, FX, and CV/MIDI. This is the largest engine; this page is an orientation. Deeper material lives in `docs/architecture.md`, `docs/engine-layout.md`, and the refactor-history docs.",
+      "body": "The original instrument and the default build: a two-deck granular looper/sampler with recording, overdub, feedback, a per-deck step sequencer, FX, and CV/MIDI. This is the largest engine, and the one the platform's whole knob/pad grammar was designed around.",
       "source": "`ENGINE=granular` (default) \u00b7 `src/engine/granular/` (~50 files: adapter `granular_engine.{h,cpp}` + DSP) \u00b7 class `GranularEngine`",
       "doc": "docs/engines/granular.md",
       "page": "engines/granular.html",
-      "released": false,
+      "released": true,
       "bank": "granular"
     },
     {

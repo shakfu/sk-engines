@@ -3,9 +3,9 @@
 <p>It behaves like any other engine on the panel, but is built and flashed a little differently: ChucK's code is ~1.1 MB (too big for SRAM), so this is a <strong>QSPI build</strong> that executes from flash, with ChucK's heap in SDRAM. Internals (memory model, allocator, the live-swap design, bring-up notes, roadmap) are in <a href="https://github.com/shakfu/sk-engines/blob/main/docs/dev/chuck-impl.md"><code>docs/dev/chuck-impl.md</code></a>.</p>
 <h3>Build &amp; flash</h3>
 <p>One-time: build the ChucK library (needs the <code>arm-none-eabi</code> GCC toolchain). The script fetches a pinned ChucK release and cross-builds it for the Daisy — there is no official ChucK Daisy port, so the script <em>is</em> the port:</p>
-<pre><code>scripts/fetch_chuck.sh           # fetch ChucK + cross-build libchuck.a (gitignored sources)</code></pre>
+<pre><code class="lang-text">scripts/fetch_chuck.sh           # fetch ChucK + cross-build libchuck.a (gitignored sources)</code></pre>
 <p>Then build + flash the engine (put the board in DFU first):</p>
-<pre><code>make engine-chuck                # clean + build the QSPI image + flash
+<pre><code class="lang-text">make engine-chuck                # clean + build the QSPI image + flash
 make program-chuck               # re-flash the last build without rebuilding</code></pre>
 <p>Recover the board at any time by flashing any normal engine.</p>
 <h3>Controls</h3>
@@ -14,7 +14,7 @@ make program-chuck               # re-flash the last build without rebuilding</c
 <p>What each knob actually does is up to the patch (it reads named global variables) — the table above is the convention the bundled patches follow. Patches can also be played from a <strong>MIDI keyboard</strong>: MIDI <em>input</em> is supported through ChucK's standard <code>MidiIn</code> (see <a href="#limitations">Limitations → MIDI</a>).</p>
 <h3>Loading patches from the SD card</h3>
 <p>Put <code>.ck</code> programs in a <code>chuck/</code> folder at the card root, named <code>0.ck</code> … <code>7.ck</code>:</p>
-<pre><code>&lt;card&gt;/chuck/0.ck
+<pre><code class="lang-text">&lt;card&gt;/chuck/0.ck
 &lt;card&gt;/chuck/1.ck</code></pre>
 <p>Ready-to-copy examples are in <a href="https://github.com/shakfu/sk-engines/blob/main/examples/chuck"><code>examples/chuck/</code></a> — a clean two-saw drone, a fat super-saw, a concurrent generative pad, and an STK Rhodey arpeggio, with a README.</p>
 <ul><li>At boot the engine <strong>auto-loads</strong> the lowest-numbered patch (or the built-in if the card has none).</li></ul>
@@ -45,7 +45,7 @@ while( true )
 <h3>CPU and the meter</h3>
 <p>Every concurrent shred and every UGen costs time inside one audio block, and code runs from QSPI flash (slower than SRAM), so heavy or dense patches can run out of headroom. If a patch genuinely can't keep up, the engine <strong>mutes it and lights both rings solid red</strong> (a safeguard that keeps the controls alive) — switch to another patch with Alt+PITCH to recover. Lighter voices and a capped shred/voice count are the fix.</p>
 <p>Build with <code>METER=1</code> to see the headroom on the panel instead of guessing:</p>
-<pre><code>make engine-chuck METER=1</code></pre>
+<pre><code class="lang-text">make engine-chuck METER=1</code></pre>
 <ul><li><strong>Ring A</strong> = CPU load (green → amber → red; red ≈ at/over budget).</li></ul>
 <ul><li><strong>Ring B</strong> = SDRAM pool usage (how much of ChucK's heap the loaded patches occupy).</li></ul>
 <h3>Limitations</h3>

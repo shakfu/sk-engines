@@ -28,9 +28,6 @@
 #elif defined(SPK_ENGINE_MOSC)
   #include "engine/mosc/mosc_engine.h"
   namespace spotykach { using ActiveEngine = MoscEngine; }
-#elif defined(SPK_ENGINE_GRAINCLOUD)
-  #include "engine/graincloud/graincloud_engine.h"
-  namespace spotykach { using ActiveEngine = GraincloudEngine; }
 #elif defined(SPK_ENGINE_TAPE)
   #include "engine/tape/tape_engine.h"
   namespace spotykach { using ActiveEngine = TapeEngine; }
@@ -85,5 +82,5 @@
   #include "engine/chuck/chuck_engine.h"
   namespace spotykach { using ActiveEngine = ChuckEngine; }
 #else
-  #error "No engine selected: build with ENGINE=granular (default), passthrough, delay, edrums, reso, graincloud, tape, reverb, shuttle, softcut, radio, bard, or chorus"
+  #error "No engine selected: build with ENGINE=granular (default), passthrough, delay, edrums, reso, tape, reverb, shuttle, softcut, radio, bard, or chorus"
 #endif
