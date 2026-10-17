@@ -131,6 +131,7 @@ jobs:
           - ENGINE=qdelay
           - ENGINE=edrums
           - ENGINE=reso
+          - ENGINE=kuskus
           - ENGINE=tape
           - ENGINE=shuttle
           - ENGINE=softcut

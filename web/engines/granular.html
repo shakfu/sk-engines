@@ -5,7 +5,7 @@
 <h3>Decks and modes</h3>
 <p>Each deck records into its own loop buffer (up to 42 seconds) and plays it back through a granular engine in one of three modes, indicated by color:</p>
 <ul><li><strong>Reel (yellow)</strong> - tape emulation, monophonic. Speed and pitch are linked: faster playback raises pitch.</li></ul>
-<ul><li><strong>Slice (blue)</strong> - digital sampler/looper with independent pitch and speed. Up to 3-voice polyphony; switch to mono with Alt+Size.</li></ul>
+<ul><li><strong>Slice (blue)</strong> - digital sampler/looper with independent pitch and speed. Up to 3-voice polyphony; set a deck to mono with <code>slc_mn_a</code> / <code>slc_mn_b</code> in <code>SK/config.txt</code>.</li></ul>
 <ul><li><strong>Drift (purple)</strong> - granular texture generator; builds evolving soundscapes from a short recording.</li></ul>
 <h3>Recording and playback</h3>
 <ul><li><strong>Arm</strong>: Alt+Play. Recording starts when the input crosses about -40 dB.</li></ul>
@@ -14,16 +14,22 @@
 <ul><li><strong>Cross-deck record</strong>: Alt+Reverse records one deck into the other.</li></ul>
 <ul><li><strong>Reverse</strong>: the Reverse pad plays the loop backwards.</li></ul>
 <h3>Primary controls (knobs)</h3>
-<table><thead><tr><th>Knob</th><th>Reel</th><th>Slice</th><th>Drift</th></tr></thead><tbody><tr><td>Pitch</td><td>playback speed</td><td>pitch (independent of speed)</td><td>grain pitch modulation</td></tr><tr><td>Position</td><td>loop start point</td><td>loop start, quantized to 1/8</td><td>grain position</td></tr><tr><td>Size</td><td>loop length (exp.)</td><td>loop length (stepped)</td><td>grain spread</td></tr><tr><td>Envelope</td><td>loop envelope: off, fade-out, fade-in/out, fade-in (cycles)</td><td>as Reel</td><td>as Reel</td></tr><tr><td>Mix</td><td>input vs playback balance; Alt+Mix sets overdub feedback</td><td>same</td><td>same</td></tr></tbody></table>
-<p>Alt+Pitch enables quantized pitch values. Alt+Size sets grain size in Drift and toggles mono/poly in Slice.</p>
-<p>Alt+Position sets the start-offset walk, in Slice or on a manually sliced buffer. At 0 the start stays where Position puts it. Above 0 it advances one size-worth of slices every 1..8 triggers and wraps at the end of the buffer, so a fixed loop moves through the recording instead of repeating. Stopping the deck, or returning the knob to 0, rewinds it to the Position point.</p>
+<table><thead><tr><th>Knob</th><th>Reel</th><th>Slice</th><th>Drift</th></tr></thead><tbody><tr><td>Pitch</td><td>playback speed</td><td>pitch (independent of speed)</td><td>grain pitch modulation</td></tr><tr><td>Position</td><td>loop start point</td><td>loop start, quantized to 1/8</td><td>grain position</td></tr><tr><td>Size</td><td>loop length (exp.)</td><td>loop length, snapped to 1/8 (1/16 with Alt)</td><td>grain spread</td></tr><tr><td>Envelope</td><td>loop envelope: off, fade-out, fade-in/out, fade-in (cycles)</td><td>as Reel</td><td>as Reel</td></tr><tr><td>Mix</td><td>input vs playback balance; Alt+Mix sets overdub feedback</td><td>same</td><td>same</td></tr></tbody></table>
+<p>Alt+Pitch enables quantized pitch values. Alt+Size sets grain size in Drift and the finer 1/16 size snap in Slice.</p>
+<p>Alt+Position sets the start-offset walk, in Slice or on a cue-sliced buffer. At 0 the start stays where Position puts it. Above 0 it advances one size-worth of slices every 1..8 triggers and wraps at the end of the buffer, so a fixed loop moves through the recording instead of repeating. Stopping the deck, or returning the knob to 0, rewinds it to the Position point.</p>
 <h3>Effects</h3>
 <p>Two families, each on a dedicated pad per deck. Hold the effect pad and tap the Tap button to cycle the effect type within the family; shape parameters live on the main knobs while the effect is held.</p>
-<ul><li><strong>Grit</strong>: signal degradation.</li></ul>
-<ul><li>Analog saturation - soft saturation through to distortion (driven by Pitch).</li></ul>
-<ul><li>Bit crusher / decimator - downsampling and bit reduction to harsh digital clipping.</li></ul>
-<ul><li><strong>Flux</strong>: tape delay - Pitch sets tape speed (delay time), Mix sets wet level, Position sets feedback while Flux is active.</li></ul>
+<ul><li><strong>Grit</strong>: signal degradation. Grit + Tap cycles three types; the Grit LED shows which.</li></ul>
+<ul><li>Analog saturation (yellow) - soft saturation through to distortion (driven by Pitch).</li></ul>
+<ul><li>Bit crusher / decimator (orange) - downsampling and bit reduction to harsh digital clipping.</li></ul>
+<ul><li>DJ filter - Pitch left of centre closes a low-pass (violet), right of centre opens a high-pass (green); Position sets resonance. The ring shows both halves and the active cutoff.</li></ul>
+<ul><li><strong>Flux</strong>: tape delay - Pitch sets the delay time, Mix sets wet level, Position sets feedback while Flux is active. Flux + Tap switches between free and clocked delay. Clocked delay sets the time as a note value of the clock - 1/32, 1/16, 1/8T, 1/8, 1/4T, 1/4, 1/2, 4/4 - and blinks the Flux LED with the clock.</li></ul>
 <p>Each effect can be locked on (Alt + effect pad) so it stays engaged without holding.</p>
+<h3>WAV cue markers</h3>
+<p>A loaded WAV's <code>cue </code> markers become slice points, with the end of the buffer as the last one. <code>cue_sm_a</code> / <code>cue_sm_b</code> in <code>SK/config.txt</code> decide how a deck uses them: 0 ignores them (default), 1 snaps start and size to them, 2 snaps size to them only while Alt is held. Up to 255 markers per file.</p>
+<h3>MIDI CC</h3>
+<p>Per deck, on that deck's MIDI channel (<code>mid_ch_a</code> / <code>mid_ch_b</code>). Values are 0-127 across the knob's range; the pad CCs act on any value above 0.</p>
+<table><thead><tr><th>CC</th><th>Control</th><th>CC</th><th>Control</th><th>CC</th><th>Control</th></tr></thead><tbody><tr><td>3</td><td>crossfade</td><td>24</td><td>pitch</td><td>90</td><td>mod amount</td></tr><tr><td>14</td><td>record (input)</td><td>25</td><td>mix</td><td>102</td><td>grit on</td></tr><tr><td>15</td><td>record (other deck)</td><td>26</td><td>overdub feedback</td><td>103</td><td>grit intensity</td></tr><tr><td>20</td><td>position</td><td>27</td><td>env size (Drift)</td><td>104</td><td>grit mix</td></tr><tr><td>21</td><td>start-offset walk</td><td>28</td><td>window size (Drift)</td><td>105</td><td>flux on</td></tr><tr><td>22</td><td>size</td><td>85</td><td>play</td><td>106</td><td>flux time</td></tr><tr><td>23</td><td>envelope</td><td>86</td><td>play reverse</td><td>107</td><td>flux feedback</td></tr><tr><td></td><td></td><td>89</td><td>mod rate</td><td>108</td><td>flux mix</td></tr><tr><td></td><td></td><td></td><td></td><td>109</td><td>grit character (filter resonance)</td></tr></tbody></table>
 <h3>Modulation sources A and B</h3>
 <p>Each deck has a modulation source that is either an LFO or an envelope follower, with its own CV output (0 to +5 V).</p>
 <ul><li>Source A: sample-and-hold or square LFO.</li></ul>
@@ -45,7 +51,7 @@
 <h3>Transport</h3>
 <p>Granular <code>Core</code> subscribes to the platform transport (<code>ITransport::set_on_tick</code>) and fans each tick out to the decks / panner / modulators / metronome click (the <code>Core::_on_transport_tick</code> sink — the granular half of the old <code>Driver</code>, which was split into the platform <code>Transport</code> + this sink). It also reads <code>is_key_sub_quarter()</code> for sequencer arming. Tempo, tap, clock-source, key-interval, and clock-out are platform-owned (see <a href="https://github.com/shakfu/sk-engines/blob/main/docs/engines/README.md#the-transport-shared-clock">README</a>).</p>
 <h3>Controls</h3>
-<p>Granular is the engine the platform's knob/modifier grammar was designed around, so it uses the full surface (the modifier columns in the <a href="https://github.com/shakfu/sk-engines/blob/main/docs/engines/README.md#knobs-how-a-physical-control-reaches-an-engine">README routing table</a>): the direct knobs (Size/Pos/Speed/Mix/Env), the Flux/Grit FX-pad layers, the Alt layer (Feedback, PolySlice, start-offset walk, mod sync), and the tap-hold layer (Tempo, KeyInterval, ClickMix, Pan). Pads drive record / play / reverse / sequencer-arm / FX, and MIDI notes trigger pitched grains. The mode/route switches go through <code>set_config</code>.</p>
+<p>Granular is the engine the platform's knob/modifier grammar was designed around, so it uses the full surface (the modifier columns in the <a href="https://github.com/shakfu/sk-engines/blob/main/docs/engines/README.md#knobs-how-a-physical-control-reaches-an-engine">README routing table</a>): the direct knobs (Size/Pos/Speed/Mix/Env), the Flux/Grit FX-pad layers, the Alt layer (Feedback, the Slice size snap, start-offset walk, mod sync), and the tap-hold layer (Tempo, KeyInterval, ClickMix, Pan). Pads drive record / play / reverse / sequencer-arm / FX, and MIDI notes trigger pitched grains. The mode/route switches go through <code>set_config</code>.</p>
 <p>For the exhaustive control reference, the device's user manual is the authority (see the project <code>spotykach-manual</code> notes); <code>docs/architecture.md</code> covers the platform/engine layer.</p>
 <h3>Persistence</h3>
 <p><code>Storage</code> saves/loads loop audio and <code>config.txt</code> on the SD card via the engine's byte-range audio port (<code>audio_data</code> / <code>audio_recorded_bytes</code> / ...); <code>Settings</code> persists smaller settings. Granular advertises the tape-storage capability.</p>

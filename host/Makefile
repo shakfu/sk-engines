@@ -81,6 +81,13 @@ MOSC_SRC    = $(ROOT)/src/engine/mosc/mosc_engine.cpp \
               $(MOSC_TP)/plaits/resources.cc \
               $(STMLIB_TP)/dsp/units.cc $(STMLIB_TP)/utils/random.cc $(STMLIB_TP)/dsp/atan.cc
 MOSC_FLAGS  = -I$(MOSC_TP) -DPLAITS_USER_DATA_STUB -DM_PI=3.14159265358979323846
+# kuskus's DSP is the Mutable Instruments Beads processor + the shared stmlib. Mirrors the firmware
+# Makefile's kuskus branch, including -DBEADS_FIXED_48K (the vendored processor.h patch).
+KUSKUS_TP    = $(ROOT)/src/engine/kuskus/thirdparty
+KUSKUS_SRC   = $(ROOT)/src/engine/kuskus/kuskus_engine.cpp \
+               $(wildcard $(KUSKUS_TP)/beads/dsp/*.cc) $(KUSKUS_TP)/beads/resources.cc \
+               $(STMLIB_TP)/dsp/units.cc $(STMLIB_TP)/utils/random.cc
+KUSKUS_FLAGS = -isystem$(KUSKUS_TP) -DBEADS_FIXED_48K -DM_PI=3.14159265358979323846
 # The reverb engine's adapter; its Faust kernels are checked-in headers (engine/reverb/faust_kernel_*.h,
 # portable C++) pulled by the .cpp, so no extra sources are needed.
 REVERB_SRC  = $(ROOT)/src/engine/reverb/reverb_engine.cpp
@@ -123,6 +130,7 @@ TEST         = $(BUILD)/test_engine_params
 TEST_EDRUMS  = $(BUILD)/test_edrums_slots
 TEST_RESO    = $(BUILD)/test_reso
 TEST_MOSC    = $(BUILD)/test_mosc
+TEST_KUSKUS  = $(BUILD)/test_kuskus
 TEST_GRAN_AUDIO = $(BUILD)/test_granular_audio
 TEST_REVERB  = $(BUILD)/test_reverb
 TEST_TAPE    = $(BUILD)/test_tape
@@ -153,7 +161,7 @@ TEST_CSOUND_RELOAD = $(BUILD)/test_csound_reload
 TEST_CHUCK_PATCH = $(BUILD)/test_chuck_patch
 BENCH_REVERB     = $(BUILD)/bench_reverb
 
-.PHONY: all build-all clean run bard-card-check test test-softcut test-terminal test-terminal-osc test-osc-labels test-osc-addr test-granular test-granular-audio test-edrums test-reso test-mosc test-reverb test-delay test-qdelay test-diffuser test-tape test-stream test-wav-cues test-shuttle test-radio test-bard test-glitch test-pstretch test-chorus test-filter test-voice test-gigaverb test-csound-alloc test-csound-patch test-csound-midi test-csound-reload test-chuck-patch bench-reverb
+.PHONY: all build-all clean run bard-card-check test test-softcut test-terminal test-terminal-osc test-osc-labels test-osc-addr test-granular test-granular-audio test-edrums test-reso test-mosc test-kuskus test-reverb test-delay test-qdelay test-diffuser test-tape test-stream test-wav-cues test-shuttle test-radio test-bard test-glitch test-pstretch test-chorus test-filter test-voice test-gigaverb test-csound-alloc test-csound-patch test-csound-midi test-csound-reload test-chuck-patch bench-reverb
 all: $(TARGET)
 
 # Everything in here that is NOT an assertion suite: the WAV harness, the card validator, and the
@@ -182,6 +190,10 @@ $(TEST_RESO): test_reso.cpp $(LIB_SRC) $(RESO_SRC) $(RINGS_SRC) | $(BUILD)
 # the point - the test instantiates and renders every one of them.
 $(TEST_MOSC): test_mosc.cpp $(LIB_SRC) $(MOSC_SRC) | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(MOSC_FLAGS) test_mosc.cpp $(LIB_SRC) $(MOSC_SRC) -o $@
+
+# kuskus: the Beads granular processor. Needs only the contract's .cpp files, not the granular tree.
+$(TEST_KUSKUS): test_kuskus.cpp $(ENGINE_SRC) $(KUSKUS_SRC) | $(BUILD)
+	$(CXX) $(CXXFLAGS) $(KUSKUS_FLAGS) test_kuskus.cpp $(ENGINE_SRC) $(KUSKUS_SRC) -o $@
 
 # granular's AUDIO path (load/play/record). test_engine_params covers its parameter surface but never
 # puts a sample through it.
@@ -377,7 +389,7 @@ run: $(TARGET)
 
 # `test` runs both engine harnesses. Both inject the transport via EngineContext (granular drives the
 # real platform Transport; edrums uses a small stub ITransport) - the post-transport-decoupling way.
-test: test-terminal test-terminal-osc test-osc-labels test-osc-addr test-granular test-granular-audio test-edrums test-reso test-mosc test-reverb test-delay test-qdelay test-diffuser test-tape test-stream test-wav-cues test-shuttle test-softcut test-radio test-bard test-glitch test-pstretch test-chorus test-filter test-voice test-gigaverb test-csound-alloc test-csound-patch test-csound-midi test-csound-reload test-chuck-patch
+test: test-terminal test-terminal-osc test-osc-labels test-osc-addr test-granular test-granular-audio test-edrums test-reso test-mosc test-kuskus test-reverb test-delay test-qdelay test-diffuser test-tape test-stream test-wav-cues test-shuttle test-softcut test-radio test-bard test-glitch test-pstretch test-chorus test-filter test-voice test-gigaverb test-csound-alloc test-csound-patch test-csound-midi test-csound-reload test-chuck-patch
 
 test-granular: $(TEST)
 	./$(TEST)
@@ -390,6 +402,9 @@ test-reso: $(TEST_RESO)
 
 test-mosc: $(TEST_MOSC)
 	./$(TEST_MOSC)
+
+test-kuskus: $(TEST_KUSKUS)
+	./$(TEST_KUSKUS)
 
 test-granular-audio: $(TEST_GRAN_AUDIO)
 	./$(TEST_GRAN_AUDIO)

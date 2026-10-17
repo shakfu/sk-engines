@@ -246,6 +246,17 @@ ENGINE_SOURCES = src/engine/mosc/mosc_engine.cpp src/engine/csound/spotykach_qsp
 	$(MOSC_TP)/plaits/dsp/fm/algorithms.cc $(MOSC_TP)/plaits/dsp/fm/dx_units.cc \
 	$(MOSC_TP)/plaits/resources.cc \
 	$(STMLIB_TP)/dsp/units.cc $(STMLIB_TP)/utils/random.cc $(STMLIB_TP)/dsp/atan.cc
+else ifeq ($(ENGINE), kuskus)
+C_DEFS += -DSPK_ENGINE_KUSKUS
+# kuskus's DSP is the Mutable Instruments Beads processor, vendored under src/engine/kuskus/thirdparty/
+# (dsp/ + resources only; design in docs/dev/kuskus.md) with the shared stmlib. BEADS_FIXED_48K is the
+# vendored processor.h patch for a codec that cannot change rate. M_PI: as reso/mosc.
+C_DEFS += -DBEADS_FIXED_48K -DM_PI=3.14159265358979323846
+KUSKUS_TP  = src/engine/kuskus/thirdparty
+KUSKUS_INC = -isystem $(KUSKUS_TP) $(STMLIB_INC)
+ENGINE_SOURCES = src/engine/kuskus/kuskus_engine.cpp \
+	$(wildcard $(KUSKUS_TP)/beads/dsp/*.cc) $(KUSKUS_TP)/beads/resources.cc \
+	$(STMLIB_TP)/dsp/units.cc $(STMLIB_TP)/utils/random.cc
 # gen~ engines (ENGINE=gen_<name>) are appended below by scripts/gen_engine.py, one marker-delimited
 # `else ifeq` block per export. They use the genlib-isolation bridge from gen-dsp + the shared
 # src/engine/gen/ family (GenEngine<W> + the arena-bound genlib runtime). See `make gen-engines`.
@@ -349,7 +360,7 @@ LDFLAGS += -u _printf_float
 # Route ChucK's C-malloc family to the SDRAM pool (chuck_alloc.cpp); the platform heap stays in SRAM.
 LDFLAGS += -Wl,--wrap=malloc,--wrap=free,--wrap=calloc,--wrap=realloc
 else
-$(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', 'qdelay', 'edrums', 'reso', 'mosc', 'tape', 'radio', 'bard', 'glitch', 'pstretch', 'reverb', 'shuttle', 'softcut', 'gigaverb', 'chorus', 'filter', 'voice', 'csound', or 'chuck')
+$(error Unknown ENGINE '$(ENGINE)' - use 'granular', 'passthrough', 'delay', 'qdelay', 'edrums', 'reso', 'mosc', 'kuskus', 'tape', 'radio', 'bard', 'glitch', 'pstretch', 'reverb', 'shuttle', 'softcut', 'gigaverb', 'chorus', 'filter', 'voice', 'csound', or 'chuck')
 endif
 # The engine list in that error is HAND-MAINTAINED and had drifted (it was missing glitch, pstretch,
 # softcut and gigaverb). Add a new engine's name to it, and to the matching message in CMakeLists.txt.
@@ -436,7 +447,7 @@ ifeq ($(USB_MIDI),1)
 C_DEFS += -DSPK_USB_MIDI
 endif
 
-C_INCLUDES = -Isrc/ -Ilib/ $(RESO_INC) $(MOSC_INC) $(SOFTCUT_INC) $(GEN_INC) $(CSOUND_INC) $(CHUCK_INC)
+C_INCLUDES = -Isrc/ -Ilib/ $(RESO_INC) $(MOSC_INC) $(KUSKUS_INC) $(SOFTCUT_INC) $(GEN_INC) $(CSOUND_INC) $(CHUCK_INC)
 # NOTE: there used to be `C_USR_FLAGS = -ffast-math -funroll-loops` here, but the core Makefile reads
 # C_USER_FLAGS (with the E), so it was dead - those flags never reached the compiler and the shipping
 # firmware was built without them. Removed to stop it reading as active. The device meets its CPU/SRAM
@@ -504,8 +515,8 @@ build/stream_deck.o build/fat_file.o build/buffer.sdram.o: build/.engine-stamp
 # NOTE: after `scripts/gen_engine.py --remove`, run `make clean` once - the removed engine's stale
 # build/_ext_daisy.d still names its now-deleted source, which make rejects before any recipe runs.
 build/_ext_daisy.o build/genlib_arena.o: build/.engine-stamp
-# Same class of collision between reso and mosc: BOTH vendor a file called `resources.cc` (Rings' and
-# Plaits' wavetables), which compile to the same build/resources.o. A `reso` -> `mosc` switch without
+# Same class of collision between reso, mosc and kuskus: ALL vendor a file called `resources.cc` (Rings',
+# Plaits' and Beads' tables), which compile to the same build/resources.o. A `reso` -> `mosc` switch without
 # this reuses Rings' object and the link fails with `undefined reference to plaits::lut_sine` - which
 # reads like a missing source rather than a stale object, and is why `make engine-mosc` opens with a
 # full `make clean`. (The clean is still there and still correct; this makes a plain
@@ -647,7 +658,7 @@ test-tools:
 
 # One-shot variant flash: clean -> build -> flash over DFU. Put the device in DFU mode first
 # (hold Reset ~3s until the bottom pad LEDs breathe white), then `make granular` / `make passthrough`.
-.PHONY: engine-granular engine-passthrough engine-delay engine-qdelay engine-edrums engine-reso engine-mosc program-mosc engine-tape engine-shuttle engine-softcut engine-reverb engine-radio engine-bard engine-glitch engine-pstretch engine-chorus engine-filter engine-voice engine-gigaverb engine-csound program-csound engine-chuck program-chuck
+.PHONY: engine-granular engine-passthrough engine-delay engine-qdelay engine-edrums engine-reso engine-mosc program-mosc engine-kuskus engine-tape engine-shuttle engine-softcut engine-reverb engine-radio engine-bard engine-glitch engine-pstretch engine-chorus engine-filter engine-voice engine-gigaverb engine-csound program-csound engine-chuck program-chuck
 engine-granular:
 	$(MAKE) clean
 	$(MAKE) -j8 ENGINE=granular
@@ -690,6 +701,11 @@ engine-mosc:
 # Re-flash the last mosc build without rebuilding (board in DFU).
 program-mosc:
 	-$(MAKE) $(MOSC_FLAGS) program-dfu
+
+engine-kuskus:
+	$(MAKE) clean
+	$(MAKE) -j8 ENGINE=kuskus
+	$(MAKE) ENGINE=kuskus program-dfu
 
 engine-tape:
 	$(MAKE) clean
@@ -1147,7 +1163,7 @@ help:
 	@echo 'SRAM engines (ENGINE=):'
 	@echo '  granular tape shuttle softcut radio bard pstretch'
 	@echo '  delay qdelay reverb gigaverb chorus filter voice'
-	@echo '  edrums reso glitch passthrough'
+	@echo '  edrums reso kuskus glitch passthrough'
 	@echo 'QSPI engines (own one-shot target, too large for execution SRAM):'
 	@echo '  make engine-mosc              no prerequisites; Plaits DSP is vendored in-tree'
 	@echo '  make engine-csound            needs scripts/fetch_csound.sh once (libcsound.a)'

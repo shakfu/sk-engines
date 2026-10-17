@@ -28,6 +28,9 @@
 #elif defined(SPK_ENGINE_MOSC)
   #include "engine/mosc/mosc_engine.h"
   namespace spotykach { using ActiveEngine = MoscEngine; }
+#elif defined(SPK_ENGINE_KUSKUS)
+  #include "engine/kuskus/kuskus_engine.h"
+  namespace spotykach { using ActiveEngine = KuskusEngine; }
 #elif defined(SPK_ENGINE_TAPE)
   #include "engine/tape/tape_engine.h"
   namespace spotykach { using ActiveEngine = TapeEngine; }

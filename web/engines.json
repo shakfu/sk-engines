@@ -113,6 +113,17 @@
       "bank": "granular"
     },
     {
+      "name": "kuskus",
+      "title": "kuskus",
+      "summary": "",
+      "body": "A port of the Mutable Instruments **Beads** granular processor (`src/engine/kuskus/thirdparty/beads`). One stereo Beads instance runs across both decks: deck A carries Beads' main knobs, deck B its attenuverters and mix extras. Beads records the input into a delay line and plays up to 32 grains from it. At the top of SIZE travel it becomes an 8-tap delay. Output passes through Beads' own reverb and limiters.",
+      "source": "",
+      "doc": "docs/engines/kuskus.md",
+      "page": "engines/kuskus.html",
+      "released": false,
+      "bank": null
+    },
+    {
       "name": "mosc",
       "title": "mosc",
       "summary": "",

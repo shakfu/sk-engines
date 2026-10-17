@@ -129,6 +129,23 @@ elseif(ENGINE STREQUAL mosc)
         ${STMLIB_TP}/utils/random.cc
         ${STMLIB_TP}/dsp/atan.cc
     )
+elseif(ENGINE STREQUAL kuskus)
+    set(ENGINE_DEFINE SPK_ENGINE_KUSKUS)
+    # kuskus's DSP = Mutable Instruments Beads (vendored under src/engine/kuskus/thirdparty/) + the shared
+    # stmlib. Mirrors the Makefile branch: BEADS_FIXED_48K is the vendored processor.h patch.
+    set(KUSKUS_TP ${CMAKE_CURRENT_SOURCE_DIR}/src/engine/kuskus/thirdparty)
+    set(COMMON_TP ${CMAKE_CURRENT_SOURCE_DIR}/src/engine/common/thirdparty)
+    set(STMLIB_TP ${COMMON_TP}/stmlib)
+    file(GLOB KUSKUS_BEADS_CC CONFIGURE_DEPENDS ${KUSKUS_TP}/beads/dsp/*.cc)
+    set(ENGINE_SOURCES
+        src/engine/kuskus/kuskus_engine.cpp
+        ${KUSKUS_BEADS_CC}
+        ${KUSKUS_TP}/beads/resources.cc
+        ${STMLIB_TP}/dsp/units.cc
+        ${STMLIB_TP}/utils/random.cc
+    )
+    set(ENGINE_SYSTEM_INCLUDES ${KUSKUS_TP} ${COMMON_TP})
+    set(ENGINE_DEFINES M_PI=3.14159265358979323846 BEADS_FIXED_48K)
 elseif(ENGINE STREQUAL tape)
     set(ENGINE_DEFINE SPK_ENGINE_TAPE)
     # Engine wrapper (tape_engine.cpp); its SD streaming service lives in src/hw/ (stream_deck.cpp,
@@ -293,7 +310,7 @@ elseif(ENGINE STREQUAL chuck)
     # firmware keeps them off, so libstdc++'s exception machinery does not bloat the SRAM-tight platform).
     set_source_files_properties(src/engine/chuck/chuck_engine.cpp PROPERTIES COMPILE_OPTIONS "-fexceptions;-frtti")
 else()
-    message(FATAL_ERROR "Unknown ENGINE '${ENGINE}' - use granular, passthrough, delay, qdelay, edrums, reso, mosc, tape, radio, bard, glitch, pstretch, reverb, shuttle, softcut, gigaverb, chorus, filter, voice, csound, or chuck")
+    message(FATAL_ERROR "Unknown ENGINE '${ENGINE}' - use granular, passthrough, delay, qdelay, edrums, reso, mosc, kuskus, tape, radio, bard, glitch, pstretch, reverb, shuttle, softcut, gigaverb, chorus, filter, voice, csound, or chuck")
 endif()
 
 # Source list = the Makefile's CPP_SOURCES, with the wildcard dirs expanded the same way.

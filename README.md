@@ -69,6 +69,8 @@ Current engines include:
 
 18. [qdelay](docs/engines/qdelay.md): a dub/ambient **flavor of the delay** (inspired by [qdelay](https://github.com/tiagolr/qdelay)) — the same delay grammar (tempo-synced divisions, feedback, mix, PITCH, ENV tone, mod LFO, Freeze/Reverse pads, Stereo/DoubleMono/Ping-pong) with the character palette swapped to **Clean / Diffuse / Duck** (Reel/Slice/Drift switch). Diffuse runs the feedback through an 8-stage allpass diffuser (a JUCE-free port of qdelay's `Diffusor`) for a dense reverb-like wash; Duck attenuates the wet under the dry input so repeats bloom in the gaps. A normal **SRAM build** (the diffuser's buffers live in SDRAM)
 
+19. [kuskus](docs/engines/kuskus.md): a port of the [Mutable Instruments Beads](https://github.com/pichenettes/eurorack/tree/master/beads) granular processor. One stereo Beads runs across both decks: deck A has PITCH/TIME/SIZE/SHAPE/DENSITY/FEEDBACK/dry-wet, deck B the four attenuverters, input gain, reverb and output level. Play A seeds grains, Alt+Play A latches SEED, Play B freezes the buffer, and SIZE at the top of travel switches to delay mode. All four Beads media (Digital, Clean Tape, Dirty Tape, Vintage Digital) on the Mode switches. A normal **SRAM build**; the Beads DSP is vendored in-tree
+
 Three further engines live in the tree and build the same way, but are not (yet) part of the numbered list above: [bard](docs/engines/bard.md) (bookmark-navigated audiobook decks, SD-streamed), [glitch](docs/engines/glitch.md) (dual-deck lo-fi/circuit-bent noise voice, GPLv3), and [pstretch](docs/engines/pstretch.md) (real-time PaulStretch ambient time-smear).
 
 ### At a glance
@@ -90,6 +92,7 @@ Three further engines live in the tree and build the same way, but are not (yet)
 | [pstretch](docs/engines/pstretch.md) | Effect | Optional (file source) | SRAM | C++ | Clean-room PaulStretch, vendored FFT |
 | [edrums](docs/engines/edrums.md) | Instrument | — | SRAM | C++ | Four-voice Euclidean drum machine |
 | [reso](docs/engines/reso.md) | Instrument (+ resonator) | — | SRAM (`-Os`) | C++ | Mutable Instruments Rings DSP |
+| [kuskus](docs/engines/kuskus.md) | Effect (granular) | - | SRAM | C++ | Mutable Instruments Beads DSP; not yet hardware-verified |
 | [mosc](docs/engines/mosc.md) | Instrument | — | **QSPI** | C++ | Dual 24-engine Plaits voice, vendored in-tree |
 | [glitch](docs/engines/glitch.md) | Instrument | — | SRAM | C++ | 12 Noisferatu algorithms; **GPLv3** |
 | [voice](docs/engines/voice.md) | Instrument | — | SRAM | Faust | Generated series (osc → filter) demo |
@@ -198,7 +201,7 @@ The bootloader version used in this project enables USB DFU firmware updating fr
 
 `make program-dfu` flashes whatever is currently in `build/` (it does not rebuild). To flash a non-default engine, build it first in the same step, e.g. `make ENGINE=passthrough && make program-dfu`.
 
-For convenience there are one-shot targets that **clean + build + flash** a variant (put the device in DFU mode first, as in step 3): `make engine-granular` (the looper), `make engine-delay`, `make engine-qdelay`, `make engine-edrums`, `make engine-reso`, `make engine-tape`, `make engine-shuttle`, `make engine-radio`, `make engine-reverb`, `make engine-chorus`, `make engine-filter`, `make engine-voice`, `make engine-gigaverb`, and `make engine-passthrough`. (`make engine-csound`, `make engine-chuck`, and `make engine-mosc` also exist but are QSPI builds — csound/chuck need a one-time `libcsound.a` / `libchuck.a` prerequisite, mosc needs none — see [`docs/engines/csound.md`](docs/engines/csound.md), [`docs/engines/chuck.md`](docs/engines/chuck.md), [`docs/engines/mosc.md`](docs/engines/mosc.md).)
+For convenience there are one-shot targets that **clean + build + flash** a variant (put the device in DFU mode first, as in step 3): `make engine-granular` (the looper), `make engine-delay`, `make engine-qdelay`, `make engine-edrums`, `make engine-reso`, `make engine-kuskus`, `make engine-tape`, `make engine-shuttle`, `make engine-radio`, `make engine-reverb`, `make engine-chorus`, `make engine-filter`, `make engine-voice`, `make engine-gigaverb`, and `make engine-passthrough`. (`make engine-csound`, `make engine-chuck`, and `make engine-mosc` also exist but are QSPI builds — csound/chuck need a one-time `libcsound.a` / `libchuck.a` prerequisite, mosc needs none — see [`docs/engines/csound.md`](docs/engines/csound.md), [`docs/engines/chuck.md`](docs/engines/chuck.md), [`docs/engines/mosc.md`](docs/engines/mosc.md).)
 
 Once finished, the device will automatically boot the new firmware. This can "brick" (temporarily) the device and require reinstallation of either the bootloader, the firmware binary, or both.
 

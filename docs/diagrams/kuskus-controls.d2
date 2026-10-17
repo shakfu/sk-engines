@@ -1,0 +1,163 @@
+# GENERATED from controls-template.d2 by scripts/gen_controls_diagram.py.
+# Edit the JSON spec (kuskus.json), not this file; then re-run / `make diagrams`.
+
+direction: up
+
+vars: {
+  d2-config: {
+    layout-engine: dagre
+    pad: 40
+  }
+}
+
+title: |md
+  # kuskus - granular processor (Beads)
+  _one stereo Beads; deck A = knobs, deck B = attenuverters_
+| {
+  near: top-center
+  style.font-size: 26
+}
+
+# For `shape: sql_table` d2's two keys do not mean what their names suggest, and the difference is
+# the whole point of this block: `fill` paints the HEADER ROW ONLY, and `stroke` paints the TABLE
+# BODY - every data row - rather than a border. (Traced by rendering with marker colours; the
+# container strokes further down are ordinary shapes where `stroke` really is the border.)
+#
+# So the colour goes in `fill`, where it labels the group, and the body stays white. The old values
+# had it the other way round: a near-white header nobody could read against, over rows tinted hard
+# enough to fight their own text.
+# `font-color` is not optional here. d2 renders a table's header label in WHITE, on the assumption
+# that the header fill is dark - so the old near-white header carried white text at 1.11:1, which is
+# why the group titles were barely there. Dark text on these pastels reads at 11:1 or better.
+classes: {
+  knob:   { style: { fill: "#90cdf4"; stroke: "#ffffff"; font-color: "#0a0f25" } }
+  pad:    { style: { fill: "#fbd38d"; stroke: "#ffffff"; font-color: "#0a0f25" } }
+  shared: { style: { fill: "#d6bcfa"; stroke: "#ffffff"; font-color: "#0a0f25" } }
+  io:     { style: { fill: "#9ae6b4"; stroke: "#ffffff"; font-color: "#0a0f25" } }
+  # The LED circles are NOT tables, so here `fill` really is the fill and `stroke` really is the
+  # border - the same two keys, different meaning, which is why they need a class of their own rather
+  # than borrowing `knob`. Left uncoloured on purpose: these stand for a physical light whose colour
+  # is the thing being described in words beside them, so tinting the drawing states a colour that
+  # contradicts its own caption.
+  led:    { style: { fill: "#ffffff"; stroke: "#0a0f25"; font-color: "#0a0f25" } }
+}
+
+panel: Front panel {
+  grid-columns: 2
+  grid-gap: 60
+  style.stroke: "#cbd5e0"
+
+  # ----------------------------------------------------------------- DECK A
+  deckA: Deck A and B (identical) {
+    grid-columns: 1
+    grid-gap: 30
+    style.stroke: "#90cdf4"
+
+    knobsA: Knobs (7) {
+      class: knob
+      shape: sql_table
+      Pitch: "A: pitch (+/-24 st, detents); B: pitch attenuverter"
+      Position: "A: time; B: time attenuverter"
+      Size: "A: size (top = delay mode); B: size attenuverter"
+      Envelope: "A: shape; B: shape attenuverter"
+      "Mix (SOS)": "A: dry/wet; B: output level"
+      Cycle: "A: density; B: input gain"
+      Glow: "A: feedback; B: reverb"
+    }
+
+    padsA: Pads (5) {
+      class: pad
+      shape: sql_table
+      Play: "A: seed tap (Alt = latch); B: freeze"
+      Reverse: "A: clock-follow; B: -"
+      Grit: "-"
+      Flux: "A: hold = seed held; B: -"
+      Seq: "-"
+    }
+
+    ringA: "LED Ring A (32px)" {
+      class: led
+      shape: circle
+      label: "Ring A / B\nA: output level (media colour) + time dot; B: input level, cyan when frozen"
+    }
+  }
+
+  # --------------------------------------------------------------- SHARED
+  center: Shared / Transport {
+    style.stroke: "#d6bcfa"
+
+    xfade: Crossfade {
+      class: shared
+      shape: sql_table
+      Crossfade: "dry/wet"
+    }
+
+    switches: Switches (74HC165) {
+      class: shared
+      shape: sql_table
+      "Mode (L/C/R)": "A: digital / clean tape / dirty tape; B: Drift = vintage digital"
+      "Routing (L/C/R)": "stereo / mono / gate out"
+      "CV target (U/C/D)": "-"
+      "Out trims A/B": "output trims"
+    }
+
+    transport: Transport {
+      class: shared
+      shape: sql_table
+      Tap: "tempo (clock-follow)"
+      Alt:  "modifier (held)"
+      Spot: "-"
+    }
+
+    clockled: "Clock LED" {
+      class: led
+      shape: circle
+      label: "Clock\n[ src color ]"
+    }
+  }
+
+  # ----------------------------------------------------------------- DECK B
+}
+
+# ---------------------------------------------------------------------- I/O
+io: I/O jacks (fixed) {
+  grid-columns: 4
+  grid-gap: 40
+  style.stroke: "#9ae6b4"
+
+  audio: Audio {
+    class: io
+    shape: sql_table
+    "In L/R":        "codec 48k"
+    "Out A / Out B": "mono + trims"
+    "Stereo out":    "TRS"
+  }
+
+  cv: CV in (7) {
+    class: io
+    shape: sql_table
+    "Size/Pos A/B": "size / time"
+    "Mix A/B": "shape / density"
+    "V/Oct A/B": "A: pitch; B: -"
+    "Crossfade CV": "dry/wet"
+  }
+
+  gates: Clock / Gate {
+    class: io
+    shape: sql_table
+    "Clock in (TRS 4PPQN)": "sync"
+    "Gate in A/B": "A: seed; B: freeze toggle"
+    "Gate out A/B": "A: grain gates (gate-out route)"
+  }
+
+  modmidi: Mod CV / MIDI {
+    class: io
+    shape: sql_table
+    "Mod CV out A/B": "-"
+    "MIDI in/out":    "24 PPQN + notes"
+  }
+}
+
+panel -> io: {
+  style: { stroke: "#cbd5e0"; stroke-dash: 4 }
+}

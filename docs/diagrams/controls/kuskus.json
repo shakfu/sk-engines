@@ -1,0 +1,38 @@
+{
+  "engine": "kuskus",
+  "title": "kuskus - granular processor (Beads)",
+  "subtitle": "one stereo Beads; deck A = knobs, deck B = attenuverters",
+
+  "knobs": {
+    "Pitch": "A: pitch (+/-24 st, detents); B: pitch attenuverter",
+    "Position": "A: time; B: time attenuverter",
+    "Size": "A: size (top = delay mode); B: size attenuverter",
+    "Envelope": "A: shape; B: shape attenuverter",
+    "Mix (SOS)": "A: dry/wet; B: output level",
+    "Cycle": "A: density; B: input gain",
+    "Glow": "A: feedback; B: reverb"
+  },
+
+  "pads": {
+    "Play": "A: seed tap (Alt = latch); B: freeze",
+    "Reverse": "A: clock-follow; B: -",
+    "Grit": "-",
+    "Flux": "A: hold = seed held; B: -",
+    "Seq": "-"
+  },
+
+  "ring": "A: output level (media colour) + time dot; B: input level, cyan when frozen",
+  "crossfade": "dry/wet",
+
+  "switches": {
+    "Mode (L/C/R)": "A: digital / clean tape / dirty tape; B: Drift = vintage digital",
+    "Routing (L/C/R)": "stereo / mono / gate out",
+    "CV target (U/C/D)": "-",
+    "Out trims A/B": "output trims"
+  },
+
+  "transport": { "Tap": "tempo (clock-follow)", "Spot": "-" },
+  "cv":   { "Size/Pos A/B": "size / time", "Mix A/B": "shape / density", "V/Oct A/B": "A: pitch; B: -", "Crossfade CV": "dry/wet" },
+  "gates": { "Gate in A/B": "A: seed; B: freeze toggle", "Gate out A/B": "A: grain gates (gate-out route)" },
+  "mod_midi": { "Mod CV out A/B": "-" }
+}
